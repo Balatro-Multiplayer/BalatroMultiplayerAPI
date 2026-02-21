@@ -8,7 +8,7 @@
 local openssl_connector = {}
 
 local socket = require("socket")
-local openssl = require("openssl_ffi")
+local openssl = MPAPI.modules.openssl_ffi
 
 -- Handshake retry parameters
 local HANDSHAKE_MAX_RETRIES = 50

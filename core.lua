@@ -8,6 +8,9 @@ MPAPI.sendWarnMessage = function(msg)
     sendWarnMessage(msg, MPAPI.id)
 end
 
+-- Add network/ to package.path so the MQTT thread can require("openssl_ffi")
+package.path = MPAPI.path .. "/network/?.lua;" .. package.path
+
 function MPAPI.load_mpapi_file(file)
 	local chunk, err = SMODS.load_file(file, MPAPI.id)
 	if chunk then
