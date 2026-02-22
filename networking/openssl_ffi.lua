@@ -230,17 +230,17 @@ end
 local M = {}
 
 function M.get_error()
-    if not ssl_lib then return "OpenSSL not loaded" end
-    local err = ssl_lib.ERR_get_error()
+    if not crypto_lib then return "OpenSSL not loaded" end
+    local err = crypto_lib.ERR_get_error()
     if err == 0 then return nil end
     local buf = ffi.new("char[256]")
-    ssl_lib.ERR_error_string(err, buf)
+    crypto_lib.ERR_error_string(err, buf)
     return ffi.string(buf)
 end
 
 function M.clear_errors()
-    if ssl_lib then
-        ssl_lib.ERR_clear_error()
+    if crypto_lib then
+        crypto_lib.ERR_clear_error()
     end
 end
 
