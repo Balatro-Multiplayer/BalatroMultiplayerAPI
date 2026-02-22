@@ -15,14 +15,16 @@ local SEP = "\1"
 
 -- Default configuration
 local DEFAULT_CONFIG = {
-    broker = "broker.hivemq.com",
-    port = 1883,           -- Non-TLS default, 8883 for TLS
-    secure = false,
+    broker = "balatro.virtualized.dev",
+    port = 8883,
+    secure = true,
     client_id = nil,       -- Auto-generated if nil
     clean = true,
     keep_alive = 60,
     reconnect = false,
     verify = false,
+    username = nil,         -- MQTT username (player ID for auth)
+    password = nil,         -- MQTT password (JWT token for auth)
 }
 
 ----------------------------------------------------------------------
@@ -45,6 +47,7 @@ if pkg_cpath then package.cpath = pkg_cpath end
 local SEP = "\1"
 local socket = require("socket")
 local mqtt = require("mqtt")
+require("love.timer")  -- not loaded by default in Love2D threads
 
 -- Optionally load OpenSSL connector
 local openssl_connector
@@ -111,8 +114,30 @@ local function setup_handlers(cl)
     }
 end
 
+-- Handle an HTTP POST request
+local function handle_http_post(url, body)
+    local http = require("socket.http")
+    local ltn12 = require("ltn12")
+    local response_body = {}
+    local result, status = http.request{
+        url = url,
+        method = "POST",
+        headers = {
+            ["Content-Type"] = "application/json",
+            ["Content-Length"] = tostring(#body),
+        },
+        source = ltn12.source.string(body),
+        sink = ltn12.sink.table(response_body),
+    }
+    if result then
+        push_event("http_response", tostring(status), table.concat(response_body))
+    else
+        push_event("http_error", tostring(status))
+    end
+end
+
 -- Handle a connect command
-local function handle_connect(broker, port, secure, client_id, keep_alive, verify)
+local function handle_connect(broker, port, secure, client_id, keep_alive, verify, username, password)
     if client then
         pcall(function() client:disconnect() end)
         client = nil
@@ -126,6 +151,14 @@ local function handle_connect(broker, port, secure, client_id, keep_alive, verif
         clean = true,
         keep_alive = tonumber(keep_alive) or 60,
     }
+
+    -- Set auth credentials if provided (non-empty strings)
+    if username and username ~= "" then
+        client_opts.username = username
+    end
+    if password and password ~= "" then
+        client_opts.password = password
+    end
 
     if secure == "true" then
         if openssl_connector then
@@ -194,11 +227,13 @@ local function dispatch_command(cmd)
 
     local action = parts[1]
     if action == "connect" then
-        handle_connect(parts[2], parts[3], parts[4], parts[5], parts[6], parts[7])
+        handle_connect(parts[2], parts[3], parts[4], parts[5], parts[6], parts[7], parts[8], parts[9])
     elseif action == "subscribe" then
         handle_subscribe(parts[2], parts[3])
     elseif action == "publish" then
         handle_publish(parts[2], parts[3], parts[4], parts[5])
+    elseif action == "http_post" then
+        handle_http_post(parts[2], parts[3])
     elseif action == "disconnect" then
         handle_disconnect()
     elseif action == "shutdown" then
@@ -264,6 +299,8 @@ function mqtt_client.new(config)
         on_connect = nil,
         on_disconnect = nil,
         on_error = nil,
+        on_http_response = nil,
+        on_http_error = nil,
         -- Thread state
         thread = nil,
         tx_channel = nil,
@@ -297,17 +334,19 @@ end
 
 function mqtt_client:lobby_topic(lobby_code, subtopic)
     if subtopic then
-        return string.format("balatro/lobbies/%s/%s", lobby_code, subtopic)
+        return string.format("lobby/%s/%s", lobby_code, subtopic)
     else
-        return string.format("balatro/lobbies/%s", lobby_code)
+        return string.format("lobby/%s", lobby_code)
     end
 end
 
 ----------------------------------------------------------------------
--- Connect to the MQTT broker (spawns network thread)
+-- Start the network thread (without connecting to a broker)
 ----------------------------------------------------------------------
 
-function mqtt_client:connect()
+function mqtt_client:start_thread()
+    if self.thread then return true end
+
     -- Create channels (unnamed — safe for multiple instances)
     self.tx_channel = love.thread.newChannel()
     self.rx_channel = love.thread.newChannel()
@@ -320,6 +359,16 @@ function mqtt_client:connect()
     local setup_msg = "setup" .. SEP .. (package.path or "") .. SEP .. (package.cpath or "")
     self.tx_channel:push(setup_msg)
 
+    return true
+end
+
+----------------------------------------------------------------------
+-- Connect to the MQTT broker (spawns network thread if needed)
+----------------------------------------------------------------------
+
+function mqtt_client:connect()
+    self:start_thread()
+
     -- Send connect command
     local cfg = self.config
     local connect_msg = table.concat({
@@ -330,6 +379,8 @@ function mqtt_client:connect()
         cfg.client_id,
         tostring(cfg.keep_alive),
         tostring(cfg.verify or false),
+        cfg.username or "",
+        cfg.password or "",
     }, SEP)
     self.tx_channel:push(connect_msg)
 
@@ -380,6 +431,24 @@ function mqtt_client:publish(topic, payload, qos, retain)
         payload or "",
         tostring(qos),
         tostring(retain),
+    }, SEP))
+
+    return true
+end
+
+----------------------------------------------------------------------
+-- Send an HTTP POST request via the network thread
+----------------------------------------------------------------------
+
+function mqtt_client:http_post(url, body)
+    if not self.tx_channel then
+        return false, "Thread not running"
+    end
+
+    self.tx_channel:push(table.concat({
+        "http_post",
+        url,
+        body or "",
     }, SEP))
 
     return true
@@ -441,6 +510,19 @@ function mqtt_client:update()
 
         elseif event == "subscribed" then
             -- Could fire a callback here if needed
+
+        elseif event == "http_response" then
+            local status = parts[2]
+            local body = parts[3] or ""
+            if self.on_http_response then
+                self.on_http_response(tonumber(status), body)
+            end
+
+        elseif event == "http_error" then
+            local msg = parts[2] or "HTTP request failed"
+            if self.on_http_error then
+                self.on_http_error(msg)
+            end
         end
     end
 

@@ -8,8 +8,9 @@ MPAPI.sendWarnMessage = function(msg)
     sendWarnMessage(msg, MPAPI.id)
 end
 
--- Add network/ to package.path so the MQTT thread can require("openssl_ffi")
-package.path = MPAPI.path .. "/network/?.lua;" .. package.path
+-- Add mod root and networking/ to package.path so the MQTT thread can
+-- require("mqtt") (luamqtt at mqtt/init.lua) and require("openssl_ffi")
+package.path = MPAPI.path .. "/?.lua;" .. MPAPI.path .. "/?/init.lua;" .. MPAPI.path .. "/networking/?.lua;" .. package.path
 
 function MPAPI.load_mpapi_file(file)
 	local chunk, err = SMODS.load_file(file, MPAPI.id)
@@ -45,7 +46,7 @@ end
 
 MPAPI.modules = {}
 
-MPAPI.modules.openssl_ffi = MPAPI.load_mpapi_file("network/openssl_ffi.lua")
+MPAPI.modules.openssl_ffi = MPAPI.load_mpapi_file("networking/openssl_ffi.lua")
 
 if MPAPI.modules.openssl_ffi then
     MPAPI.sendDebugMessage("OpenSSL FFI module loaded")
@@ -64,7 +65,7 @@ else
     MPAPI.sendWarnMessage("OpenSSL FFI module failed to load")
 end
 
-MPAPI.modules.mqtt_client = MPAPI.load_mpapi_file("network/mqtt_client.lua")
+MPAPI.modules.mqtt_client = MPAPI.load_mpapi_file("networking/mqtt_client.lua")
 
 if MPAPI.modules.mqtt_client then
     MPAPI.sendDebugMessage("MQTT client wrapper loaded")
@@ -72,4 +73,15 @@ else
     MPAPI.sendWarnMessage("MQTT client wrapper failed to load")
 end
 
-local config = SMODS.current_mod.config
+MPAPI.modules.steam = MPAPI.load_mpapi_file("networking/steam.lua")
+
+if MPAPI.modules.steam then
+    MPAPI.sendDebugMessage("Steam module loaded (G.STEAM available after love.load)")
+else
+    MPAPI.sendWarnMessage("Steam module failed to load")
+end
+
+MPAPI.modules.api_client = MPAPI.load_mpapi_file("networking/api_client.lua")
+MPAPI.modules.connection = MPAPI.load_mpapi_file("networking/connection.lua")
+
+MPAPI.load_mpapi_file("api/connection.lua")
