@@ -1,5 +1,7 @@
 local _mqtt_instance = nil
 local _connection = nil
+local _ready = false
+local _ready_callbacks = {}
 
 -- Production server defaults
 local DEFAULTS = {
@@ -26,7 +28,8 @@ function MPAPI.connect(opts)
     local api_url     = opts.api_url     or DEFAULTS.api_url
     local mqtt_broker = opts.mqtt_broker  or DEFAULTS.mqtt_broker
     local mqtt_port   = opts.mqtt_port    or DEFAULTS.mqtt_port
-    local mqtt_secure = opts.mqtt_secure ~= nil and opts.mqtt_secure or DEFAULTS.mqtt_secure
+    local mqtt_secure = DEFAULTS.mqtt_secure
+    if opts.mqtt_secure ~= nil then mqtt_secure = opts.mqtt_secure end
 
     _mqtt_instance = MPAPI.modules.mqtt_client.new({
         broker = mqtt_broker,
@@ -89,4 +92,22 @@ end
 
 function MPAPI.get_connection()
     return _connection
+end
+
+function MPAPI.update()
+    if _mqtt_instance then
+        _mqtt_instance:update()
+    end
+end
+
+function MPAPI.on_loaded(fn)
+    if _ready then
+        fn()
+    else
+        _ready_callbacks[#_ready_callbacks + 1] = fn
+    end
+end
+
+function MPAPI.is_ready()
+    return _ready
 end

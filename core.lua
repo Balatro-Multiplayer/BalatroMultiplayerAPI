@@ -85,3 +85,31 @@ MPAPI.modules.api_client = MPAPI.load_mpapi_file("networking/api_client.lua")
 MPAPI.modules.connection = MPAPI.load_mpapi_file("networking/connection.lua")
 
 MPAPI.load_mpapi_file("api/connection.lua")
+
+G.E_MANAGER:add_event(Event({
+    blockable = false,
+    blocking = false,
+    func = function()
+        if not G.STEAM then
+            return false
+        end
+        _ready = true
+        for _, fn in ipairs(_ready_callbacks) do
+            local ok, err = pcall(fn)
+            if not ok then
+                MPAPI.sendWarnMessage("on_loaded callback error: " .. tostring(err))
+            end
+        end
+        _ready_callbacks = {}
+        return true
+    end,
+}))
+
+G.E_MANAGER:add_event(Event({
+    blockable = false,
+    blocking = false,
+    no_delete = true,
+    func = function()
+        MPAPI.update()
+    end,
+}))
