@@ -81,10 +81,13 @@ else
     MPAPI.sendWarnMessage("Steam module failed to load")
 end
 
+MPAPI.modules.token_store = MPAPI.load_mpapi_file("networking/token_store.lua")
 MPAPI.modules.api_client = MPAPI.load_mpapi_file("networking/api_client.lua")
 MPAPI.modules.connection = MPAPI.load_mpapi_file("networking/connection.lua")
 
 MPAPI.load_mpapi_file("api/connection.lua")
+MPAPI.load_mpapi_file("api/ui_element.lua")
+MPAPI.load_mpapi_file("ui/account.lua")
 
 G.E_MANAGER:add_event(Event({
     blockable = false,
