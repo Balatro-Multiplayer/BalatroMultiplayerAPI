@@ -1,7 +1,16 @@
+MPAPI.connection_state = {
+    state = "disconnected",
+    status_text = "Offline",
+    player_id = "",
+    steam_name = "",
+    discord_name = "",
+}
+
 local _mqtt_instance = nil
 local _connection = nil
 local _ready = false
 local _ready_callbacks = {}
+local _last_opts = nil
 
 -- Production server defaults
 local DEFAULTS = {
@@ -13,6 +22,7 @@ local DEFAULTS = {
 
 function MPAPI.connect(opts)
     opts = opts or {}
+    _last_opts = opts
 
     if _connection and _connection:get_state() ~= "disconnected" then
         MPAPI.sendWarnMessage("Already connected or connecting")
@@ -43,6 +53,7 @@ function MPAPI.connect(opts)
         mqtt_client = _mqtt_instance,
         api_client = api,
         steam = MPAPI.modules.steam,
+        token_store = MPAPI.modules.token_store,
         config = {
             mqtt_broker = mqtt_broker,
             mqtt_port   = mqtt_port,
@@ -50,19 +61,57 @@ function MPAPI.connect(opts)
         },
     })
 
-    _connection.on_connected = function()
-        MPAPI.sendDebugMessage("Connected! Player ID: " .. tostring(_connection.player_id))
-        if opts.on_connected then opts.on_connected(_connection) end
-    end
+    local cs = MPAPI.connection_state
 
-    _connection.on_error = function(msg)
-        MPAPI.sendWarnMessage("Connection error: " .. tostring(msg))
-        if opts.on_error then opts.on_error(msg) end
-    end
+    _connection.on_state_change = function(new_state, context)
+        context = context or {}
 
-    _connection.on_disconnected = function()
-        MPAPI.sendDebugMessage("Disconnected from server")
-        if opts.on_disconnected then opts.on_disconnected() end
+        -- Update connection_state
+        cs.state = new_state
+        if new_state == "connected" then
+            cs.status_text = _connection.username or "Connected"
+            cs.player_id = _connection.player_id or ""
+            cs.steam_name = _connection.username or ""
+            cs.discord_name = _connection.discord_name or ""
+        elseif new_state == "authenticating" then
+            cs.status_text = "Signing in..."
+        elseif new_state == "connecting" then
+            cs.status_text = "Connecting..."
+        else
+            cs.status_text = "Offline"
+            cs.player_id = ""
+            cs.steam_name = ""
+            cs.discord_name = ""
+        end
+
+        -- Player data update (e.g. discord linked)
+        if context.player_update then
+            cs.discord_name = _connection.discord_name or ""
+        end
+
+        -- Logging
+        if context.error then
+            MPAPI.sendWarnMessage("Connection error: " .. tostring(context.error))
+        elseif new_state == "connected" then
+            MPAPI.sendDebugMessage("Connected! Player ID: " .. tostring(_connection.player_id))
+        elseif new_state == "disconnected" and context.old_state == "connected" then
+            MPAPI.sendDebugMessage("Disconnected from server")
+        end
+
+        -- User callbacks
+        if context.error and opts.on_error then
+            opts.on_error(context.error)
+        elseif new_state == "connected" and opts.on_connected then
+            opts.on_connected(_connection)
+        elseif new_state == "disconnected" and context.old_state == "connected" and opts.on_disconnected then
+            opts.on_disconnected()
+        end
+
+        -- UI refresh
+        if MPAPI.account_button then
+            MPAPI.account_button:update()
+            MPAPI.account_overlay:update()
+        end
     end
 
     _connection:connect()
@@ -77,6 +126,12 @@ function MPAPI.disconnect()
         _mqtt_instance = nil
     end
     _connection = nil
+    local cs = MPAPI.connection_state
+    cs.state = "disconnected"
+    cs.status_text = "Offline"
+    cs.player_id = ""
+    cs.steam_name = ""
+    cs.discord_name = ""
 end
 
 function MPAPI.is_connected()
@@ -94,10 +149,27 @@ function MPAPI.get_connection()
     return _connection
 end
 
+function MPAPI.get_last_opts()
+    return _last_opts
+end
+
 function MPAPI.update()
     if _mqtt_instance then
         _mqtt_instance:update()
     end
+end
+
+function MPAPI.get_discord_link_url(callback)
+    local conn = _connection
+    if not conn or conn:get_state() ~= "connected" then
+        callback("Not connected", nil)
+        return
+    end
+    if not conn.jwt_token then
+        callback("No JWT token", nil)
+        return
+    end
+    conn.api:get_discord_link_url(conn.jwt_token, callback)
 end
 
 function MPAPI.on_loaded(fn)

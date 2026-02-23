@@ -136,6 +136,29 @@ local function handle_http_post(url, body)
     end
 end
 
+-- Handle an HTTP POST request with Authorization: Bearer header
+local function handle_http_post_auth(url, body, token)
+    local http = require("socket.http")
+    local ltn12 = require("ltn12")
+    local response_body = {}
+    local result, status = http.request{
+        url = url,
+        method = "POST",
+        headers = {
+            ["Content-Type"] = "application/json",
+            ["Content-Length"] = tostring(#body),
+            ["Authorization"] = "Bearer " .. token,
+        },
+        source = ltn12.source.string(body),
+        sink = ltn12.sink.table(response_body),
+    }
+    if result then
+        push_event("http_response", tostring(status), table.concat(response_body))
+    else
+        push_event("http_error", tostring(status))
+    end
+end
+
 -- Handle a connect command
 local function handle_connect(broker, port, secure, client_id, keep_alive, verify, username, password)
     if client then
@@ -234,6 +257,8 @@ local function dispatch_command(cmd)
         handle_publish(parts[2], parts[3], parts[4], parts[5])
     elseif action == "http_post" then
         handle_http_post(parts[2], parts[3])
+    elseif action == "http_post_auth" then
+        handle_http_post_auth(parts[2], parts[3], parts[4])
     elseif action == "disconnect" then
         handle_disconnect()
     elseif action == "shutdown" then
@@ -264,6 +289,15 @@ while running do
         -- On iteration error, report
         if not ok and err then
             push_event("error", tostring(err))
+        end
+
+        -- 3. Send PINGREQ if keep_alive interval is reached
+        --    (_sync_iteration doesn't check this; only _ioloop_iteration does)
+        if connected and client.args and client.send_time then
+            local elapsed = os.time() - client.send_time
+            if elapsed >= client.args.keep_alive then
+                pcall(function() client:send_pingreq() end)
+            end
         end
     else
         -- No active connection
@@ -449,6 +483,25 @@ function mqtt_client:http_post(url, body)
         "http_post",
         url,
         body or "",
+    }, SEP))
+
+    return true
+end
+
+----------------------------------------------------------------------
+-- Send an HTTP POST request with Authorization: Bearer header
+----------------------------------------------------------------------
+
+function mqtt_client:http_post_auth(url, body, token)
+    if not self.tx_channel then
+        return false, "Thread not running"
+    end
+
+    self.tx_channel:push(table.concat({
+        "http_post_auth",
+        url,
+        body or "",
+        token or "",
     }, SEP))
 
     return true

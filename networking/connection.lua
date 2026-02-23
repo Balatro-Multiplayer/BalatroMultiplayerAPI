@@ -12,6 +12,7 @@ function connection.new(opts)
         mqtt = opts.mqtt_client,
         api = opts.api_client,
         steam = opts.steam,
+        token_store = opts.token_store,
         config = opts.config or {},
 
         state = STATES.DISCONNECTED,
@@ -20,11 +21,10 @@ function connection.new(opts)
         jwt_token = nil,
         username = nil,
         steam_id = nil,
+        discord_name = nil,
         auth_ticket_handle = nil,
 
-        on_connected = nil,
-        on_error = nil,
-        on_disconnected = nil,
+        on_state_change = nil,
     }
 
     setmetatable(self, { __index = connection })
@@ -35,36 +35,55 @@ function connection:get_state()
     return self.state
 end
 
-local function fire(self, name, ...)
-    local cb = self[name]
-    if cb then
-        local ok, err = pcall(cb, ...)
+local function fire(self, new_state, context)
+    if self.on_state_change then
+        local ok, err = pcall(self.on_state_change, new_state, context)
         if not ok then
-            if name ~= "on_error" and self.on_error then
-                pcall(self.on_error, "Callback error in " .. name .. ": " .. tostring(err))
-            end
+            MPAPI.sendWarnMessage("on_state_change error: " .. tostring(err))
         end
     end
 end
 
-function connection:connect()
-    if self.state ~= STATES.DISCONNECTED then
-        fire(self, "on_error", "Already " .. self.state)
+local function set_state(self, new_state, context)
+    local old = self.state
+    self.state = new_state
+    fire(self, new_state, context or {old_state = old})
+end
+
+-- Shared handler for successful auth (Steam or refresh token)
+function connection:_handle_auth_success(data)
+    self.jwt_token = data.token
+    self.player_id = data.player and data.player.id or nil
+    if data.player and data.player.username then
+        self.username = data.player.username
+    end
+    if data.player and data.player.discordId then
+        self.discord_name = data.player.discordId
+    end
+
+    if not self.player_id or not self.jwt_token then
+        set_state(self, STATES.DISCONNECTED, {error = "Auth response missing player ID or token"})
         return
     end
 
-    self.state = STATES.AUTHENTICATING
+    -- Save refresh token for next launch
+    if data.refreshToken and self.token_store then
+        self.token_store.save(data.refreshToken)
+    end
 
+    self:_mqtt_connect_with_credentials()
+end
+
+-- Try Steam auth first
+function connection:_try_steam_auth()
     if not self.steam or not self.steam.available() then
-        self.state = STATES.DISCONNECTED
-        fire(self, "on_error", "Steam is not available")
+        self:_try_refresh_auth("Steam is not available")
         return
     end
 
     local ticket_data, ticket_err = self.steam.get_auth_ticket()
     if not ticket_data then
-        self.state = STATES.DISCONNECTED
-        fire(self, "on_error", "Steam ticket failed: " .. tostring(ticket_err))
+        self:_try_refresh_auth("Steam ticket failed: " .. tostring(ticket_err))
         return
     end
 
@@ -81,53 +100,81 @@ function connection:connect()
         end
 
         if err then
-            self.state = STATES.DISCONNECTED
-            fire(self, "on_error", "Auth failed: " .. tostring(err))
+            self:_try_refresh_auth("Steam auth failed: " .. tostring(err))
             return
         end
 
-        self.jwt_token = data.token
-        self.player_id = data.player and data.player.id or nil
-        if data.player and data.player.username then
-            self.username = data.player.username
-        end
-
-        if not self.player_id or not self.jwt_token then
-            self.state = STATES.DISCONNECTED
-            fire(self, "on_error", "Auth response missing player ID or token")
-            return
-        end
-
-        self:_mqtt_connect_with_credentials()
+        self:_handle_auth_success(data)
     end)
 end
 
+-- Fallback: try refresh token auth
+function connection:_try_refresh_auth(steam_error)
+    if not self.token_store then
+        set_state(self, STATES.DISCONNECTED, {error = steam_error or "No auth method available"})
+        return
+    end
+
+    local refresh_token = self.token_store.load()
+    if not refresh_token then
+        set_state(self, STATES.DISCONNECTED, {error = steam_error or "No saved credentials"})
+        return
+    end
+
+    local username = self.username or "Player"
+    self.mqtt:start_thread()
+
+    self.api:authenticate_refresh(refresh_token, username, function(err, data)
+        if err then
+            -- Refresh token failed, clear it
+            self.token_store.clear()
+            set_state(self, STATES.DISCONNECTED, {error = steam_error or ("Refresh auth failed: " .. tostring(err))})
+            return
+        end
+
+        self:_handle_auth_success(data)
+    end)
+end
+
+function connection:connect()
+    if self.state ~= STATES.DISCONNECTED then
+        fire(self, self.state, {error = "Already " .. self.state})
+        return
+    end
+
+    set_state(self, STATES.AUTHENTICATING)
+    self:_try_steam_auth()
+end
+
 function connection:_mqtt_connect_with_credentials()
-    self.state = STATES.CONNECTING
+    set_state(self, STATES.CONNECTING)
 
     local SEP = "\1"
     local cfg = self.config
 
     self.mqtt.on_connect = function()
-        self.state = STATES.CONNECTED
-        fire(self, "on_connected")
+        set_state(self, STATES.CONNECTED)
+
+        -- Subscribe to player notification topics
+        if self.player_id then
+            local topic = "player/" .. self.player_id .. "/account/#"
+            MPAPI.sendDebugMessage("Subscribing to " .. topic)
+            self.mqtt:subscribe(topic, 1, function(t, payload)
+                self:_handle_player_notification(t, payload)
+            end)
+        end
     end
 
     self.mqtt.on_error = function(msg)
         if self.state == STATES.CONNECTING then
-            self.state = STATES.DISCONNECTED
-            fire(self, "on_error", "MQTT connection failed: " .. tostring(msg))
+            set_state(self, STATES.DISCONNECTED, {error = "MQTT connection failed: " .. tostring(msg)})
         else
-            fire(self, "on_error", tostring(msg))
+            fire(self, self.state, {error = tostring(msg)})
         end
     end
 
     self.mqtt.on_disconnect = function()
-        local was_connected = (self.state == STATES.CONNECTED)
-        self.state = STATES.DISCONNECTED
-        if was_connected then
-            fire(self, "on_disconnected")
-        end
+        set_state(self, STATES.DISCONNECTED)
     end
 
     local connect_msg = table.concat({
@@ -145,6 +192,30 @@ function connection:_mqtt_connect_with_credentials()
     self.mqtt.tx_channel:push(connect_msg)
 end
 
+function connection:_handle_player_notification(topic, payload)
+    local subtopic = topic:match("^player/[^/]+/account/(.+)$")
+    if not subtopic then return end
+
+    MPAPI.sendDebugMessage("Player notification: " .. subtopic .. " payload=" .. tostring(payload))
+
+    if subtopic == "discord_linked" then
+        local ok, data = pcall(function()
+            if json and json.decode then
+                return json.decode(payload)
+            end
+            local j = require("json")
+            return j.decode(payload)
+        end)
+        if ok and data then
+            self.discord_name = data.username or data.discordId or "Linked"
+            MPAPI.sendDebugMessage("Discord linked, set discord_name=" .. tostring(self.discord_name))
+            fire(self, self.state, {player_update = true})
+        else
+            MPAPI.sendWarnMessage("discord_linked: failed to parse payload, ok=" .. tostring(ok))
+        end
+    end
+end
+
 function connection:disconnect()
     if self.state == STATES.DISCONNECTED then return end
 
@@ -157,7 +228,7 @@ function connection:disconnect()
         self.mqtt:disconnect()
     end
 
-    self.state = STATES.DISCONNECTED
+    set_state(self, STATES.DISCONNECTED)
     self.player_id = nil
     self.jwt_token = nil
 end
