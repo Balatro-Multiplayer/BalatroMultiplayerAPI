@@ -1,6 +1,6 @@
 # MultiplayerAPI for Balatro
 
-A mod library that adds real-time multiplayer to [Balatro](https://www.playbalatro.com/). Provides lobby management, player state sync, actions, and chat.
+A mod library that adds real-time multiplayer to [Balatro](https://www.playbalatro.com/). Provides lobby management, player state sync, actions, chat, and player authentication with Steam and Discord.
 
 ## API
 
