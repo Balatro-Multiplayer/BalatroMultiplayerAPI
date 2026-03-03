@@ -244,21 +244,6 @@ Add the dependency to your mod's JSON:
 }
 ```
 
-## Roadmap
-
-- [x] Threaded MQTT networking (non-blocking, no game freezes)
-- [x] TLS support via OpenSSL FFI
-- [ ] API server (Express, lobby management, credential issuing)
-- [ ] EMQX broker deployment with HTTP auth/authz
-- [ ] Lobby manager (`create_lobby` / `join_lobby` / `leave`)
-- [ ] Player state sync
-- [ ] Action system (typed parameters, request/response, validation)
-- [ ] Built-in chat UI
-- [ ] Lobby lifecycle events (join/leave detection)
-- [ ] Reconnection handling
-- [ ] Steam authentication
-- [ ] Discord authentication
-
 ## License
 
 See [LICENSE.md](LICENSE.md).
