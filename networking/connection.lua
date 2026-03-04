@@ -227,6 +227,11 @@ function connection:_handle_player_notification(topic, payload)
 		else
 			MPAPI.sendWarnMessage('discord_linked: failed to parse payload, ok=' .. tostring(ok))
 		end
+	elseif subtopic == 'discord_unlinked' then
+		self.discord_name = nil
+		MPAPI.config_on_connect(self)
+		MPAPI.sendDebugMessage('Discord unlinked')
+		fire(self, self.state, { player_update = true })
 	end
 end
 
