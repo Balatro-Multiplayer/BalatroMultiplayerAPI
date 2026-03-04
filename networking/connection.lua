@@ -19,6 +19,9 @@ function connection.new(opts)
 		player_id = nil,
 		jwt_token = nil,
 		username = nil,
+		display_name = nil,
+		use_discord_name = false,
+		preferred_joker = 'j_joker',
 		steam_id = nil,
 		discord_name = nil,
 		is_temp = false,
@@ -62,10 +65,13 @@ function connection:_handle_auth_success(data)
 	if data.player and data.player.discordUsername then
 		self.discord_name = data.player.discordUsername
 	end
+	if data.player then
+		self.display_name = data.player.displayName or self.username
+		self.use_discord_name = data.player.useDiscordName or false
+		self.preferred_joker = data.player.preferredJoker or 'j_joker'
+	end
 
 	self.lobby_data = data.lobby or nil
-
-	MPAPI.config_on_connect(self)
 
 	if not self.player_id or not self.jwt_token then
 		set_state(self, STATES.DISCONNECTED, { error = 'Auth response missing player ID or token' })
@@ -229,9 +235,37 @@ function connection:_handle_player_notification(topic, payload)
 		end
 	elseif subtopic == 'discord_unlinked' then
 		self.discord_name = nil
-		MPAPI.config_on_connect(self)
+		self.use_discord_name = false
+		self.display_name = self.username
 		MPAPI.sendDebugMessage('Discord unlinked')
 		fire(self, self.state, { player_update = true })
+	elseif subtopic == 'preferred_joker_changed' then
+		local ok, data = pcall(function()
+			if json and json.decode then
+				return json.decode(payload)
+			end
+			local j = require('json')
+			return j.decode(payload)
+		end)
+		if ok and data then
+			self.preferred_joker = data.preferredJoker or 'j_joker'
+			MPAPI.sendDebugMessage('Preferred joker changed to: ' .. tostring(self.preferred_joker))
+			fire(self, self.state, { player_update = true })
+		end
+	elseif subtopic == 'display_name_changed' then
+		local ok, data = pcall(function()
+			if json and json.decode then
+				return json.decode(payload)
+			end
+			local j = require('json')
+			return j.decode(payload)
+		end)
+		if ok and data then
+			self.display_name = data.displayName or self.username
+			self.use_discord_name = data.useDiscordName or false
+			MPAPI.sendDebugMessage('Display name changed to: ' .. tostring(self.display_name))
+			fire(self, self.state, { player_update = true })
+		end
 	end
 end
 

@@ -7,15 +7,23 @@ MPAPI.connection_state = {
 	discord_name = '',
 	discord_id = '',
 	is_temp = false,
+	use_discord_name = false,
+	preferred_joker = 'j_joker',
 }
+
+local _mqtt_instance = nil
+local _connection = nil
+local _ready = false
+local _ready_callbacks = {}
+local _last_opts = nil
 
 function MPAPI.update_display_name()
 	if MPAPI.connection_state.state ~= 'connected' then
 		MPAPI.connection_state.display_name = localize('b_retry_connection')
 		return
 	end
-	if MPAPI.config_get('use_discord_name') and MPAPI.connection_state.discord_name ~= '' then
-		MPAPI.connection_state.display_name = MPAPI.connection_state.discord_name
+	if _connection and _connection.display_name then
+		MPAPI.connection_state.display_name = MPAPI.truncate(_connection.display_name, 20)
 	elseif MPAPI.connection_state.steam_name ~= '' then
 		MPAPI.connection_state.display_name = MPAPI.connection_state.steam_name
 	else
@@ -25,12 +33,6 @@ function MPAPI.update_display_name()
 		MPAPI.account_button:update()
 	end
 end
-
-local _mqtt_instance = nil
-local _connection = nil
-local _ready = false
-local _ready_callbacks = {}
-local _last_opts = nil
 
 -- Server defaults
 local DEFAULTS = {
@@ -96,6 +98,8 @@ function MPAPI.connect(opts)
 			cs.steam_name = MPAPI.truncate(_connection.username or '', 20)
 			cs.discord_name = MPAPI.truncate(_connection.discord_name or '', 20)
 			cs.is_temp = _connection.is_temp or false
+			cs.use_discord_name = _connection.use_discord_name or false
+			cs.preferred_joker = _connection.preferred_joker or 'j_joker'
 		else
 			if new_state == 'authenticating' then
 				cs.status_text = localize('k_status_signing_in')
@@ -108,12 +112,17 @@ function MPAPI.connect(opts)
 			cs.steam_name = ''
 			cs.discord_name = ''
 			cs.is_temp = false
+			cs.use_discord_name = false
+			cs.preferred_joker = 'j_joker'
 		end
 		MPAPI.update_display_name()
 
-		-- Player data update (e.g. discord linked)
+		-- Player data update (e.g. discord linked/unlinked, display name changed)
 		if context.player_update then
 			cs.discord_name = MPAPI.truncate(_connection.discord_name or '', 20)
+			cs.use_discord_name = _connection.use_discord_name or false
+			cs.preferred_joker = _connection.preferred_joker or 'j_joker'
+			MPAPI.update_display_name()
 		end
 
 		-- Logging
@@ -162,6 +171,8 @@ function MPAPI.disconnect()
 	cs.steam_name = ''
 	cs.discord_name = ''
 	cs.is_temp = false
+	cs.use_discord_name = false
+	cs.preferred_joker = 'j_joker'
 end
 
 function MPAPI.is_connected()
@@ -200,6 +211,63 @@ function MPAPI.get_discord_link_url(callback)
 		return
 	end
 	conn.api:get_discord_link_url(conn.jwt_token, callback)
+end
+
+function MPAPI.set_use_discord_name(value, callback)
+	local conn = _connection
+	if not conn or conn:get_state() ~= 'connected' then
+		callback('Not connected', nil)
+		return
+	end
+	if not conn.jwt_token then
+		callback('No JWT token', nil)
+		return
+	end
+	conn.api:set_display_name_pref(conn.jwt_token, value, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+
+		-- Update connection state immediately from the HTTP response
+		if data.player then
+			conn.display_name = data.player.displayName or conn.username
+			conn.use_discord_name = data.player.useDiscordName or false
+		end
+		local cs = MPAPI.connection_state
+		cs.use_discord_name = conn.use_discord_name
+		MPAPI.update_display_name()
+		if MPAPI.account_overlay then
+			MPAPI.account_overlay:update()
+		end
+
+		callback(nil, data)
+	end)
+end
+
+function MPAPI.set_preferred_joker(value, callback)
+	local conn = _connection
+	if not conn or conn:get_state() ~= 'connected' then
+		callback('Not connected', nil)
+		return
+	end
+	if not conn.jwt_token then
+		callback('No JWT token', nil)
+		return
+	end
+	conn.api:set_preferred_joker(conn.jwt_token, value, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+
+		if data.player then
+			conn.preferred_joker = data.player.preferredJoker or 'j_joker'
+		end
+		MPAPI.connection_state.preferred_joker = conn.preferred_joker
+
+		callback(nil, data)
+	end)
 end
 
 function MPAPI.unlink_discord(callback)

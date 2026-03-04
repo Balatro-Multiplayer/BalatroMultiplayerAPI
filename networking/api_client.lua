@@ -187,4 +187,28 @@ function api_client:unlink_discord(jwt_token, callback)
 	self.mqtt:http_post_auth(self.base_url .. '/api/auth/unlink/discord', '{}', jwt_token)
 end
 
+function api_client:set_display_name_pref(jwt_token, use_discord_name, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self:_setup_http_callback(callback)
+
+	local body = json_encode({ useDiscordName = use_discord_name })
+	self.mqtt:http_post_auth(self.base_url .. '/api/auth/preferences/display-name', body, jwt_token)
+end
+
+function api_client:set_preferred_joker(jwt_token, preferred_joker, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self:_setup_http_callback(callback)
+
+	local body = json_encode({ preferredJoker = preferred_joker })
+	self.mqtt:http_post_auth(self.base_url .. '/api/auth/preferences/joker', body, jwt_token)
+end
+
 return api_client
