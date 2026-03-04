@@ -15,10 +15,10 @@ local _ready = false
 local _ready_callbacks = {}
 local _last_opts = nil
 
--- Production server defaults
+-- Server defaults
 local DEFAULTS = {
-    api_url     = "https://balatro.virtualized.dev",
-    mqtt_broker = "balatro.virtualized.dev",
+    api_url     = "http://localhost:8788",
+    mqtt_broker = "localhost",
     mqtt_port   = 8883,
     mqtt_secure = true,
 }
@@ -203,6 +203,7 @@ G.E_MANAGER:add_event(Event({
             return false
         end
         _ready = true
+        MPAPI.connect()
         for _, fn in ipairs(_ready_callbacks) do
             local ok, err = pcall(fn)
             if not ok then
