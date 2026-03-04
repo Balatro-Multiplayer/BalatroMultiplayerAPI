@@ -14,42 +14,42 @@ local select = select
 local require = require
 local tostring = tostring
 
-local os = require("os")
+local os = require('os')
 local os_time = os.time
 
-local string = require("string")
+local string = require('string')
 local str_format = string.format
 local str_gsub = string.gsub
 local str_match = string.match
 
-local table = require("table")
+local table = require('table')
 local table_remove = table.remove
 
-local coroutine = require("coroutine")
+local coroutine = require('coroutine')
 local coroutine_create = coroutine.create
 local coroutine_resume = coroutine.resume
 local coroutine_yield = coroutine.yield
 
-local math = require("math")
+local math = require('math')
 local math_random = math.random
 
 local luamqtt_VERSION
 
-local protocol = require("mqtt.protocol")
+local protocol = require('mqtt.protocol')
 local packet_type = protocol.packet_type
 local check_qos = protocol.check_qos
 local next_packet_id = protocol.next_packet_id
 local packet_id_required = protocol.packet_id_required
 
-local protocol4 = require("mqtt.protocol4")
+local protocol4 = require('mqtt.protocol4')
 local make_packet4 = protocol4.make_packet
 local parse_packet4 = protocol4.parse_packet
 
-local protocol5 = require("mqtt.protocol5")
+local protocol5 = require('mqtt.protocol5')
 local make_packet5 = protocol5.make_packet
 local parse_packet5 = protocol5.parse_packet
 
-local ioloop = require("mqtt.ioloop")
+local ioloop = require('mqtt.ioloop')
 local ioloop_get = ioloop.get
 
 -------
@@ -86,100 +86,100 @@ client_mt.__index = client_mt
 -- @treturn client_mt MQTT client instance table
 function client_mt:__init(args)
 	if not luamqtt_VERSION then
-		luamqtt_VERSION = require("mqtt")._VERSION
+		luamqtt_VERSION = require('mqtt')._VERSION
 	end
 
 	-- fetch and validate client args
 	local a = {} -- own client copy of args
 
 	for key, value in pairs(args) do
-		if type(key) ~= "string" then
-			error("expecting string key in args, got: "..type(key))
+		if type(key) ~= 'string' then
+			error('expecting string key in args, got: ' .. type(key))
 		end
 
 		local value_type = type(value)
-		if key == "uri" then
-			assert(value_type == "string", "expecting uri to be a string")
+		if key == 'uri' then
+			assert(value_type == 'string', 'expecting uri to be a string')
 			a.uri = value
-		elseif key == "clean" then
-			assert(value_type == "boolean", "expecting clean to be a boolean")
+		elseif key == 'clean' then
+			assert(value_type == 'boolean', 'expecting clean to be a boolean')
 			a.clean = value
-		elseif key == "version" then
-			assert(value_type == "number", "expecting version to be a number")
-			assert(value == 4 or value == 5, "expecting version to be a value either 4 or 5")
+		elseif key == 'version' then
+			assert(value_type == 'number', 'expecting version to be a number')
+			assert(value == 4 or value == 5, 'expecting version to be a value either 4 or 5')
 			a.version = value
-		elseif key == "id" then
-			assert(value_type == "string", "expecting id to be a string")
+		elseif key == 'id' then
+			assert(value_type == 'string', 'expecting id to be a string')
 			a.id = value
-		elseif key == "username" then
-			assert(value_type == "string", "expecting username to be a string")
+		elseif key == 'username' then
+			assert(value_type == 'string', 'expecting username to be a string')
 			a.username = value
-		elseif key == "password" then
-			assert(value_type == "string", "expecting password to be a string")
+		elseif key == 'password' then
+			assert(value_type == 'string', 'expecting password to be a string')
 			a.password = value
-		elseif key == "secure" then
-			assert(value_type == "boolean" or value_type == "table", "expecting secure to be a boolean or table")
+		elseif key == 'secure' then
+			assert(value_type == 'boolean' or value_type == 'table', 'expecting secure to be a boolean or table')
 			a.secure = value
-		elseif key == "will" then
-			assert(value_type == "table", "expecting will to be a table")
+		elseif key == 'will' then
+			assert(value_type == 'table', 'expecting will to be a table')
 			a.will = value
-		elseif key == "keep_alive" then
-			assert(value_type == "number", "expecting keep_alive to be a number")
+		elseif key == 'keep_alive' then
+			assert(value_type == 'number', 'expecting keep_alive to be a number')
 			a.keep_alive = value
-		elseif key == "properties" then
-			assert(value_type == "table", "expecting properties to be a table")
+		elseif key == 'properties' then
+			assert(value_type == 'table', 'expecting properties to be a table')
 			a.properties = value
-		elseif key == "user_properties" then
-			assert(value_type == "table", "expecting user_properties to be a table")
+		elseif key == 'user_properties' then
+			assert(value_type == 'table', 'expecting user_properties to be a table')
 			a.user_properties = value
-		elseif key == "reconnect" then
-			assert(value_type == "boolean" or value_type == "number", "expecting reconnect to be a boolean or number")
+		elseif key == 'reconnect' then
+			assert(value_type == 'boolean' or value_type == 'number', 'expecting reconnect to be a boolean or number')
 			a.reconnect = value
-		elseif key == "connector" then
+		elseif key == 'connector' then
 			a.connector = value
-		elseif key == "ssl_module" then
-			assert(value_type == "string", "expecting ssl_module to be a string")
+		elseif key == 'ssl_module' then
+			assert(value_type == 'string', 'expecting ssl_module to be a string')
 			a.ssl_module = value
 		else
-			error("unexpected key in client args: "..key.." = "..tostring(value))
+			error('unexpected key in client args: ' .. key .. ' = ' .. tostring(value))
 		end
 	end
 
 	-- check required arguments
 	assert(a.uri, 'expecting uri="..." to create MQTT client')
-	assert(a.clean ~= nil, "expecting clean=true or clean=false to create MQTT client")
-	assert(not a.password or a.username, "password is not accepted in absence of username")
+	assert(a.clean ~= nil, 'expecting clean=true or clean=false to create MQTT client')
+	assert(not a.password or a.username, 'password is not accepted in absence of username')
 
 	if not a.id then
 		-- generate random client id
-		a.id = str_format("luamqtt-v%s-%07x", str_gsub(luamqtt_VERSION, "[^%d]", "-"), math_random(1, 0xFFFFFFF))
+		a.id = str_format('luamqtt-v%s-%07x', str_gsub(luamqtt_VERSION, '[^%d]', '-'), math_random(1, 0xFFFFFFF))
 	end
 
 	-- default connector
 	if a.connector == nil then
 		if a.secure then
-			a.connector = require("mqtt.luasocket_ssl")
+			a.connector = require('mqtt.luasocket_ssl')
 		else
-			a.connector = require("mqtt.luasocket")
+			a.connector = require('mqtt.luasocket')
 		end
 	end
 	-- validate connector content
-	assert(type(a.connector) == "table", "expecting connector to be a table")
-	assert(type(a.connector.connect) == "function", "expecting connector.connect to be a function")
-	assert(type(a.connector.shutdown) == "function", "expecting connector.shutdown to be a function")
-	assert(type(a.connector.send) == "function", "expecting connector.send to be a function")
-	assert(type(a.connector.receive) == "function", "expecting connector.receive to be a function")
+	assert(type(a.connector) == 'table', 'expecting connector to be a table')
+	assert(type(a.connector.connect) == 'function', 'expecting connector.connect to be a function')
+	assert(type(a.connector.shutdown) == 'function', 'expecting connector.shutdown to be a function')
+	assert(type(a.connector.send) == 'function', 'expecting connector.send to be a function')
+	assert(type(a.connector.receive) == 'function', 'expecting connector.receive to be a function')
 
 	-- will table content check
 	if a.will then
-		assert(type(a.will.topic) == "string", "expecting will.topic to be a string")
-		assert(type(a.will.payload) == "string", "expecting will.payload to be a string")
+		assert(type(a.will.topic) == 'string', 'expecting will.topic to be a string')
+		assert(type(a.will.payload) == 'string', 'expecting will.payload to be a string')
 		if a.will.qos ~= nil then
-			assert(type(a.will.qos) == "number", "expecting will.qos to be a number")
-			assert(check_qos(a.will.qos), "expecting will.qos to be a valid QoS value")
+			assert(type(a.will.qos) == 'number', 'expecting will.qos to be a number')
+			assert(check_qos(a.will.qos), 'expecting will.qos to be a valid QoS value')
 		end
 		if a.will.retain ~= nil then
-			assert(type(a.will.retain) == "boolean", "expecting will.retain to be a boolean")
+			assert(type(a.will.retain) == 'boolean', 'expecting will.retain to be a boolean')
 		end
 	end
 
@@ -206,8 +206,8 @@ function client_mt:__init(args)
 	self._to_remove_handlers = {}
 
 	-- state
-	self.first_connect = true		-- contains true to perform one network connection attemt after client creation
-	self.send_time = 0				-- time of the last network send from client side
+	self.first_connect = true -- contains true to perform one network connection attemt after client creation
+	self.send_time = 0 -- time of the last network send from client side
 
 	-- packet creation/parse functions according version
 	if not a.version then
@@ -232,21 +232,21 @@ end
 --- Add functions as handlers of given events
 -- @param ... (event_name, function) or { event1 = func1, event2 = func2 } table
 function client_mt:on(...)
-	local nargs = select("#", ...)
+	local nargs = select('#', ...)
 	local events
 	if nargs == 2 then
 		events = { [select(1, ...)] = select(2, ...) }
 	elseif nargs == 1 then
 		events = select(1, ...)
 	else
-		error("invalid args: expected only one or two arguments")
+		error('invalid args: expected only one or two arguments')
 	end
 	for event, func in pairs(events) do
-		assert(type(event) == "string", "expecting event to be a string")
-		assert(type(func) == "function", "expecting func to be a function")
+		assert(type(event) == 'string', 'expecting event to be a string')
+		assert(type(func) == 'function', 'expecting func to be a function')
 		local handlers = self.handlers[event]
 		if not handlers then
-			error("invalid event '"..tostring(event).."' to handle")
+			error("invalid event '" .. tostring(event) .. "' to handle")
 		end
 		handlers[#handlers + 1] = func
 	end
@@ -268,7 +268,7 @@ end
 function client_mt:off(event, func)
 	local handlers = self.handlers[event]
 	if not handlers then
-		error("invalid event '"..tostring(event).."' to handle")
+		error("invalid event '" .. tostring(event) .. "' to handle")
 	end
 	if self._handling[event] then
 		-- this event is handling now, schedule the function removing to the moment after all handlers will be called for the event
@@ -295,19 +295,19 @@ end
 -- @return packet id on success or false and error message on failure
 function client_mt:subscribe(args)
 	-- fetch and validate args
-	assert(type(args) == "table", "expecting args to be a table")
-	assert(type(args.topic) == "string", "expecting args.topic to be a string")
-	assert(args.qos == nil or (type(args.qos) == "number" and check_qos(args.qos)), "expecting valid args.qos value")
-	assert(args.no_local == nil or type(args.no_local) == "boolean", "expecting args.no_local to be a boolean")
-	assert(args.retain_as_published == nil or type(args.retain_as_published) == "boolean", "expecting args.retain_as_published to be a boolean")
-	assert(args.retain_handling == nil or type(args.retain_handling) == "boolean", "expecting args.retain_handling to be a boolean")
-	assert(args.properties == nil or type(args.properties) == "table", "expecting args.properties to be a table")
-	assert(args.user_properties == nil or type(args.user_properties) == "table", "expecting args.user_properties to be a table")
-	assert(args.callback == nil or type(args.callback) == "function", "expecting args.callback to be a function")
+	assert(type(args) == 'table', 'expecting args to be a table')
+	assert(type(args.topic) == 'string', 'expecting args.topic to be a string')
+	assert(args.qos == nil or (type(args.qos) == 'number' and check_qos(args.qos)), 'expecting valid args.qos value')
+	assert(args.no_local == nil or type(args.no_local) == 'boolean', 'expecting args.no_local to be a boolean')
+	assert(args.retain_as_published == nil or type(args.retain_as_published) == 'boolean', 'expecting args.retain_as_published to be a boolean')
+	assert(args.retain_handling == nil or type(args.retain_handling) == 'boolean', 'expecting args.retain_handling to be a boolean')
+	assert(args.properties == nil or type(args.properties) == 'table', 'expecting args.properties to be a table')
+	assert(args.user_properties == nil or type(args.user_properties) == 'table', 'expecting args.user_properties to be a table')
+	assert(args.callback == nil or type(args.callback) == 'function', 'expecting args.callback to be a function')
 
 	-- check connection is alive
 	if not self.connection then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- create SUBSCRIBE packet
@@ -319,7 +319,7 @@ function client_mt:subscribe(args)
 				qos = args.qos,
 				no_local = args.no_local,
 				retain_as_published = args.retain_as_published,
-				retain_handling = args.retain_handling
+				retain_handling = args.retain_handling,
 			},
 		},
 		properties = args.properties,
@@ -332,9 +332,9 @@ function client_mt:subscribe(args)
 	-- send SUBSCRIBE packet
 	local ok, err = self:_send_packet(subscribe)
 	if not ok then
-		err = "failed to send SUBSCRIBE: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send SUBSCRIBE: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
@@ -343,11 +343,11 @@ function client_mt:subscribe(args)
 	if callback then
 		local function handler(suback, ...)
 			if suback.packet_id == packet_id then
-				self:off("subscribe", handler)
+				self:off('subscribe', handler)
 				callback(suback, ...)
 			end
 		end
-		self:on("subscribe", handler)
+		self:on('subscribe', handler)
 	end
 
 	-- returns assigned packet id
@@ -363,22 +363,21 @@ end
 -- @return packet id on success or false and error message on failure
 function client_mt:unsubscribe(args)
 	-- fetch and validate args
-	assert(type(args) == "table", "expecting args to be a table")
-	assert(type(args.topic) == "string", "expecting args.topic to be a string")
-	assert(args.properties == nil or type(args.properties) == "table", "expecting args.properties to be a table")
-	assert(args.user_properties == nil or type(args.user_properties) == "table", "expecting args.user_properties to be a table")
-	assert(args.callback == nil or type(args.callback) == "function", "expecting args.callback to be a function")
-
+	assert(type(args) == 'table', 'expecting args to be a table')
+	assert(type(args.topic) == 'string', 'expecting args.topic to be a string')
+	assert(args.properties == nil or type(args.properties) == 'table', 'expecting args.properties to be a table')
+	assert(args.user_properties == nil or type(args.user_properties) == 'table', 'expecting args.user_properties to be a table')
+	assert(args.callback == nil or type(args.callback) == 'function', 'expecting args.callback to be a function')
 
 	-- check connection is alive
 	if not self.connection then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- create UNSUBSCRIBE packet
-	local  pargs = {
+	local pargs = {
 		type = packet_type.UNSUBSCRIBE,
-		subscriptions = {args.topic},
+		subscriptions = { args.topic },
 		properties = args.properties,
 		user_properties = args.user_properties,
 	}
@@ -389,9 +388,9 @@ function client_mt:unsubscribe(args)
 	-- send UNSUBSCRIBE packet
 	local ok, err = self:_send_packet(unsubscribe)
 	if not ok then
-		err = "failed to send UNSUBSCRIBE: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send UNSUBSCRIBE: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
@@ -400,11 +399,11 @@ function client_mt:unsubscribe(args)
 	if callback then
 		local function handler(unsuback, ...)
 			if unsuback.packet_id == packet_id then
-				self:off("unsubscribe", handler)
+				self:off('unsubscribe', handler)
 				callback(unsuback, ...)
 			end
 		end
-		self:on("unsubscribe", handler)
+		self:on('unsubscribe', handler)
 	end
 
 	-- returns assigned packet id
@@ -424,23 +423,23 @@ end
 -- @return true or packet id on success or false and error message on failure
 function client_mt:publish(args)
 	-- fetch and validate args
-	assert(type(args) == "table", "expecting args to be a table")
-	assert(type(args.topic) == "string", "expecting args.topic to be a string")
-	assert(args.payload == nil or type(args.payload) == "string", "expecting args.payload to be a string")
-	assert(args.qos == nil or type(args.qos) == "number", "expecting args.qos to be a number")
+	assert(type(args) == 'table', 'expecting args to be a table')
+	assert(type(args.topic) == 'string', 'expecting args.topic to be a string')
+	assert(args.payload == nil or type(args.payload) == 'string', 'expecting args.payload to be a string')
+	assert(args.qos == nil or type(args.qos) == 'number', 'expecting args.qos to be a number')
 	if args.qos then
-		assert(check_qos(args.qos), "expecting qos to be a valid QoS value")
+		assert(check_qos(args.qos), 'expecting qos to be a valid QoS value')
 	end
-	assert(args.retain == nil or type(args.retain) == "boolean", "expecting args.retain to be a boolean")
-	assert(args.dup == nil or type(args.dup) == "boolean", "expecting args.dup to be a boolean")
-	assert(args.properties == nil or type(args.properties) == "table", "expecting args.properties to be a table")
-	assert(args.user_properties == nil or type(args.user_properties) == "table", "expecting args.user_properties to be a table")
-	assert(args.callback == nil or type(args.callback) == "function", "expecting args.callback to be a function")
+	assert(args.retain == nil or type(args.retain) == 'boolean', 'expecting args.retain to be a boolean')
+	assert(args.dup == nil or type(args.dup) == 'boolean', 'expecting args.dup to be a boolean')
+	assert(args.properties == nil or type(args.properties) == 'table', 'expecting args.properties to be a table')
+	assert(args.user_properties == nil or type(args.user_properties) == 'table', 'expecting args.user_properties to be a table')
+	assert(args.callback == nil or type(args.callback) == 'function', 'expecting args.callback to be a function')
 
 	-- check connection is alive
 	local conn = self.connection
 	if not conn then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- create PUBLISH packet
@@ -452,9 +451,9 @@ function client_mt:publish(args)
 	-- send PUBLISH packet
 	local ok, err = self:_send_packet(publish)
 	if not ok then
-		err = "failed to send PUBLISH: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send PUBLISH: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
@@ -469,13 +468,13 @@ function client_mt:publish(args)
 		if packet_id then
 			local function handler(ack, ...)
 				if ack.packet_id == packet_id then
-					self:off("acknowledge", handler)
+					self:off('acknowledge', handler)
 					callback(ack, ...)
 				end
 			end
-			self:on("acknowledge", handler)
+			self:on('acknowledge', handler)
 		else
-			callback("no ack for QoS 0 message", self)
+			callback('no ack for QoS 0 message', self)
 		end
 	end
 
@@ -490,15 +489,15 @@ end
 -- @tparam[opt] table user_properties	user properties for PUBACK/PUBREC packets
 -- @return true on success or false and error message on failure
 function client_mt:acknowledge(msg, rc, properties, user_properties)
-	assert(type(msg) == "table" and msg.type == packet_type.PUBLISH, "expecting msg to be a publish packet")
-	assert(rc == nil or type(rc) == "number", "expecting rc to be a number")
-	assert(properties == nil or type(properties) == "table", "expecting properties to be a table")
-	assert(user_properties == nil or type(user_properties) == "table", "expecting user_properties to be a table")
+	assert(type(msg) == 'table' and msg.type == packet_type.PUBLISH, 'expecting msg to be a publish packet')
+	assert(rc == nil or type(rc) == 'number', 'expecting rc to be a number')
+	assert(properties == nil or type(properties) == 'table', 'expecting properties to be a table')
+	assert(user_properties == nil or type(user_properties) == 'table', 'expecting user_properties to be a table')
 
 	-- check connection is alive
 	local conn = self.connection
 	if not conn then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- check packet needs to be acknowledged
@@ -511,40 +510,40 @@ function client_mt:acknowledge(msg, rc, properties, user_properties)
 		-- PUBACK should be sent
 
 		-- create PUBACK packet
-		local puback = self._make_packet{
+		local puback = self._make_packet({
 			type = packet_type.PUBACK,
 			packet_id = packet_id,
 			rc = rc or 0,
 			properties = properties,
 			user_properties = user_properties,
-		}
+		})
 
 		-- send PUBACK packet
 		local ok, err = self:_send_packet(puback)
 		if not ok then
-			err = "failed to send PUBACK: "..err
-			self:handle("error", err, self)
-			self:close_connection("error")
+			err = 'failed to send PUBACK: ' .. err
+			self:handle('error', err, self)
+			self:close_connection('error')
 			return false, err
 		end
 	elseif msg.qos == 2 then
 		-- PUBREC should be sent and packet_id should be remembered for PUBREL+PUBCOMP sequence
 
 		-- create PUBREC packet
-		local pubrec = self._make_packet{
+		local pubrec = self._make_packet({
 			type = packet_type.PUBREC,
 			packet_id = packet_id,
 			rc = rc or 0,
 			properties = properties,
 			user_properties = user_properties,
-		}
+		})
 
 		-- send PUBREC packet
 		local ok, err = self:_send_packet(pubrec)
 		if not ok then
-			err = "failed to send PUBREC: "..err
-			self:handle("error", err, self)
-			self:close_connection("error")
+			err = 'failed to send PUBREC: ' .. err
+			self:handle('error', err, self)
+			self:close_connection('error')
 			return false, err
 		end
 
@@ -562,34 +561,34 @@ end
 -- @return true on success or false and error message on failure
 function client_mt:disconnect(rc, properties, user_properties)
 	-- validate args
-	assert(rc == nil or type(rc) == "number", "expecting rc to be a number")
-	assert(properties == nil or type(properties) == "table", "expecting properties to be a table")
-	assert(user_properties == nil or type(user_properties) == "table", "expecting user_properties to be a table")
+	assert(rc == nil or type(rc) == 'number', 'expecting rc to be a number')
+	assert(properties == nil or type(properties) == 'table', 'expecting properties to be a table')
+	assert(user_properties == nil or type(user_properties) == 'table', 'expecting user_properties to be a table')
 
 	-- check connection is alive
 	if not self.connection then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- create DISCONNECT packet
-	local disconnect = self._make_packet{
+	local disconnect = self._make_packet({
 		type = packet_type.DISCONNECT,
 		rc = rc or 0,
 		properties = properties,
 		user_properties = user_properties,
-	}
+	})
 
 	-- send DISCONNECT packet
 	local ok, err = self:_send_packet(disconnect)
 	if not ok then
-		err = "failed to send DISCONNECT: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send DISCONNECT: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
 	-- now close connection
-	self:close_connection("connection closed by client")
+	self:close_connection('connection closed by client')
 
 	return true
 end
@@ -601,30 +600,30 @@ end
 -- @return true on success or false and error message on failure
 function client_mt:auth(rc, properties, user_properties)
 	-- validate args
-	assert(rc == nil or type(rc) == "number", "expecting rc to be a number")
-	assert(properties == nil or type(properties) == "table", "expecting properties to be a table")
-	assert(user_properties == nil or type(user_properties) == "table", "expecting user_properties to be a table")
-	assert(self.args.version == 5, "allowed only in MQTT v5.0 protocol")
+	assert(rc == nil or type(rc) == 'number', 'expecting rc to be a number')
+	assert(properties == nil or type(properties) == 'table', 'expecting properties to be a table')
+	assert(user_properties == nil or type(user_properties) == 'table', 'expecting user_properties to be a table')
+	assert(self.args.version == 5, 'allowed only in MQTT v5.0 protocol')
 
 	-- check connection is alive
 	if not self.connection then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- create AUTH packet
-	local auth = self._make_packet{
+	local auth = self._make_packet({
 		type = packet_type.AUTH,
 		rc = rc or 0,
 		properties = properties,
 		user_properties = user_properties,
-	}
+	})
 
 	-- send AUTH packet
 	local ok, err = self:_send_packet(auth)
 	if not ok then
-		err = "failed to send AUTH: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send AUTH: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
@@ -634,7 +633,7 @@ end
 --- Immediately close established network connection, without graceful session finishing with DISCONNECT packet
 -- @tparam[opt] string reason the reasong string of connection close
 function client_mt:close_connection(reason)
-	assert(not reason or type(reason) == "string", "expecting reason to be a string")
+	assert(not reason or type(reason) == 'string', 'expecting reason to be a string')
 	local conn = self.connection
 	if not conn then
 		return true
@@ -643,9 +642,9 @@ function client_mt:close_connection(reason)
 	local args = self.args
 	args.connector.shutdown(conn)
 	self.connection = nil
-	conn.close_reason = reason or "unspecified"
+	conn.close_reason = reason or 'unspecified'
 
-	self:handle("close", conn, self)
+	self:handle('close', conn, self)
 
 	-- check connection is still closed (self.connection may be re-created in "close" handler)
 	if not self.connection then
@@ -685,20 +684,20 @@ end
 function client_mt:send_pingreq()
 	-- check connection is alive
 	if not self.connection then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- create PINGREQ packet
-	local pingreq = self._make_packet{
+	local pingreq = self._make_packet({
 		type = packet_type.PINGREQ,
-	}
+	})
 
 	-- send PINGREQ packet
 	local ok, err = self:_send_packet(pingreq)
 	if not ok then
-		err = "failed to send PINGREQ: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send PINGREQ: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
@@ -713,13 +712,13 @@ function client_mt:open_connection()
 	end
 
 	local args = self.args
-	local connector = assert(args.connector, "no connector configured in MQTT client")
+	local connector = assert(args.connector, 'no connector configured in MQTT client')
 
 	-- create connection table
 	local conn = {
 		uri = args.uri,
-		wait_for_pubrec = {},	-- a table with packet_id of parially acknowledged sent packets in QoS 2 exchange process
-		wait_for_pubrel = {},	-- a table with packet_id of parially acknowledged received packets in QoS 2 exchange process
+		wait_for_pubrec = {}, -- a table with packet_id of parially acknowledged sent packets in QoS 2 exchange process
+		wait_for_pubrel = {}, -- a table with packet_id of parially acknowledged received packets in QoS 2 exchange process
 	}
 	client_mt._parse_uri(args, conn)
 	client_mt._apply_secure(args, conn)
@@ -727,8 +726,8 @@ function client_mt:open_connection()
 	-- perform connect
 	local ok, err = connector.connect(conn)
 	if not ok then
-		err = "failed to open network connection: "..err
-		self:handle("error", err, self)
+		err = 'failed to open network connection: ' .. err
+		self:handle('error', err, self)
 		return false, err
 	end
 
@@ -751,13 +750,13 @@ end
 function client_mt:send_connect()
 	-- check connection is alive
 	if not self.connection then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	local args = self.args
 
 	-- create CONNECT packet
-	local connect = self._make_packet{
+	local connect = self._make_packet({
 		type = packet_type.CONNECT,
 		id = args.id,
 		clean = args.clean,
@@ -767,14 +766,14 @@ function client_mt:send_connect()
 		keep_alive = args.keep_alive,
 		properties = args.properties,
 		user_properties = args.user_properties,
-	}
+	})
 
 	-- send CONNECT packet
 	local ok, err = self:_send_packet(connect)
 	if not ok then
-		err = "failed to send CONNECT: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send CONNECT: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
@@ -797,18 +796,18 @@ end
 function client_mt:acknowledge_pubrel(packet_id)
 	-- check connection is alive
 	if not self.connection then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- create PUBREL packet
-	local pubrel = self._make_packet{type=packet_type.PUBREL, packet_id=packet_id, rc=0}
+	local pubrel = self._make_packet({ type = packet_type.PUBREL, packet_id = packet_id, rc = 0 })
 
 	-- send PUBREL packet
 	local ok, err = self:_send_packet(pubrel)
 	if not ok then
-		err = "failed to send PUBREL: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send PUBREL: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
@@ -820,18 +819,18 @@ end
 function client_mt:acknowledge_pubcomp(packet_id)
 	-- check connection is alive
 	if not self.connection then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 
 	-- create PUBCOMP packet
-	local pubcomp = self._make_packet{type=packet_type.PUBCOMP, packet_id=packet_id, rc=0}
+	local pubcomp = self._make_packet({ type = packet_type.PUBCOMP, packet_id = packet_id, rc = 0 })
 
 	-- send PUBCOMP packet
 	local ok, err = self:_send_packet(pubcomp)
 	if not ok then
-		err = "failed to send PUBCOMP: "..err
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to send PUBCOMP: ' .. err
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
@@ -842,7 +841,7 @@ end
 function client_mt:handle(event, ...)
 	local handlers = self.handlers[event]
 	if not handlers then
-		error("invalid event '"..tostring(event).."' to handle")
+		error("invalid event '" .. tostring(event) .. "' to handle")
 	end
 	self._handling[event] = true -- protecting self.handlers[event] table from modifications by client_mt:off() when iterating
 	for _, handler in ipairs(handlers) do
@@ -954,33 +953,33 @@ function client_mt:_io_iteration(recv)
 
 	-- check coroutine resume status
 	if not ok then
-		err = "failed to resume receive packet coroutine: "..tostring(packet)
-		self:handle("error", err, self)
-		self:close_connection("error")
+		err = 'failed to resume receive packet coroutine: ' .. tostring(packet)
+		self:handle('error', err, self)
+		self:close_connection('error')
 		return false, err
 	end
 
 	-- check for communication error
 	if packet == false then
-		if err == "closed" then
-			self:close_connection("connection closed by broker")
+		if err == 'closed' then
+			self:close_connection('connection closed by broker')
 			return false, err
 		else
-			err = "failed to receive next packet: "..err
-			self:handle("error", err, self)
-			self:close_connection("error")
+			err = 'failed to receive next packet: ' .. err
+			self:handle('error', err, self)
+			self:close_connection('error')
 			return false, err
 		end
 	end
 
 	-- check some packet received
-	if packet ~= "timeout" and packet ~= "wantread" then
+	if packet ~= 'timeout' and packet ~= 'wantread' then
 		if not conn.connack then
 			-- expecting only CONNACK packet here
 			if packet.type ~= packet_type.CONNACK then
-				err = "expecting CONNACK but received "..packet.type
-				self:handle("error", err, self)
-				self:close_connection("error")
+				err = 'expecting CONNACK but received ' .. packet.type
+				self:handle('error', err, self)
+				self:close_connection('error')
 				return false, err
 			end
 
@@ -989,15 +988,15 @@ function client_mt:_io_iteration(recv)
 
 			-- check CONNACK rc
 			if packet.rc ~= 0 then
-				err = str_format("CONNECT failed with CONNACK [rc=%d]: %s", packet.rc, packet:reason_string())
-				self:handle("error", err, self, packet)
-				self:handle("connect", packet, self)
-				self:close_connection("connection failed")
+				err = str_format('CONNECT failed with CONNACK [rc=%d]: %s', packet.rc, packet:reason_string())
+				self:handle('error', err, self, packet)
+				self:handle('connect', packet, self)
+				self:close_connection('connection failed')
 				return false, err
 			end
 
 			-- fire connect event
-			self:handle("connect", packet, self)
+			self:handle('connect', packet, self)
 		else
 			-- connection authorized, so process usual packets
 
@@ -1007,14 +1006,14 @@ function client_mt:_io_iteration(recv)
 				-- PINGREQ answer, nothing to do
 				-- TODO: break the connectin in absence of this packet in some timeout
 			elseif ptype == packet_type.SUBACK then
-				self:handle("subscribe", packet, self)
+				self:handle('subscribe', packet, self)
 			elseif ptype == packet_type.UNSUBACK then
-				self:handle("unsubscribe", packet, self)
+				self:handle('unsubscribe', packet, self)
 			elseif ptype == packet_type.PUBLISH then
 				-- check such packet is not waiting for pubrel acknowledge
-				self:handle("message", packet, self)
+				self:handle('message', packet, self)
 			elseif ptype == packet_type.PUBACK then
-				self:handle("acknowledge", packet, self)
+				self:handle('acknowledge', packet, self)
 			elseif ptype == packet_type.PUBREC then
 				local packet_id = packet.packet_id
 				if conn.wait_for_pubrec[packet_id] then
@@ -1022,7 +1021,7 @@ function client_mt:_io_iteration(recv)
 					-- send PUBREL acknowledge
 					if self:acknowledge_pubrel(packet_id) then
 						-- and fire acknowledge event
-						self:handle("acknowledge", packet, self)
+						self:handle('acknowledge', packet, self)
 					end
 				end
 			elseif ptype == packet_type.PUBREL then
@@ -1038,11 +1037,11 @@ function client_mt:_io_iteration(recv)
 				-- last phase of QoS 2 exchange
 				-- do nothing here
 			elseif ptype == packet_type.DISCONNECT then
-				self:close_connection("disconnect received from broker")
+				self:close_connection('disconnect received from broker')
 			elseif ptype == packet_type.AUTH then
-				self:handle("auth", packet, self)
-			-- else
-			-- 	print("unhandled packet:", packet) -- debug
+				self:handle('auth', packet, self)
+				-- else
+				-- 	print("unhandled packet:", packet) -- debug
 			end
 		end
 	end
@@ -1076,7 +1075,7 @@ function client_mt:_apply_network_timeout()
 			conn.recv_func = function(...)
 				while true do
 					local data, err = sync_recv_func(...)
-					if not data and (err == "timeout" or err == "wantread") then
+					if not data and (err == 'timeout' or err == 'wantread') then
 						loop.timeouted = true
 						coroutine_yield(err)
 					else
@@ -1100,10 +1099,10 @@ end
 
 -- Fill given connection table with host and port according given args
 function client_mt._parse_uri(args, conn)
-	local host, port = str_match(args.uri, "^([^%s]+):(%d+)$")
+	local host, port = str_match(args.uri, '^([^%s]+):(%d+)$')
 	if not host then
 		-- trying pattern without port
-		host = assert(str_match(conn.uri, "^([^%s]+)$"), "invalid uri format: expecting at least host/ip in .uri")
+		host = assert(str_match(conn.uri, '^([^%s]+)$'), 'invalid uri format: expecting at least host/ip in .uri')
 	end
 	if not port then
 		if args.secure then
@@ -1122,17 +1121,17 @@ function client_mt._apply_secure(args, conn)
 	local secure = args.secure
 	if secure then
 		conn.secure = true
-		if type(secure) == "table" then
+		if type(secure) == 'table' then
 			conn.secure_params = secure
 		else
 			conn.secure_params = {
-				mode = "client",
-				protocol = "tlsv1_2",
-				verify = "none",
-				options = "all",
+				mode = 'client',
+				protocol = 'tlsv1_2',
+				verify = 'none',
+				options = 'all',
 			}
 		end
-		conn.ssl_module = args.ssl_module or "ssl"
+		conn.ssl_module = args.ssl_module or 'ssl'
 	end
 end
 
@@ -1140,12 +1139,12 @@ end
 function client_mt:_send_packet(packet)
 	local conn = self.connection
 	if not conn then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 	local data = tostring(packet)
 	local len = data:len()
 	if len <= 0 then
-		return false, "sending empty packet"
+		return false, 'sending empty packet'
 	end
 	-- and send binary packet to network connection
 	local i, err = 1
@@ -1153,7 +1152,7 @@ function client_mt:_send_packet(packet)
 	while i < len do
 		i, err = send(conn, data, i)
 		if not i then
-			return false, "connector.send failed: "..err
+			return false, 'connector.send failed: ' .. err
 		end
 	end
 	self.send_time = os_time()
@@ -1164,7 +1163,7 @@ end
 function client_mt:_receive_packet()
 	local conn = self.connection
 	if not conn then
-		return false, "network connection is not opened"
+		return false, 'network connection is not opened'
 	end
 	-- parse packet
 	local packet, err = self._parse_packet(conn.recv_func)
@@ -1176,14 +1175,14 @@ end
 
 -- Represent MQTT client as string
 function client_mt:__tostring()
-	return str_format("mqtt.client{id=%q}", tostring(self.args.id))
+	return str_format('mqtt.client{id=%q}', tostring(self.args.id))
 end
 
 -- Garbage collection handler
 function client_mt:__gc()
 	-- close network connection if it's available, without sending DISCONNECT packet
 	if self.connection then
-		self:close_connection("garbage")
+		self:close_connection('garbage')
 	end
 end
 

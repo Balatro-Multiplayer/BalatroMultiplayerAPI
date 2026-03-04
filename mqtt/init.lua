@@ -20,11 +20,11 @@ CONVENTIONS:
 -- @table mqtt
 local mqtt = {
 	-- supported MQTT protocol versions
-	v311 = 4,		-- supported protocol version, MQTT v3.1.1
-	v50 = 5,		-- supported protocol version, MQTT v5.0
+	v311 = 4, -- supported protocol version, MQTT v3.1.1
+	v50 = 5, -- supported protocol version, MQTT v5.0
 
 	-- mqtt library version
-	_VERSION = "3.4.3",
+	_VERSION = '3.4.3',
 }
 
 -- load required stuff
@@ -32,10 +32,10 @@ local type = type
 local select = select
 local require = require
 
-local client = require("mqtt.client")
+local client = require('mqtt.client')
 local client_create = client.create
 
-local ioloop_get = require("mqtt.ioloop").get
+local ioloop_get = require('mqtt.ioloop').get
 
 --- Create new MQTT client instance
 -- @param ... Same as for mqtt.client.create(...)
@@ -54,10 +54,10 @@ mqtt.get_ioloop = ioloop_get
 -- @see mqtt.ioloop.run_until_clients
 function mqtt.run_ioloop(...)
 	local loop = ioloop_get()
-	for i = 1, select("#", ...) do
+	for i = 1, select('#', ...) do
 		local cl = select(i, ...)
 		loop:add(cl)
-		if type(cl) ~= "function" then
+		if type(cl) ~= 'function' then
 			cl:start_connecting()
 		end
 	end

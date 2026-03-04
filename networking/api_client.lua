@@ -1,142 +1,146 @@
 local api_client = {}
 
 function api_client.new(mqtt_client, base_url)
-    local self = {
-        mqtt = mqtt_client,
-        base_url = base_url,
-        pending_callback = nil,
-    }
-    setmetatable(self, { __index = api_client })
-    return self
+	local self = {
+		mqtt = mqtt_client,
+		base_url = base_url,
+		pending_callback = nil,
+	}
+	setmetatable(self, { __index = api_client })
+	return self
 end
 
 local function json_encode(tbl)
-    if json and json.encode then
-        return json.encode(tbl)
-    end
-    local j = require("json")
-    return j.encode(tbl)
+	if json and json.encode then
+		return json.encode(tbl)
+	end
+	local j = require('json')
+	return j.encode(tbl)
 end
 
 local function json_decode(str)
-    if json and json.decode then
-        return json.decode(str)
-    end
-    local j = require("json")
-    return j.decode(str)
+	if json and json.decode then
+		return json.decode(str)
+	end
+	local j = require('json')
+	return j.decode(str)
 end
 
 -- Set up HTTP response/error handlers that parse JSON and invoke callback(err, data)
 function api_client:_setup_http_callback(callback)
-    self.pending_callback = callback
+	self.pending_callback = callback
 
-    self.mqtt.on_http_response = function(status, body)
-        self.mqtt.on_http_response = nil
-        self.mqtt.on_http_error = nil
-        local cb = self.pending_callback
-        self.pending_callback = nil
-        if not cb then return end
+	self.mqtt.on_http_response = function(status, body)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if not cb then
+			return
+		end
 
-        if status ~= 200 then
-            cb("Server returned status " .. tostring(status) .. ": " .. body, nil)
-            return
-        end
+		if status ~= 200 then
+			cb('Server returned status ' .. tostring(status) .. ': ' .. body, nil)
+			return
+		end
 
-        local ok, data = pcall(json_decode, body)
+		local ok, data = pcall(json_decode, body)
 
-        if not ok or not data then
-            cb("Failed to parse server response", nil)
-            return
-        end
+		if not ok or not data then
+			cb('Failed to parse server response', nil)
+			return
+		end
 
-        if not data.token then
-            cb(data.error or "Server response missing token", nil)
-            return
-        end
+		if not data.token then
+			cb(data.error or 'Server response missing token', nil)
+			return
+		end
 
-        cb(nil, data)
-    end
+		cb(nil, data)
+	end
 
-    self.mqtt.on_http_error = function(msg)
-        self.mqtt.on_http_response = nil
-        self.mqtt.on_http_error = nil
-        local cb = self.pending_callback
-        self.pending_callback = nil
-        if cb then
-            cb("HTTP request failed: " .. tostring(msg), nil)
-        end
-    end
+	self.mqtt.on_http_error = function(msg)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if cb then
+			cb('HTTP request failed: ' .. tostring(msg), nil)
+		end
+	end
 end
 
 function api_client:authenticate_steam(ticket, username, callback)
-    if not self.mqtt or not self.mqtt.tx_channel then
-        callback("MQTT thread not running", nil)
-        return
-    end
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
 
-    self:_setup_http_callback(callback)
+	self:_setup_http_callback(callback)
 
-    local body = json_encode({ ticket = ticket, username = username })
-    self.mqtt:http_post(self.base_url .. "/api/auth/steam", body)
+	local body = json_encode({ ticket = ticket, username = username })
+	self.mqtt:http_post(self.base_url .. '/api/auth/steam', body)
 end
 
 function api_client:authenticate_refresh(refresh_token, username, callback)
-    if not self.mqtt or not self.mqtt.tx_channel then
-        callback("MQTT thread not running", nil)
-        return
-    end
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
 
-    self:_setup_http_callback(callback)
+	self:_setup_http_callback(callback)
 
-    local body = json_encode({ refreshToken = refresh_token, username = username })
-    self.mqtt:http_post(self.base_url .. "/api/auth/refresh", body)
+	local body = json_encode({ refreshToken = refresh_token, username = username })
+	self.mqtt:http_post(self.base_url .. '/api/auth/refresh', body)
 end
 
 function api_client:get_discord_link_url(jwt_token, callback)
-    if not self.mqtt or not self.mqtt.tx_channel then
-        callback("MQTT thread not running", nil)
-        return
-    end
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
 
-    self.pending_callback = callback
+	self.pending_callback = callback
 
-    self.mqtt.on_http_response = function(status, body)
-        self.mqtt.on_http_response = nil
-        self.mqtt.on_http_error = nil
-        local cb = self.pending_callback
-        self.pending_callback = nil
-        if not cb then return end
+	self.mqtt.on_http_response = function(status, body)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if not cb then
+			return
+		end
 
-        if status ~= 200 then
-            cb("Server returned status " .. tostring(status) .. ": " .. body, nil)
-            return
-        end
+		if status ~= 200 then
+			cb('Server returned status ' .. tostring(status) .. ': ' .. body, nil)
+			return
+		end
 
-        local ok, data = pcall(json_decode, body)
-        if not ok or not data then
-            cb("Failed to parse server response", nil)
-            return
-        end
+		local ok, data = pcall(json_decode, body)
+		if not ok or not data then
+			cb('Failed to parse server response', nil)
+			return
+		end
 
-        if not data.url then
-            cb(data.error or "Server response missing URL", nil)
-            return
-        end
+		if not data.url then
+			cb(data.error or 'Server response missing URL', nil)
+			return
+		end
 
-        cb(nil, data)
-    end
+		cb(nil, data)
+	end
 
-    self.mqtt.on_http_error = function(msg)
-        self.mqtt.on_http_response = nil
-        self.mqtt.on_http_error = nil
-        local cb = self.pending_callback
-        self.pending_callback = nil
-        if cb then
-            cb("HTTP request failed: " .. tostring(msg), nil)
-        end
-    end
+	self.mqtt.on_http_error = function(msg)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if cb then
+			cb('HTTP request failed: ' .. tostring(msg), nil)
+		end
+	end
 
-    self.mqtt:http_post_auth(self.base_url .. "/api/auth/link/discord", "{}", jwt_token)
+	self.mqtt:http_post_auth(self.base_url .. '/api/auth/link/discord', '{}', jwt_token)
 end
 
 return api_client
