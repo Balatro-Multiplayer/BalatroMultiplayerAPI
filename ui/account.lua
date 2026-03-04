@@ -72,7 +72,7 @@ local function create_UIBox_account_overlay()
 								MPAPI.disableable_option_cycle({
 									label = 'Display Name',
 									options = { 'Steam', 'Discord' },
-									current_option = MPAPI.config.use_discord_name and 2 or 1,
+									current_option = MPAPI.connection_state.use_discord_name and 2 or 1,
 									opt_callback = 'mpapi_change_use_discord_name',
 									scale = 0.8,
 									colour = MPAPI.C.MP_EDITION,
@@ -253,18 +253,15 @@ G.FUNCS.mpapi_back_button = function(e)
 	MPAPI.deactivate_mod()
 end
 
-G.FUNCS.mpapi_change_display_pref = function(args)
-	local cs = MPAPI.connection_state
-	cs.display_name_pref = args.to_key
-	MPAPI.update_display_name()
-	if MPAPI.account_button then
-		MPAPI.account_button:update()
-	end
-end
-
 G.FUNCS.mpapi_change_use_discord_name = function(args)
-	MPAPI.config_set('use_discord_name', args.to_key == 2)
-	MPAPI.update_display_name()
+	local use_discord = args.to_key == 2
+	MPAPI.set_use_discord_name(use_discord, function(err, data)
+		if err then
+			MPAPI.sendWarnMessage('Failed to set display name preference: ' .. tostring(err))
+			return
+		end
+		MPAPI.sendDebugMessage('Display name preference updated')
+	end)
 end
 
 G.FUNCS.mpapi_unlink_discord = function(e)
