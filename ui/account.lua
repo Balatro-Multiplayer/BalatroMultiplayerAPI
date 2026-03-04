@@ -1,6 +1,5 @@
-local function account_info_row(label, value_nodes, label_w, value_w)
-	label_w = label_w or 3
-	value_w = value_w or 4
+local function account_info_row(label, value_nodes)
+	local label_w, value_w = 3.5, 4.5
 	return {
 		n = G.UIT.R,
 		config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05 },
@@ -24,41 +23,18 @@ local function create_UIBox_account_overlay()
 		return G.FUNCS.exit_overlay_menu()
 	end
 
-	local cs = MPAPI.connection_state
-	local label_w, value_w = 3.5, 4.5
-
 	-- Username
-	local player_name = cs.steam_name ~= '' and cs.steam_name or 'Unknown'
+	local player_name = MPAPI.connection_state.steam_name ~= '' and MPAPI.connection_state.steam_name or 'Unknown'
 	local name_colour = G.C.GREEN
-	if cs.is_temp then
+	if MPAPI.connection_state.is_temp then
 		player_name = player_name .. ' (Dev)'
 		name_colour = G.C.GOLD
 	end
 
 	-- Discord
-	local discord_linked = cs.discord_name ~= ''
-	local discord_value = discord_linked and cs.discord_name or 'Not Linked'
+	local discord_linked = MPAPI.connection_state.discord_name ~= ''
+	local discord_value = discord_linked and MPAPI.connection_state.discord_name or 'Not Linked'
 	local discord_colour = discord_linked and G.C.GREEN or G.C.UI.TEXT_INACTIVE
-
-	-- Display name preference cycle (disabled when discord not linked)
-	local pref_options = { 'Steam', 'Discord' }
-	local current_pref = cs.display_name_pref or 1
-	if not discord_linked then
-		current_pref = 1
-	end
-
-	-- Info rows: ID, Username, Discord Username
-	local info_rows = {
-		account_info_row('ID', {
-			{ n = G.UIT.T, config = { text = cs.player_id, scale = 0.35, colour = G.C.UI.TEXT_INACTIVE } },
-		}, label_w, value_w),
-		account_info_row('Username', {
-			{ n = G.UIT.O, config = { object = DynaText({ string = { player_name }, colours = { name_colour }, shadow = true, float = true, scale = 0.45 }) } },
-		}, label_w, value_w),
-		account_info_row('Discord', {
-			{ n = G.UIT.O, config = { object = DynaText({ string = { discord_value }, colours = { discord_colour }, shadow = true, float = true, scale = 0.45 }) } },
-		}, label_w, value_w),
-	}
 
 	local contents = {
 		{
@@ -70,23 +46,48 @@ local function create_UIBox_account_overlay()
 					{ n = G.UIT.T, config = { text = 'Multiplayer Account', scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 				} },
 				-- Info rows
-				{ n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = info_rows },
-				-- Display name preference cycle (disabled when discord not linked)
 				{
 					n = G.UIT.R,
 					config = { align = 'cm', padding = 0.1 },
 					nodes = {
-						MPAPI.disableable_option_cycle({
-							label = 'Display Name',
-							options = pref_options,
-							current_option = current_pref,
-							opt_callback = 'mpapi_change_display_pref',
-							scale = 0.8,
-							colour = MPAPI.C.MP_EDITION,
-							focus_args = { nav = 'wide' },
-							enabled = discord_linked,
-						}).node,
-						not discord_linked and UIBox_button({ label = { 'Link Discord' }, button = 'mpapi_link_discord', minh = 0.7, scale = 0.4, colour = G.C.BLUE, focus_args = { nav = 'wide' } }) or nil,
+						account_info_row('ID', {
+							{ n = G.UIT.T, config = { text = MPAPI.connection_state.player_id, scale = 0.35, colour = G.C.UI.TEXT_INACTIVE } },
+						}),
+						account_info_row('Username', {
+							{ n = G.UIT.O, config = { object = DynaText({ string = { player_name }, colours = { name_colour }, shadow = true, float = true, scale = 0.45 }) } },
+						}),
+						account_info_row('Discord', {
+							{ n = G.UIT.O, config = { object = DynaText({ string = { discord_value }, colours = { discord_colour }, shadow = true, float = true, scale = 0.45 }) } },
+						}),
+					},
+				},
+				{
+					n = G.UIT.R,
+					config = { align = 'cm', padding = 0.1 },
+					nodes = {
+						{
+							n = G.UIT.C,
+							config = { align = 'cm', padding = 0.1 },
+							nodes = {
+								MPAPI.disableable_option_cycle({
+									label = 'Display Name',
+									options = { 'Steam', 'Discord' },
+									current_option = MPAPI.config.use_discord_name and 2 or 1,
+									opt_callback = 'mpapi_change_use_discord_name',
+									scale = 0.8,
+									colour = MPAPI.C.MP_EDITION,
+									focus_args = { nav = 'wide' },
+									enabled = discord_linked,
+								}).node,
+							},
+						},
+						not discord_linked and {
+							n = G.UIT.C,
+							config = { align = 'cm', padding = 0.1 },
+							nodes = {
+								UIBox_button({ label = { 'Link Discord' }, button = 'mpapi_link_discord', minh = 0.7, scale = 0.4, colour = G.C.BLUE, focus_args = { nav = 'wide' } }),
+							},
+						} or nil,
 					},
 				},
 			},
@@ -258,6 +259,11 @@ G.FUNCS.mpapi_change_display_pref = function(args)
 	if MPAPI.account_button then
 		MPAPI.account_button:update()
 	end
+end
+
+G.FUNCS.mpapi_change_use_discord_name = function(args)
+	MPAPI.config_set('use_discord_name', args.to_key == 2)
+	MPAPI.update_display_name()
 end
 
 G.FUNCS.mpapi_link_discord = function(e)

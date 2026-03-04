@@ -7,21 +7,22 @@ MPAPI.connection_state = {
 	discord_name = '',
 	discord_id = '',
 	is_temp = false,
-	display_name_pref = 1, -- 1 = Steam, 2 = Discord
 }
 
 function MPAPI.update_display_name()
-	local cs = MPAPI.connection_state
-	if cs.state ~= 'connected' then
-		cs.display_name = localize('b_retry_connection')
+	if MPAPI.connection_state.state ~= 'connected' then
+		MPAPI.connection_state.display_name = localize('b_retry_connection')
 		return
 	end
-	if cs.display_name_pref == 2 and cs.discord_name ~= '' then
-		cs.display_name = cs.discord_name
-	elseif cs.steam_name ~= '' then
-		cs.display_name = cs.steam_name
+	if MPAPI.config_get('use_discord_name') and MPAPI.connection_state.discord_name ~= '' then
+		MPAPI.connection_state.display_name = MPAPI.connection_state.discord_name
+	elseif MPAPI.connection_state.steam_name ~= '' then
+		MPAPI.connection_state.display_name = MPAPI.connection_state.steam_name
 	else
-		cs.display_name = 'Retry Connection'
+		MPAPI.connection_state.display_name = localize('k_unknown')
+	end
+	if MPAPI.account_button then
+		MPAPI.account_button:update()
 	end
 end
 
