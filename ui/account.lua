@@ -1,47 +1,80 @@
+-- Build a stats-style info row (label on left, value on right with dark background)
+local function account_info_row(label, value_nodes, label_w, value_w)
+    label_w = label_w or 3
+    value_w = value_w or 4
+    return {n=G.UIT.R, config={align = "cm", padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05}, nodes={
+        {n=G.UIT.C, config={align = "cm", padding = 0.05, minw = label_w, maxw = label_w}, nodes={
+            {n=G.UIT.T, config={text = label, scale = 0.45, colour = G.C.UI.TEXT_LIGHT, shadow = true}},
+        }},
+        {n=G.UIT.C, config={align = "cl", minh = 0.7, r = 0.1, minw = value_w, colour = G.C.BLACK, emboss = 0.05}, nodes={
+            {n=G.UIT.C, config={align = "cm", padding = 0.05, r = 0.1, minw = value_w, maxw = value_w}, nodes=value_nodes},
+        }},
+    }}
+end
+
 local function create_UIBox_account_overlay()
     if MPAPI.connection_state.state ~= "connected" then return G.FUNCS.exit_overlay_menu() end
 
-    local nodes = {}
+    local cs = MPAPI.connection_state
+    local label_w, value_w = 3.5, 4.5
 
-    -- Header
-    nodes[#nodes + 1] = {n=G.UIT.R, config={align = "cm", padding = 0.1}, nodes={
-        {n=G.UIT.T, config={text = "Multiplayer Account", scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true}}
-    }}
-
-    nodes[#nodes + 1] = {n=G.UIT.R, config={align = "cm", padding = 0.05, minh = 0.1}, nodes={}}
-
-    -- Player name
-    local player_name = MPAPI.connection_state.steam_name ~= "" and MPAPI.connection_state.steam_name or "Unknown"
-    if MPAPI.connection_state.is_temp then
+    -- Username
+    local player_name = cs.steam_name ~= "" and cs.steam_name or "Unknown"
+    local name_colour = G.C.GREEN
+    if cs.is_temp then
         player_name = player_name .. " (Dev)"
-    end
-    nodes[#nodes + 1] = {n=G.UIT.R, config={align = "cm", padding = 0.05}, nodes={
-        {n=G.UIT.T, config={text = "Player: ", scale = 0.38, colour = G.C.UI.TEXT_LIGHT}},
-        {n=G.UIT.T, config={text = player_name, scale = 0.38, colour = MPAPI.connection_state.is_temp and G.C.GOLD or G.C.GREEN}},
-    }}
-
-    -- Player ID
-    nodes[#nodes + 1] = {n=G.UIT.R, config={align = "cm", padding = 0.05}, nodes={
-        {n=G.UIT.T, config={text = "ID: ", scale = 0.32, colour = G.C.UI.TEXT_LIGHT}},
-        {n=G.UIT.T, config={text = MPAPI.connection_state.player_id, scale = 0.32, colour = G.C.UI.TEXT_INACTIVE}},
-    }}
-
-    -- Discord link status
-    local discord_status = MPAPI.connection_state.discord_name ~= "" and "Linked" or "Not linked"
-    local discord_colour = MPAPI.connection_state.discord_name ~= "" and G.C.GREEN or G.C.UI.TEXT_INACTIVE
-    nodes[#nodes + 1] = {n=G.UIT.R, config={align = "cm", padding = 0.05}, nodes={
-        {n=G.UIT.T, config={text = "Discord: ", scale = 0.35, colour = G.C.UI.TEXT_LIGHT}},
-        {n=G.UIT.T, config={text = discord_status, scale = 0.35, colour = discord_colour}},
-    }}
-
-    nodes[#nodes + 1] = {n=G.UIT.R, config={align = "cm", padding = 0.05, minh = 0.15}, nodes={}}
-
-    -- Link Discord button (only if not already linked)
-    if MPAPI.connection_state.discord_name == "" then
-        nodes[#nodes + 1] = UIBox_button({label = {"Link Discord"}, button = "mpapi_link_discord", minw = 3, minh = 0.6, scale = 0.4, colour = G.C.BLUE})
+        name_colour = G.C.GOLD
     end
 
-    return create_UIBox_generic_options({contents = nodes})
+    -- Discord
+    local discord_linked = cs.discord_name ~= ""
+    local discord_value = discord_linked and cs.discord_name or "Not Linked"
+    local discord_colour = discord_linked and G.C.GREEN or G.C.UI.TEXT_INACTIVE
+
+    -- Display name preference cycle (disabled when discord not linked)
+    local pref_options = {"Steam", "Discord"}
+    local current_pref = cs.display_name_pref or 1
+    if not discord_linked then current_pref = 1 end
+
+    -- Info rows: ID, Username, Discord Username
+    local info_rows = {
+        account_info_row("ID", {
+            {n=G.UIT.T, config={text = cs.player_id, scale = 0.35, colour = G.C.UI.TEXT_INACTIVE}},
+        }, label_w, value_w),
+        account_info_row("Username", {
+            {n=G.UIT.O, config={object = DynaText({string = {player_name}, colours = {name_colour}, shadow = true, float = true, scale = 0.45})}},
+        }, label_w, value_w),
+        account_info_row("Discord", {
+            {n=G.UIT.O, config={object = DynaText({string = {discord_value}, colours = {discord_colour}, shadow = true, float = true, scale = 0.45})}},
+        }, label_w, value_w),
+    }
+
+    local contents = {
+        {n=G.UIT.C, config={align = "cm", minw = 3, padding = 0.2, r = 0.1, colour = G.C.CLEAR}, nodes={
+            -- Title
+            {n=G.UIT.R, config={align = "cm", padding = 0.1}, nodes={
+                {n=G.UIT.T, config={text = "Multiplayer Account", scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true}},
+            }},
+            -- Info rows
+            {n=G.UIT.R, config={align = "cm", padding = 0.1}, nodes=info_rows},
+            -- Display name preference cycle (disabled when discord not linked)
+            {n=G.UIT.R, config={align = "cm", padding = 0.1}, nodes={
+                MPAPI.disableable_option_cycle({
+                    label = "Display Name",
+                    options = pref_options,
+                    current_option = current_pref,
+                    opt_callback = 'mpapi_change_display_pref',
+                    scale = 0.8,
+                    colour = MPAPI.C.MP_EDITION,
+                    focus_args = {nav = 'wide'},
+                    enabled = discord_linked,
+                }).node,
+                not discord_linked and UIBox_button({label = {"Link Discord"}, button = "mpapi_link_discord", minh = 0.7, scale = 0.4, colour = G.C.BLUE, focus_args = {nav = 'wide'}}) or nil,
+                }},
+            }},
+    }
+
+    return create_UIBox_generic_options({back_func = 'exit_overlay_menu', snap_back = true, contents = contents})
 end
 
 -- Build a single mod button row with optional subtext
@@ -156,6 +189,15 @@ end
 -- Back button: deactivate current mod, return to normal menu
 G.FUNCS.mpapi_back_button = function(e)
     MPAPI.deactivate_mod()
+end
+
+G.FUNCS.mpapi_change_display_pref = function(args)
+    local cs = MPAPI.connection_state
+    cs.display_name_pref = args.to_key
+    MPAPI.update_display_name()
+    if MPAPI.account_button then
+        MPAPI.account_button:update()
+    end
 end
 
 G.FUNCS.mpapi_link_discord = function(e)

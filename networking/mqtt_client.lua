@@ -202,7 +202,6 @@ local function handle_connect(broker, port, secure, client_id, keep_alive, verif
         client = nil
         return
     end
-
     -- Set a moderate timeout so _sync_iteration blocks briefly then
     -- returns, giving us a chance to check for new commands.
     local conn = cl.connection
