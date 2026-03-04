@@ -7,7 +7,23 @@ MPAPI.connection_state = {
     discord_name = "",
     discord_id = "",
     is_temp = false,
+    display_name_pref = 1, -- 1 = Steam, 2 = Discord
 }
+
+function MPAPI.update_display_name()
+    local cs = MPAPI.connection_state
+    if cs.state ~= "connected" then
+        cs.display_name = localize('b_retry_connection')
+        return
+    end
+    if cs.display_name_pref == 2 and cs.discord_name ~= "" then
+        cs.display_name = cs.discord_name
+    elseif cs.steam_name ~= "" then
+        cs.display_name = cs.steam_name
+    else
+        cs.display_name = "Retry Connection"
+    end
+end
 
 local _mqtt_instance = nil
 local _connection = nil
@@ -90,7 +106,7 @@ function MPAPI.connect(opts)
             cs.discord_name = ""
             cs.is_temp = false
         end
-        cs.display_name = (cs.discord_name ~= "" and cs.discord_name) or (cs.steam_name ~= "" and cs.steam_name) or "Retry Connection"
+        MPAPI.update_display_name()
 
         -- Player data update (e.g. discord linked)
         if context.player_update then
