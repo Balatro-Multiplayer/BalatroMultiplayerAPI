@@ -143,4 +143,48 @@ function api_client:get_discord_link_url(jwt_token, callback)
 	self.mqtt:http_post_auth(self.base_url .. '/api/auth/link/discord', '{}', jwt_token)
 end
 
+function api_client:unlink_discord(jwt_token, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self.pending_callback = callback
+
+	self.mqtt.on_http_response = function(status, body)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if not cb then
+			return
+		end
+
+		if status ~= 200 then
+			cb('Server returned status ' .. tostring(status) .. ': ' .. body, nil)
+			return
+		end
+
+		local ok, data = pcall(json_decode, body)
+		if not ok or not data then
+			cb('Failed to parse server response', nil)
+			return
+		end
+
+		cb(nil, data)
+	end
+
+	self.mqtt.on_http_error = function(msg)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if cb then
+			cb('HTTP request failed: ' .. tostring(msg), nil)
+		end
+	end
+
+	self.mqtt:http_post_auth(self.base_url .. '/api/auth/unlink/discord', '{}', jwt_token)
+end
+
 return api_client

@@ -202,6 +202,19 @@ function MPAPI.get_discord_link_url(callback)
 	conn.api:get_discord_link_url(conn.jwt_token, callback)
 end
 
+function MPAPI.unlink_discord(callback)
+	local conn = _connection
+	if not conn or conn:get_state() ~= 'connected' then
+		callback('Not connected', nil)
+		return
+	end
+	if not conn.jwt_token then
+		callback('No JWT token', nil)
+		return
+	end
+	conn.api:unlink_discord(conn.jwt_token, callback)
+end
+
 function MPAPI.on_loaded(fn)
 	if _ready then
 		fn()

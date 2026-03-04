@@ -81,13 +81,14 @@ local function create_UIBox_account_overlay()
 								}).node,
 							},
 						},
-						not discord_linked and {
+						{
 							n = G.UIT.C,
 							config = { align = 'cm', padding = 0.1 },
 							nodes = {
-								UIBox_button({ label = { 'Link Discord' }, button = 'mpapi_link_discord', minh = 0.7, scale = 0.4, colour = G.C.BLUE, focus_args = { nav = 'wide' } }),
+								discord_linked and UIBox_button({ label = { 'Unlink Discord' }, button = 'mpapi_unlink_discord', minh = 0.7, scale = 0.4, colour = G.C.RED, focus_args = { nav = 'wide' } })
+									or UIBox_button({ label = { 'Link Discord' }, button = 'mpapi_link_discord', minh = 0.7, scale = 0.4, colour = G.C.BLUE, focus_args = { nav = 'wide' } }),
 							},
-						} or nil,
+						},
 					},
 				},
 			},
@@ -264,6 +265,16 @@ end
 G.FUNCS.mpapi_change_use_discord_name = function(args)
 	MPAPI.config_set('use_discord_name', args.to_key == 2)
 	MPAPI.update_display_name()
+end
+
+G.FUNCS.mpapi_unlink_discord = function(e)
+	MPAPI.unlink_discord(function(err, data)
+		if err then
+			MPAPI.sendWarnMessage('Discord unlink error: ' .. tostring(err))
+			return
+		end
+		MPAPI.sendDebugMessage('Discord unlinked successfully')
+	end)
 end
 
 G.FUNCS.mpapi_link_discord = function(e)
