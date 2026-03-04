@@ -3,7 +3,7 @@
 -- module table
 local luasocket = {}
 
-local socket = require("socket")
+local socket = require('socket')
 
 -- Open network connection to .host and .port in conn table
 -- Store opened socket to conn table
@@ -11,7 +11,7 @@ local socket = require("socket")
 function luasocket.connect(conn)
 	local sock, err = socket.connect(conn.host, conn.port)
 	if not sock then
-		return false, "socket.connect failed: "..err
+		return false, 'socket.connect failed: ' .. err
 	end
 	conn.sock = sock
 	return true
@@ -43,7 +43,7 @@ end
 -- Set connection's socket to non-blocking mode and set a timeout for it
 function luasocket.settimeout(conn, timeout)
 	conn.timeout = timeout
-	conn.sock:settimeout(timeout, "t")
+	conn.sock:settimeout(timeout, 't')
 end
 
 -- export module table

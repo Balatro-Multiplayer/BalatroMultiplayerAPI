@@ -36,7 +36,7 @@ local ipairs = ipairs
 local require = require
 local setmetatable = setmetatable
 
-local table = require("table")
+local table = require('table')
 local tbl_remove = table.remove
 
 --- ioloop instances metatable
@@ -54,7 +54,7 @@ function ioloop_mt:__init(args)
 	args = args or {}
 	args.timeout = args.timeout or 0.005
 	args.sleep = args.sleep or 0
-	args.sleep_function = args.sleep_function or require("socket").sleep
+	args.sleep_function = args.sleep_function or require('socket').sleep
 	self.args = args
 	self.clients = {}
 	self.running = false --ioloop running flag, used by MQTT clients which are adding after this ioloop started to run
@@ -66,13 +66,13 @@ end
 function ioloop_mt:add(client)
 	local clients = self.clients
 	if clients[client] then
-		return false, "such MQTT client or loop function is already added to this ioloop"
+		return false, 'such MQTT client or loop function is already added to this ioloop'
 	end
 	clients[#clients + 1] = client
 	clients[client] = true
 
 	-- associate ioloop with adding MQTT client
-	if type(client) ~= "function" then
+	if type(client) ~= 'function' then
 		client:set_ioloop(self)
 	end
 
@@ -85,7 +85,7 @@ end
 function ioloop_mt:remove(client)
 	local clients = self.clients
 	if not clients[client] then
-		return false, "no such MQTT client or loop function was added to ioloop"
+		return false, 'no such MQTT client or loop function was added to ioloop'
 	end
 	clients[client] = nil
 
@@ -98,7 +98,7 @@ function ioloop_mt:remove(client)
 	end
 
 	-- unlink ioloop from MQTT client
-	if type(client) ~= "function" then
+	if type(client) ~= 'function' then
 		client:set_ioloop(nil)
 	end
 
@@ -109,7 +109,7 @@ end
 function ioloop_mt:iteration()
 	self.timeouted = false
 	for _, client in ipairs(self.clients) do
-		if type(client) ~= "function" then
+		if type(client) ~= 'function' then
 			client:_ioloop_iteration()
 		else
 			client()
