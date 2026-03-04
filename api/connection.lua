@@ -104,6 +104,8 @@ function MPAPI.connect(opts)
         -- User callbacks
         if context.error and opts.on_error then
             opts.on_error(context.error)
+        elseif new_state == "connected" and context.reconnected_lobby and opts.on_reconnected then
+            opts.on_reconnected(_connection, context.reconnected_lobby)
         elseif new_state == "connected" and opts.on_connected then
             opts.on_connected(_connection)
         elseif new_state == "disconnected" and context.old_state == "connected" and opts.on_disconnected then

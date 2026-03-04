@@ -46,18 +46,18 @@ local meta = lobby:get_metadata()
 
 ### Player State
 
-Each player publishes their own state. All players can read any player's state. Players can only update their own state (enforced server-side).
+Each player publishes their own state. Player state is **private** — players can only read and write their own state (enforced server-side). Any information another player needs should be communicated via [Actions](#actions).
 
 ```lua
 -- Set your own state (table, replaces previous)
 lobby:set_player_state({ score = 1250, hands_left = 3, location = "selecting_blind" })
 
--- Read another player's last known state
-local state = lobby:get_player_state(player_id)
+-- Read your own last known state (e.g. after reconnect)
+local state = lobby:get_player_state(self.player_id)
 
 -- Get all players in the lobby
 local players = lobby:get_players()
--- { { id = "player_123", state = {...} }, { id = "player_456", state = {...} } }
+-- { { id = "player_123" }, { id = "player_456" } }
 ```
 
 ### Actions
@@ -162,7 +162,16 @@ lobby:on("player_joined", function(player_id)
 end)
 
 lobby:on("player_left", function(player_id)
-    -- A player disconnected or left
+    -- A player disconnected or was removed after grace period expired
+end)
+
+lobby:on("player_disconnected", function(player_id)
+    -- A player's connection dropped unexpectedly (crash, internet, etc.)
+    -- They have 2 minutes to reconnect before being removed
+end)
+
+lobby:on("player_reconnected", function(player_id)
+    -- A disconnected player came back within the grace period
 end)
 
 lobby:on("metadata_changed", function(metadata)
@@ -177,6 +186,42 @@ lobby:on("disconnected", function()
     -- Lost connection to the broker
 end)
 ```
+
+## Disconnect & Reconnect
+
+When a player's connection drops unexpectedly (crash, internet outage, game close), they aren't removed immediately. Instead, the server starts a **2-minute grace period** that reserves their lobby slot.
+
+- **During grace period** — other players receive `player_disconnected`. The player's slot is reserved and their state is preserved.
+- **If they reconnect** — the player slots back in seamlessly. Other players receive `player_reconnected`. No data is lost.
+- **If the timer expires** — the player is removed from the lobby with `player_left`. If the lobby is now empty, it closes.
+- **Explicit leave** — calling `lobby:leave()` removes the player immediately with no grace period.
+
+### Host Disconnect
+
+When the host disconnects:
+- Host role transfers immediately to the next available player (`host_changed` event)
+- The disconnected host's lobby slot is still reserved during the grace period
+- If they reconnect, they rejoin as a regular player (not host)
+
+### Player Away Status
+
+Players in a grace period are marked as "away" in the player list:
+
+```lua
+local players = lobby:get_players()
+-- { { id = "player_123", state = {...}, is_away = false },
+--   { id = "player_456", state = {...}, is_away = true } }
+```
+
+### State Recovery
+
+Player state is published to MQTT retained topics (`lobby/{code}/players/{playerId}/state`), so it survives disconnects. When a player reconnects, they resubscribe to their own state topic and immediately receive their latest retained state.
+
+Mod authors don't need to handle this manually. As long as game state is kept in player state via `lobby:set_player_state()`, it will be available on reconnect. The reconnecting client receives:
+
+- Their own last published state (retained)
+- Current lobby metadata (retained)
+- A `player_reconnected` event confirming they're back
 
 ## Configuration
 
@@ -215,7 +260,7 @@ The API server enforces access control via EMQX's HTTP authorization callbacks:
 
 - **Lobby isolation** - Players can only publish/subscribe within their own lobby.
 - **Host-only metadata** - Only the host can update lobby metadata and send lifecycle events.
-- **Player-owned state** - Players can only write to their own state and action topics.
+- **Private player state** - Players can only read and write their own state topic. Other players' state is not accessible — use actions to share information.
 - **Chat** - Players can only publish to their own chat topic. Identity is determined by the topic, not the payload, so players cannot impersonate each other.
 
 These aren't conventions, they're enforced at the broker level. Unauthorized publishes are rejected before they reach any client.
