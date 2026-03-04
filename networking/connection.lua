@@ -14,7 +14,6 @@ function connection.new(opts)
         steam = opts.steam,
         token_store = opts.token_store,
         config = opts.config or {},
-
         state = STATES.DISCONNECTED,
 
         player_id = nil,
@@ -22,6 +21,7 @@ function connection.new(opts)
         username = nil,
         steam_id = nil,
         discord_name = nil,
+        is_temp = false,
         auth_ticket_handle = nil,
 
         on_state_change = nil,
@@ -50,10 +50,11 @@ local function set_state(self, new_state, context)
     fire(self, new_state, context or {old_state = old})
 end
 
--- Shared handler for successful auth (Steam or refresh token)
+-- Shared handler for successful auth (Steam, refresh token, or dev)
 function connection:_handle_auth_success(data)
     self.jwt_token = data.token
     self.player_id = data.player and data.player.id or nil
+    self.is_temp = data.player and data.player.isTemp or false
     if data.player and data.player.username then
         self.username = data.player.username
     end

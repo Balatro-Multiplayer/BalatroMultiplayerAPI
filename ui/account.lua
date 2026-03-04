@@ -10,9 +10,13 @@ local function create_UIBox_account_overlay()
 
     if MPAPI.connection_state.state == "connected" then
         -- Player name
+        local player_name = MPAPI.connection_state.steam_name ~= "" and MPAPI.connection_state.steam_name or "Unknown"
+        if MPAPI.connection_state.is_temp then
+            player_name = player_name .. " (Dev)"
+        end
         nodes[#nodes + 1] = {n=G.UIT.R, config={align = "cm", padding = 0.05}, nodes={
             {n=G.UIT.T, config={text = "Player: ", scale = 0.38, colour = G.C.UI.TEXT_LIGHT}},
-            {n=G.UIT.T, config={text = MPAPI.connection_state.steam_name ~= "" and MPAPI.connection_state.steam_name or "Unknown", scale = 0.38, colour = G.C.GREEN}},
+            {n=G.UIT.T, config={text = player_name, scale = 0.38, colour = MPAPI.connection_state.is_temp and G.C.GOLD or G.C.GREEN}},
         }}
 
         -- Player ID

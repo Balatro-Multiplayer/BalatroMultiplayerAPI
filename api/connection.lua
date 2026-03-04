@@ -4,6 +4,7 @@ MPAPI.connection_state = {
     player_id = "",
     steam_name = "",
     discord_name = "",
+    is_temp = false,
 }
 
 local _mqtt_instance = nil
@@ -73,6 +74,7 @@ function MPAPI.connect(opts)
             cs.player_id = _connection.player_id or ""
             cs.steam_name = _connection.username or ""
             cs.discord_name = _connection.discord_name or ""
+            cs.is_temp = _connection.is_temp or false
         elseif new_state == "authenticating" then
             cs.status_text = "Signing in..."
         elseif new_state == "connecting" then
@@ -82,6 +84,7 @@ function MPAPI.connect(opts)
             cs.player_id = ""
             cs.steam_name = ""
             cs.discord_name = ""
+            cs.is_temp = false
         end
 
         -- Player data update (e.g. discord linked)
@@ -132,6 +135,7 @@ function MPAPI.disconnect()
     cs.player_id = ""
     cs.steam_name = ""
     cs.discord_name = ""
+    cs.is_temp = false
 end
 
 function MPAPI.is_connected()
