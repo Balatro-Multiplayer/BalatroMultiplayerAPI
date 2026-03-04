@@ -87,7 +87,9 @@ MPAPI.modules.connection = MPAPI.load_mpapi_file("networking/connection.lua")
 
 MPAPI.load_mpapi_file("api/connection.lua")
 MPAPI.load_mpapi_file("api/ui_element.lua")
-MPAPI.load_mpapi_file("ui/account.lua")
+MPAPI.load_mpapi_file("lib/text.lua")
+MPAPI.load_mpapi_file("lib/ui.lua")
+MPAPI.load_mpapi_dir("ui")
 
 G.E_MANAGER:add_event(Event({
     blockable = false,
