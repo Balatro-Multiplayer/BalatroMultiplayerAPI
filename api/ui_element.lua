@@ -131,3 +131,105 @@ function MPAPI.ui_element(build_fn)
 
     return el
 end
+
+local function resolve_enabled(args)
+    if type(args.enabled) == "function" then
+        return args.enabled() and true or false
+    end
+    if args.enabled ~= nil then
+        return args.enabled and true or false
+    end
+    local t = args.enabled_ref_table or {}
+    local v = args.enabled_ref_value
+    return (v ~= nil and t[v]) and true or false
+end
+
+local function walk_nodes(node, visitor)
+    if not node then return end
+    visitor(node, node.config or {})
+    if node.nodes then
+        for _, child in ipairs(node.nodes) do
+            walk_nodes(child, visitor)
+        end
+    end
+end
+
+local function strip_interactivity(root)
+    walk_nodes(root, function(_, config)
+        config.button = nil
+        config.hover = false
+        config.shadow = false
+        config.toggle_callback = nil
+        config.button_dist = nil
+    end)
+end
+
+local function gray_text(root)
+    walk_nodes(root, function(node, _)
+        if node.n == G.UIT.T then
+            node.colour = G.C.UI.TEXT_INACTIVE
+            node.shadow = false
+        end
+    end)
+end
+
+local function shallow_copy(t)
+    local out = {}
+    for k, v in pairs(t) do out[k] = v end
+    return out
+end
+
+function MPAPI.disableable_button(args)
+    return MPAPI.ui_element(function()
+        local enabled = resolve_enabled(args)
+        local build_args = shallow_copy(args)
+        build_args.colour = build_args.colour or G.C.RED
+        build_args.text_colour = build_args.text_colour or G.C.UI.TEXT_LIGHT
+        build_args.disabled_text = build_args.disabled_text or build_args.label
+        if not enabled then
+            build_args.label = build_args.disabled_text
+        end
+
+        local node = UIBox_button(build_args)
+        if not enabled then
+            strip_interactivity(node)
+            pcall(function()
+                node.nodes[1].config.colour = G.C.UI.BACKGROUND_INACTIVE
+            end)
+            gray_text(node)
+        end
+        return {n=G.UIT.R, config={align="cm"}, nodes={node}}
+    end)
+end
+
+function MPAPI.disableable_toggle(args)
+    return MPAPI.ui_element(function()
+        local enabled = resolve_enabled(args)
+        local build_args = shallow_copy(args)
+
+        local node = create_toggle(build_args)
+        if not enabled then
+            strip_interactivity(node)
+            gray_text(node)
+        end
+        return {n=G.UIT.R, config={align="cm"}, nodes={node}}
+    end)
+end
+
+function MPAPI.disableable_option_cycle(args)
+    return MPAPI.ui_element(function()
+        local enabled = resolve_enabled(args)
+        local build_args = shallow_copy(args)
+        if not enabled then
+            build_args.options = { build_args.options[build_args.current_option] }
+            build_args.current_option = 1
+        end
+
+        local node = create_option_cycle(build_args)
+        if not enabled then
+            strip_interactivity(node)
+            gray_text(node)
+        end
+        return {n=G.UIT.R, config={align="cm"}, nodes={node}}
+    end)
+end
