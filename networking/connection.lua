@@ -65,6 +65,8 @@ function connection:_handle_auth_success(data)
 
 	self.lobby_data = data.lobby or nil
 
+	MPAPI.config_on_connect(self)
+
 	if not self.player_id or not self.jwt_token then
 		set_state(self, STATES.DISCONNECTED, { error = 'Auth response missing player ID or token' })
 		return
