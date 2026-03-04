@@ -59,8 +59,8 @@ function connection:_handle_auth_success(data)
     if data.player and data.player.username then
         self.username = data.player.username
     end
-    if data.player and data.player.discordId then
-        self.discord_name = data.player.discordId
+    if data.player and data.player.discordUsername then
+        self.discord_name = data.player.discordUsername
     end
 
     self.lobby_data = data.lobby or nil
@@ -217,7 +217,7 @@ function connection:_handle_player_notification(topic, payload)
             return j.decode(payload)
         end)
         if ok and data then
-            self.discord_name = data.username or data.discordId or "Linked"
+            self.discord_name = data.username or "Linked"
             MPAPI.sendDebugMessage("Discord linked, set discord_name=" .. tostring(self.discord_name))
             fire(self, self.state, {player_update = true})
         else

@@ -1,9 +1,11 @@
 MPAPI.connection_state = {
     state = "disconnected",
-    status_text = "Offline",
+    status_text = localize('k_status_offline'),
     player_id = "",
+    display_name = localize('b_retry_connection'),
     steam_name = "",
     discord_name = "",
+    discord_id = "",
     is_temp = false,
 }
 
@@ -70,26 +72,29 @@ function MPAPI.connect(opts)
         -- Update connection_state
         cs.state = new_state
         if new_state == "connected" then
-            cs.status_text = _connection.username or "Connected"
+            cs.status_text = localize('k_status_connected')
             cs.player_id = _connection.player_id or ""
-            cs.steam_name = _connection.username or ""
-            cs.discord_name = _connection.discord_name or ""
+            cs.steam_name = MPAPI.truncate(_connection.username or "", 20)
+            cs.discord_name = MPAPI.truncate(_connection.discord_name or "", 20)
             cs.is_temp = _connection.is_temp or false
-        elseif new_state == "authenticating" then
-            cs.status_text = "Signing in..."
-        elseif new_state == "connecting" then
-            cs.status_text = "Connecting..."
         else
-            cs.status_text = "Offline"
+            if new_state == "authenticating" then
+                cs.status_text = localize('k_status_signing_in')
+            elseif new_state == "connecting" then
+                cs.status_text = localize('k_status_connecting')
+            else
+                cs.status_text = localize('k_status_offline')
+            end
             cs.player_id = ""
             cs.steam_name = ""
             cs.discord_name = ""
             cs.is_temp = false
         end
+        cs.display_name = (cs.discord_name ~= "" and cs.discord_name) or (cs.steam_name ~= "" and cs.steam_name) or "Retry Connection"
 
         -- Player data update (e.g. discord linked)
         if context.player_update then
-            cs.discord_name = _connection.discord_name or ""
+            cs.discord_name = MPAPI.truncate(_connection.discord_name or "", 20)
         end
 
         -- Logging
