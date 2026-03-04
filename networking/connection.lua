@@ -24,6 +24,7 @@ function connection.new(opts)
         is_temp = false,
         auth_ticket_handle = nil,
 
+        lobby_data = nil,
         on_state_change = nil,
     }
 
@@ -61,6 +62,8 @@ function connection:_handle_auth_success(data)
     if data.player and data.player.discordId then
         self.discord_name = data.player.discordId
     end
+
+    self.lobby_data = data.lobby or nil
 
     if not self.player_id or not self.jwt_token then
         set_state(self, STATES.DISCONNECTED, {error = "Auth response missing player ID or token"})
@@ -156,6 +159,12 @@ function connection:_mqtt_connect_with_credentials()
     self.mqtt.on_connect = function()
         set_state(self, STATES.CONNECTED)
 
+        -- Fire reconnect event if returning to an existing lobby
+        if self.lobby_data then
+            fire(self, STATES.CONNECTED, { reconnected_lobby = self.lobby_data })
+            self.lobby_data = nil
+        end
+
         -- Subscribe to player notification topics
         if self.player_id then
             local topic = "player/" .. self.player_id .. "/account/#"
@@ -232,6 +241,7 @@ function connection:disconnect()
     set_state(self, STATES.DISCONNECTED)
     self.player_id = nil
     self.jwt_token = nil
+    self.lobby_data = nil
 end
 
 return connection
