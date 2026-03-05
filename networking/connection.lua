@@ -18,7 +18,7 @@ function connection.new(opts)
 
 		player_id = nil,
 		jwt_token = nil,
-		username = nil,
+		steam_name = nil,
 		display_name = nil,
 		use_discord_name = false,
 		preferred_joker = 'j_joker',
@@ -59,14 +59,14 @@ function connection:_handle_auth_success(data)
 	self.jwt_token = data.token
 	self.player_id = data.player and data.player.id or nil
 	self.is_temp = data.player and data.player.isTemp or false
-	if data.player and data.player.username then
-		self.username = data.player.username
+	if data.player and data.player.steamName then
+		self.steam_name = data.player.steamName
 	end
 	if data.player and data.player.discordUsername then
 		self.discord_name = data.player.discordUsername
 	end
 	if data.player then
-		self.display_name = data.player.displayName or self.username
+		self.display_name = data.player.displayName or self.steam_name
 		self.use_discord_name = data.player.useDiscordName or false
 		self.preferred_joker = data.player.preferredJoker or 'j_joker'
 	end
@@ -101,11 +101,11 @@ function connection:_try_steam_auth()
 
 	self.auth_ticket_handle = ticket_data.handle
 	self.steam_id = self.steam.get_steam_id()
-	self.username = self.steam.get_persona_name() or 'Player'
+	self.steam_name = self.steam.get_persona_name() or 'Player'
 
 	self.mqtt:start_thread()
 
-	self.api:authenticate_steam(ticket_data.ticket, self.username, function(err, data)
+	self.api:authenticate_steam(ticket_data.ticket, self.steam_name, function(err, data)
 		if self.auth_ticket_handle then
 			self.steam.cancel_auth_ticket(self.auth_ticket_handle)
 			self.auth_ticket_handle = nil
@@ -133,10 +133,10 @@ function connection:_try_refresh_auth(steam_error)
 		return
 	end
 
-	local username = self.username or 'Player'
+	local steam_name = self.steam_name or 'Player'
 	self.mqtt:start_thread()
 
-	self.api:authenticate_refresh(refresh_token, username, function(err, data)
+	self.api:authenticate_refresh(refresh_token, steam_name, function(err, data)
 		if err then
 			-- Refresh token failed, clear it
 			self.token_store.clear()
@@ -227,7 +227,7 @@ function connection:_handle_player_notification(topic, payload)
 			return j.decode(payload)
 		end)
 		if ok and data then
-			self.discord_name = data.username or 'Linked'
+			self.discord_name = data.discordName or 'Linked'
 			MPAPI.sendDebugMessage('Discord linked, set discord_name=' .. tostring(self.discord_name))
 			fire(self, self.state, { player_update = true })
 		else
@@ -236,7 +236,7 @@ function connection:_handle_player_notification(topic, payload)
 	elseif subtopic == 'discord_unlinked' then
 		self.discord_name = nil
 		self.use_discord_name = false
-		self.display_name = self.username
+		self.display_name = self.steam_name
 		MPAPI.sendDebugMessage('Discord unlinked')
 		fire(self, self.state, { player_update = true })
 	elseif subtopic == 'preferred_joker_changed' then
@@ -261,7 +261,7 @@ function connection:_handle_player_notification(topic, payload)
 			return j.decode(payload)
 		end)
 		if ok and data then
-			self.display_name = data.displayName or self.username
+			self.display_name = data.displayName or self.steam_name
 			self.use_discord_name = data.useDiscordName or false
 			MPAPI.sendDebugMessage('Display name changed to: ' .. tostring(self.display_name))
 			fire(self, self.state, { player_update = true })

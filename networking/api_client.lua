@@ -70,7 +70,7 @@ function api_client:_setup_http_callback(callback)
 	end
 end
 
-function api_client:authenticate_steam(ticket, username, callback)
+function api_client:authenticate_steam(ticket, steam_name, callback)
 	if not self.mqtt or not self.mqtt.tx_channel then
 		callback('MQTT thread not running', nil)
 		return
@@ -78,11 +78,11 @@ function api_client:authenticate_steam(ticket, username, callback)
 
 	self:_setup_http_callback(callback)
 
-	local body = json_encode({ ticket = ticket, username = username })
+	local body = json_encode({ ticket = ticket, steamName = steam_name })
 	self.mqtt:http_post(self.base_url .. '/api/auth/steam', body)
 end
 
-function api_client:authenticate_refresh(refresh_token, username, callback)
+function api_client:authenticate_refresh(refresh_token, steam_name, callback)
 	if not self.mqtt or not self.mqtt.tx_channel then
 		callback('MQTT thread not running', nil)
 		return
@@ -90,7 +90,7 @@ function api_client:authenticate_refresh(refresh_token, username, callback)
 
 	self:_setup_http_callback(callback)
 
-	local body = json_encode({ refreshToken = refresh_token, username = username })
+	local body = json_encode({ refreshToken = refresh_token, steamName = steam_name })
 	self.mqtt:http_post(self.base_url .. '/api/auth/refresh', body)
 end
 

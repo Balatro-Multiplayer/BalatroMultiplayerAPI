@@ -16,10 +16,10 @@ local function create_UIBox_account_overlay()
 		return G.FUNCS.exit_overlay_menu()
 	end
 
-	local player_name = MPAPI.connection_state.steam_name ~= '' and MPAPI.connection_state.steam_name or localize('k_unknown')
+	local steam_name = MPAPI.connection_state.steam_name ~= '' and MPAPI.connection_state.steam_name or localize('k_unknown')
 	local name_colour = G.C.GREEN
 	if MPAPI.connection_state.is_temp then
-		player_name = player_name .. ' ' .. localize('k_dev_mode_suffix')
+		steam_name = steam_name .. ' ' .. localize('k_dev_mode_suffix')
 		name_colour = G.C.GOLD
 	end
 
@@ -153,7 +153,7 @@ account_info_rows = function(discord_linked)
 				{ n = G.UIT.T, config = { text = MPAPI.connection_state.player_id, scale = 0.3, colour = G.C.UI.TEXT_INACTIVE } },
 			}),
 			account_info_row(localize('k_steam_username'), {
-				{ n = G.UIT.O, config = { object = DynaText({ string = { player_name }, colours = { name_colour }, shadow = true, float = true, scale = 0.45 }) } },
+				{ n = G.UIT.O, config = { object = DynaText({ string = { steam_name }, colours = { name_colour }, shadow = true, float = true, scale = 0.45 }) } },
 			}),
 			account_info_row(localize('k_discord_username'), {
 				{ n = G.UIT.O, config = { object = DynaText({ string = { discord_value }, colours = { discord_colour }, shadow = true, float = true, scale = 0.45 }) } },
