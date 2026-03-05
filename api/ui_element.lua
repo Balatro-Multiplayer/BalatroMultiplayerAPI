@@ -1,44 +1,56 @@
+-- Forward declarations for helper functions
+local next_id
+local find_uie_global
+local resolve_enabled
+local strip_interactivity
+local gray_text
+
+-----------------------------
+-- STATE VARIABLES
+-----------------------------
+
 local _id_counter = 0
 
-local function next_id()
-	_id_counter = _id_counter + 1
-	return 'mpapi_uel_' .. _id_counter
-end
+-----------------------------
+-- API FUNCTIONS
+-----------------------------
 
-local function find_uie_global(id)
-	-- Check overlay first (common case for overlay elements)
-	if G.OVERLAY_MENU and G.OVERLAY_MENU ~= true and G.OVERLAY_MENU.get_UIE_by_ID then
-		local found = G.OVERLAY_MENU:get_UIE_by_ID(id)
-		if found then
-			return found, G.OVERLAY_MENU
-		end
-	end
-	-- Search all UIBox instances (registered under G.I.UIBOX)
-	local uiboxes = G.I and G.I.UIBOX
-	if not uiboxes then
-		return nil, nil
-	end
-	for i = #uiboxes, 1, -1 do
-		local uibox = uiboxes[i]
-		if uibox and uibox.get_UIE_by_ID then
-			local found = uibox:get_UIE_by_ID(id)
-			if found then
-				return found, uibox
-			end
-		end
-	end
-	return nil, nil
-end
-
+-- Creates a reactive UI element that can rebuild itself in-place.
+--
+-- build_fn: a function that returns a UI definition table ({ n = ..., nodes = ... }).
+--           Called once on creation, and again each time el:update() is invoked.
+--
+-- The returned element supports three display modes:
+--
+--   Inline (default):
+--     Access el.node to get a UI definition you can embed in another layout.
+--     The node is lazily built on first access. Calling el:update() finds the
+--     rendered element by its stable ID and swaps its children in-place.
+--
+--   UIBox (el:as_uibox(config, on_create)):
+--     Creates a standalone UIBox. Calling el:update() destroys and recreates
+--     the entire UIBox with the same config. on_create is called after each
+--     creation with the new UIBox instance.
+--
+--   Overlay (el:as_overlay()):
+--     Opens build_fn's output as an overlay menu. Calling el:update() swaps
+--     children in-place (same as inline mode).
+--
+-- Methods:
+--   el:update()                    -- Rebuild the element in its current mode
+--   el:as_uibox(config, on_create) -- Switch to UIBox mode and create it
+--   el:as_overlay()                -- Open as overlay menu
+--   el:get_uibox()                -- Returns the current UIBox (uibox mode only)
+--   el:get_id()                   -- Returns the stable ID string
 function MPAPI.ui_element(build_fn)
 	local id = next_id()
 	local el = {}
 
-	local _mode = nil -- nil = inline, "uibox", "overlay"
-	local _uibox = nil -- current UIBox (uibox mode)
-	local _uibox_config = nil -- config for UIBox recreation
-	local _uibox_on_create = nil -- callback after UIBox (re)creation
-	local _cached_uibox = nil -- cached parent UIBox (inline mode)
+	local _mode = nil
+	local _uibox = nil
+	local _uibox_config = nil
+	local _uibox_on_create = nil
+	local _cached_uibox = nil
 
 	local function build_inline()
 		local ok, def = pcall(build_fn)
@@ -98,7 +110,7 @@ function MPAPI.ui_element(build_fn)
 	end
 
 	function el:update()
-		-- UIBox mode: destroy and recreate with same config
+		-- Destroy and recreate with same config
 		if _mode == 'uibox' then
 			if _uibox then
 				pcall(function()
@@ -112,7 +124,7 @@ function MPAPI.ui_element(build_fn)
 			return _uibox
 		end
 
-		-- Overlay and inline mode: swap children in-place via stable ID
+		-- Swap children in-place via stable ID
 		swap_children_in_place()
 	end
 
@@ -150,61 +162,10 @@ function MPAPI.ui_element(build_fn)
 	return el
 end
 
-local function resolve_enabled(args)
-	if type(args.enabled) == 'function' then
-		return args.enabled() and true or false
-	end
-	if args.enabled ~= nil then
-		return args.enabled and true or false
-	end
-	local t = args.enabled_ref_table or {}
-	local v = args.enabled_ref_value
-	return (v ~= nil and t[v]) and true or false
-end
-
-local function walk_nodes(node, visitor)
-	if not node then
-		return
-	end
-	visitor(node, node.config or {})
-	if node.nodes then
-		for _, child in ipairs(node.nodes) do
-			walk_nodes(child, visitor)
-		end
-	end
-end
-
-local function strip_interactivity(root)
-	walk_nodes(root, function(_, config)
-		config.button = nil
-		config.hover = false
-		config.shadow = false
-		config.toggle_callback = nil
-		config.button_dist = nil
-	end)
-end
-
-local function gray_text(root)
-	walk_nodes(root, function(node, _)
-		if node.n == G.UIT.T then
-			node.colour = G.C.UI.TEXT_INACTIVE
-			node.shadow = false
-		end
-	end)
-end
-
-local function shallow_copy(t)
-	local out = {}
-	for k, v in pairs(t) do
-		out[k] = v
-	end
-	return out
-end
-
 function MPAPI.disableable_button(args)
-	return MPAPI.ui_element(function()
+	local build_fn = function()
 		local enabled = resolve_enabled(args)
-		local build_args = shallow_copy(args)
+		local build_args = MPAPI.shallow_copy(args)
 		build_args.colour = build_args.colour or G.C.RED
 		build_args.text_colour = build_args.text_colour or G.C.UI.TEXT_LIGHT
 		build_args.disabled_text = build_args.disabled_text or build_args.label
@@ -221,13 +182,15 @@ function MPAPI.disableable_button(args)
 			gray_text(node)
 		end
 		return { n = G.UIT.R, config = { align = 'cm' }, nodes = { node } }
-	end)
+	end
+
+	return MPAPI.ui_element(build_fn)
 end
 
 function MPAPI.disableable_toggle(args)
-	return MPAPI.ui_element(function()
+	local build_fn = function()
 		local enabled = resolve_enabled(args)
-		local build_args = shallow_copy(args)
+		local build_args = MPAPI.shallow_copy(args)
 
 		local node = create_toggle(build_args)
 		if not enabled then
@@ -235,13 +198,15 @@ function MPAPI.disableable_toggle(args)
 			gray_text(node)
 		end
 		return { n = G.UIT.R, config = { align = 'cm' }, nodes = { node } }
-	end)
+	end
+
+	return MPAPI.ui_element(build_fn)
 end
 
 function MPAPI.disableable_option_cycle(args)
-	return MPAPI.ui_element(function()
+	local build_fn = function()
 		local enabled = resolve_enabled(args)
-		local build_args = shallow_copy(args)
+		local build_args = MPAPI.shallow_copy(args)
 		if not enabled then
 			build_args.options = { build_args.options[build_args.current_option] }
 			build_args.current_option = 1
@@ -253,5 +218,73 @@ function MPAPI.disableable_option_cycle(args)
 			gray_text(node)
 		end
 		return { n = G.UIT.R, config = { align = 'cm' }, nodes = { node } }
+	end
+
+	return MPAPI.ui_element(build_fn)
+end
+
+-----------------------------
+-- HELPER FUNCTIONS
+-----------------------------
+
+next_id = function()
+	_id_counter = _id_counter + 1
+	return 'mpapi_uel_' .. _id_counter
+end
+
+find_uie_global = function(id)
+	-- Check overlay first
+	if G.OVERLAY_MENU and G.OVERLAY_MENU ~= true and G.OVERLAY_MENU.get_UIE_by_ID then
+		local found = G.OVERLAY_MENU:get_UIE_by_ID(id)
+		if found then
+			return found, G.OVERLAY_MENU
+		end
+	end
+
+	-- Search all UIBox instances (registered under G.I.UIBOX)
+	local uiboxes = G.I and G.I.UIBOX
+	if not uiboxes then
+		return nil, nil
+	end
+	for i = #uiboxes, 1, -1 do
+		local uibox = uiboxes[i]
+		if uibox and uibox.get_UIE_by_ID then
+			local found = uibox:get_UIE_by_ID(id)
+			if found then
+				return found, uibox
+			end
+		end
+	end
+	return nil, nil
+end
+
+resolve_enabled = function(args)
+	if type(args.enabled) == 'function' then
+		return args.enabled() and true or false
+	end
+	if args.enabled ~= nil then
+		return args.enabled and true or false
+	end
+	local t = args.enabled_ref_table or {}
+	local v = args.enabled_ref_value
+	return (v ~= nil and t[v]) and true or false
+end
+
+strip_interactivity = function(root)
+	MPAPI.walk_nodes(root, function(_, config)
+		config.button = nil
+		config.hover = false
+		config.shadow = false
+		config.toggle_callback = nil
+		config.button_dist = nil
+	end)
+end
+
+gray_text = function(root)
+	MPAPI.walk_nodes(root, function(node, _)
+		if node.n == G.UIT.T then
+			node.colour = G.C.UI.TEXT_INACTIVE
+			node.shadow = false
+		end
 	end)
 end
