@@ -1,3 +1,16 @@
+-- Walk a UI node tree, calling visitor(node, config) on each node
+function MPAPI.walk_nodes(node, visitor)
+	if not node then
+		return
+	end
+	visitor(node, node.config or {})
+	if node.nodes then
+		for _, child in ipairs(node.nodes) do
+			MPAPI.walk_nodes(child, visitor)
+		end
+	end
+end
+
 -- Animated multiplayer edition colour
 -- Drifts between violet and magenta within the purple family
 MPAPI.C = MPAPI.C or {}
