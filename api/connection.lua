@@ -95,7 +95,7 @@ function MPAPI.connect(opts)
 		if new_state == 'connected' then
 			cs.status_text = localize('k_status_connected')
 			cs.player_id = _connection.player_id or ''
-			cs.steam_name = MPAPI.truncate(_connection.username or '', 20)
+			cs.steam_name = MPAPI.truncate(_connection.steam_name or '', 20)
 			cs.discord_name = MPAPI.truncate(_connection.discord_name or '', 20)
 			cs.is_temp = _connection.is_temp or false
 			cs.use_discord_name = _connection.use_discord_name or false
@@ -231,7 +231,7 @@ function MPAPI.set_use_discord_name(value, callback)
 
 		-- Update connection state immediately from the HTTP response
 		if data.player then
-			conn.display_name = data.player.displayName or conn.username
+			conn.display_name = data.player.displayName or conn.steam_name
 			conn.use_discord_name = data.player.useDiscordName or false
 		end
 		local cs = MPAPI.connection_state
