@@ -42,7 +42,7 @@ local _id_counter = 0
 --   el:as_overlay()                -- Open as overlay menu
 --   el:get_uibox()                -- Returns the current UIBox (uibox mode only)
 --   el:get_id()                   -- Returns the stable ID string
-function MPAPI.ui_element(build_fn)
+MPAPI.ui_element = function(build_fn)
 	local id = next_id()
 	local el = {}
 
@@ -162,7 +162,7 @@ function MPAPI.ui_element(build_fn)
 	return el
 end
 
-function MPAPI.disableable_button(args)
+MPAPI.disableable_button = function(args)
 	local build_fn = function()
 		local enabled = resolve_enabled(args)
 		local build_args = MPAPI.shallow_copy(args)
@@ -187,7 +187,7 @@ function MPAPI.disableable_button(args)
 	return MPAPI.ui_element(build_fn)
 end
 
-function MPAPI.disableable_toggle(args)
+MPAPI.disableable_toggle = function(args)
 	local build_fn = function()
 		local enabled = resolve_enabled(args)
 		local build_args = MPAPI.shallow_copy(args)
@@ -203,7 +203,7 @@ function MPAPI.disableable_toggle(args)
 	return MPAPI.ui_element(build_fn)
 end
 
-function MPAPI.disableable_option_cycle(args)
+MPAPI.disableable_option_cycle = function(args)
 	local build_fn = function()
 		local enabled = resolve_enabled(args)
 		local build_args = MPAPI.shallow_copy(args)

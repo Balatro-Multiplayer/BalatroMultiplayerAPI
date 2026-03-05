@@ -11,7 +11,7 @@ local settings_row
 -- UI FUNCTIONS
 -----------------------------
 
-local function create_UIBox_account_overlay()
+local create_UIBox_account_overlay = function()
 	if MPAPI.connection_state.state ~= 'connected' then
 		return G.FUNCS.exit_overlay_menu()
 	end
