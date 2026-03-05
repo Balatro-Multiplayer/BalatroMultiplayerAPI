@@ -1,8 +1,19 @@
-local _registered_mods = {} -- keyed by mod ID → mod entry
-local _mod_order = {} -- ordered list of third-party mod IDs
-local _active_mod = nil -- ID of currently active mod, or nil
+-- Forward declarations for helper functions
+local connect_to_active_mod_server
+local connect_to_default_server
+local update_account_button
+local replace_main_menu
+local restore_main_menu
+
+-----------------------------
+-- STATE VARIABLES
+-----------------------------
+
+local _registered_mods = {}
+local _mod_order = {}
+local _active_mod = nil
 local _default_server_config = nil
-local _original_set_main_menu_UI = nil -- captured before any hooks
+local _original_set_main_menu_UI = set_main_menu_UI
 
 local _official_mods = {
 	{ id = 'MultiplayerPvP', name = 'PvP', colour = G.C.RED, download_url = 'https://github.com/V-rtualized/MultiplayerPvP' },
@@ -22,6 +33,10 @@ for _, official in ipairs(_official_mods) do
 	}
 end
 
+-----------------------------
+-- API FUNCTIONS
+-----------------------------
+
 function MPAPI.register_mod(opts)
 	if not opts.id then
 		MPAPI.sendWarnMessage('register_mod: missing id')
@@ -34,7 +49,6 @@ function MPAPI.register_mod(opts)
 
 	local existing = _registered_mods[opts.id]
 	if existing and existing.is_official then
-		-- Merge into official entry
 		existing.main_menu_ui = opts.main_menu_ui
 		existing.server_config = opts.server_config
 		if opts.name then
@@ -44,7 +58,6 @@ function MPAPI.register_mod(opts)
 			existing.colour = opts.colour
 		end
 	else
-		-- New third-party mod
 		_registered_mods[opts.id] = {
 			id = opts.id,
 			name = opts.name or opts.id,
@@ -57,84 +70,7 @@ function MPAPI.register_mod(opts)
 		_mod_order[#_mod_order + 1] = opts.id
 	end
 
-	-- If we're on the main menu, refresh the account panel
-	if MPAPI.account_button then
-		MPAPI.account_button:update()
-	end
-end
-
-function MPAPI.activate_mod(id)
-	local mod = _registered_mods[id]
-	if not mod then
-		MPAPI.sendWarnMessage('activate_mod: unknown mod ' .. tostring(id))
-		return
-	end
-
-	-- If mod isn't registered (official but not installed), open download page
-	if not mod.main_menu_ui then
-		if mod.download_url then
-			love.system.openURL(mod.download_url)
-		end
-		return
-	end
-
-	_active_mod = id
-
-	-- Handle server switching
-	if mod.server_config then
-		-- Capture default config before switching
-		if not _default_server_config then
-			_default_server_config = MPAPI.get_last_opts() or {}
-		end
-		MPAPI.disconnect()
-		MPAPI.connect(mod.server_config)
-	end
-
-	-- Replace main menu
-	if G.MAIN_MENU_UI then
-		G.MAIN_MENU_UI:remove()
-	end
-	G.MAIN_MENU_UI = UIBox({
-		definition = mod.main_menu_ui(),
-		config = { align = 'bmi', offset = { x = 0, y = 10 }, major = G.ROOM_ATTACH, bond = 'Weak' },
-	})
-	G.MAIN_MENU_UI.alignment.offset.y = 0
-	G.MAIN_MENU_UI:align_to_major()
-
-	-- Refresh account panel to show back button
-	if MPAPI.account_button then
-		MPAPI.account_button:update()
-	end
-end
-
-function MPAPI.deactivate_mod()
-	if not _active_mod then
-		return
-	end
-
-	local mod = _registered_mods[_active_mod]
-	_active_mod = nil
-
-	-- Reconnect to default server if mod had a custom one
-	if mod and mod.server_config then
-		MPAPI.disconnect()
-		if _default_server_config then
-			MPAPI.connect(_default_server_config)
-		end
-	end
-
-	-- Restore vanilla main menu
-	if G.MAIN_MENU_UI then
-		G.MAIN_MENU_UI:remove()
-	end
-	if _original_set_main_menu_UI then
-		_original_set_main_menu_UI()
-	end
-
-	-- Refresh account panel to show mod buttons
-	if MPAPI.account_button then
-		MPAPI.account_button:update()
-	end
+	update_account_button()
 end
 
 function MPAPI.get_active_mod()
@@ -154,8 +90,86 @@ function MPAPI.get_registered_mods()
 	return result
 end
 
--- Store the original set_main_menu_UI before any hooks
--- This is called from the set_main_menu_UI hook in account.lua
-function MPAPI._capture_original_set_main_menu_UI(fn)
-	_original_set_main_menu_UI = fn
+-----------------------------
+-- INTERNAL FUNCTIONS
+-----------------------------
+
+function MPAPI._internal.activate_mod(id)
+	local mod = _registered_mods[id]
+	if not mod then
+		MPAPI.sendWarnMessage('activate_mod: unknown mod ' .. tostring(id))
+		return
+	end
+
+	if not mod.main_menu_ui then
+		if mod.download_url then
+			love.system.openURL(mod.download_url)
+		end
+		return
+	end
+
+	connect_to_active_mod_server(mod)
+
+	_active_mod = id
+
+	replace_main_menu(mod.main_menu_ui)
+	update_account_button()
+end
+
+function MPAPI._internal.deactivate_mod()
+	if not _active_mod then
+		return
+	end
+
+	connect_to_default_server(_registered_mods[_active_mod])
+
+	_active_mod = nil
+
+	restore_main_menu()
+	update_account_button()
+end
+
+-----------------------------
+-- HELPER FUNCTIONS
+-----------------------------
+
+connect_to_active_mod_server = function(mod)
+	if mod and mod.server_config then
+		MPAPI.disconnect()
+		MPAPI.connect(mod.server_config)
+	end
+end
+
+connect_to_default_server = function(mod)
+	if mod and mod.server_config then
+		MPAPI.disconnect()
+		MPAPI.connect()
+	end
+end
+
+update_account_button = function()
+	if MPAPI.account_button then
+		MPAPI.account_button:update()
+	end
+end
+
+replace_main_menu = function(build_fn)
+	if G.MAIN_MENU_UI then
+		G.MAIN_MENU_UI:remove()
+	end
+	G.MAIN_MENU_UI = UIBox({
+		definition = build_fn(),
+		config = { align = 'bmi', offset = { x = 0, y = 10 }, major = G.ROOM_ATTACH, bond = 'Weak' },
+	})
+	G.MAIN_MENU_UI.alignment.offset.y = 0
+	G.MAIN_MENU_UI:align_to_major()
+end
+
+restore_main_menu = function()
+	if G.MAIN_MENU_UI then
+		G.MAIN_MENU_UI:remove()
+	end
+	if _original_set_main_menu_UI then
+		_original_set_main_menu_UI()
+	end
 end

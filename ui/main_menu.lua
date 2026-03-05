@@ -143,19 +143,17 @@ end
 G.FUNCS.mpapi_mod_button = function(e)
 	local mod_id = e.config and e.config.ref_table and e.config.ref_table.mod_id
 	if mod_id then
-		MPAPI.activate_mod(mod_id)
+		MPAPI._internal.activate_mod(mod_id)
 	end
 end
 
 -- Back button: deactivate current mod, return to normal menu
 G.FUNCS.mpapi_back_button = function(e)
-	MPAPI.deactivate_mod()
+	MPAPI._internal.deactivate_mod()
 end
 
 -- Hook set_main_menu_UI: add account panel, handle active mod menu replacement
 local _set_main_menu_UI_ref = set_main_menu_UI
-MPAPI._capture_original_set_main_menu_UI(_set_main_menu_UI_ref)
-
 function set_main_menu_UI()
 	local active = MPAPI.get_active_mod()
 
