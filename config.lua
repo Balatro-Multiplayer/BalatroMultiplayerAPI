@@ -1,3 +1,3 @@
 return {
-	['chat_enabled'] = true,
+	['chat_enabled'] = false,
 }
