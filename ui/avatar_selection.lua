@@ -6,7 +6,7 @@ function Card:click()
 	end
 	if self.params.mpapi_avatar_selectable then
 		local joker_key = self.config.center.key
-		MPAPI.set_preferred_joker(joker_key, function(err, data)
+		MPAPI._internal.set_preferred_joker(joker_key, function(err, data)
 			if err then
 				MPAPI.sendWarnMessage('Failed to set avatar: ' .. tostring(err))
 				return
