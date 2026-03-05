@@ -81,7 +81,7 @@ local _joker_tables = {}
 -- UI FUNCTIONS
 -----------------------------
 
-local function create_UIBox_avatar_selection()
+local create_UIBox_avatar_selection = function()
 	_joker_tables = {}
 
 	create_card_rows()

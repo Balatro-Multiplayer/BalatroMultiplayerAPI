@@ -37,7 +37,7 @@ end
 -- API FUNCTIONS
 -----------------------------
 
-function MPAPI.register_mod(opts)
+MPAPI.register_mod = function(opts)
 	if not opts.id then
 		MPAPI.sendWarnMessage('register_mod: missing id')
 		return
@@ -73,18 +73,18 @@ function MPAPI.register_mod(opts)
 	update_account_button()
 end
 
-function MPAPI.get_active_mod()
+MPAPI.get_active_mod = function()
 	return _active_mod
 end
 
-function MPAPI.get_active_mod_data()
+MPAPI.get_active_mod_data = function()
 	if not _active_mod then
 		return
 	end
 	return _registered_mods[_active_mod]
 end
 
-function MPAPI.get_registered_mods()
+MPAPI.get_registered_mods = function()
 	local result = {}
 	-- Official mods first, in order
 	for _, official in ipairs(_official_mods) do
@@ -101,7 +101,7 @@ end
 -- INTERNAL FUNCTIONS
 -----------------------------
 
-function MPAPI._internal.activate_mod(id)
+MPAPI._internal.activate_mod = function(id)
 	local mod = _registered_mods[id]
 	if not mod then
 		MPAPI.sendWarnMessage('activate_mod: unknown mod ' .. tostring(id))
@@ -123,7 +123,7 @@ function MPAPI._internal.activate_mod(id)
 	update_account_button()
 end
 
-function MPAPI._internal.deactivate_mod()
+MPAPI._internal.deactivate_mod = function()
 	if not _active_mod then
 		return
 	end

@@ -36,7 +36,7 @@ local SERVER_DEFAULTS = {
 }
 
 local MPAPI_update_ref = MPAPI.update
-function MPAPI.update()
+MPAPI.update = function()
 	if _mqtt_instance then
 		_mqtt_instance:update()
 	end
@@ -47,14 +47,14 @@ end
 -- API FUNCTIONS
 -----------------------------
 
-function MPAPI.on_loaded(fn)
+MPAPI.on_loaded = function(fn)
 	if _ready then
 		return fn()
 	end
 	_ready_callbacks[#_ready_callbacks + 1] = fn
 end
 
-function MPAPI.connect(opts)
+MPAPI.connect = function(opts)
 	opts = opts or {}
 	_last_opts = opts
 
@@ -100,7 +100,7 @@ function MPAPI.connect(opts)
 	_connection:connect()
 end
 
-function MPAPI.disconnect()
+MPAPI.disconnect = function()
 	if _connection then
 		_connection:disconnect()
 	end
@@ -114,26 +114,26 @@ function MPAPI.disconnect()
 	set_connection_state_status_text()
 end
 
-function MPAPI.is_connected()
+MPAPI.is_connected = function()
 	if _connection then
 		return _connection:get_state()
 	end
 	return 'disconnected'
 end
 
-function MPAPI.get_mqtt()
+MPAPI.get_mqtt = function()
 	return _mqtt_instance
 end
 
-function MPAPI.get_connection()
+MPAPI.get_connection = function()
 	return _connection
 end
 
-function MPAPI.get_last_opts()
+MPAPI.get_last_opts = function()
 	return _last_opts
 end
 
-function MPAPI.is_ready()
+MPAPI.is_ready = function()
 	return _ready
 end
 
@@ -141,11 +141,11 @@ end
 -- INTERNAL FUNCTIONS
 -----------------------------
 
-function MPAPI._internal.set_ready(ready)
+MPAPI._internal.set_ready = function(ready)
 	_ready = ready
 end
 
-function MPAPI._internal.run_ready_callbacks()
+MPAPI._internal.run_ready_callbacks = function()
 	for _, fn in ipairs(_ready_callbacks) do
 		local ok, err = pcall(fn)
 		if not ok then
@@ -155,7 +155,7 @@ function MPAPI._internal.run_ready_callbacks()
 	_ready_callbacks = {}
 end
 
-function MPAPI._internal.get_discord_link_url(callback)
+MPAPI._internal.get_discord_link_url = function(callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)
@@ -168,7 +168,7 @@ function MPAPI._internal.get_discord_link_url(callback)
 	conn.api:get_discord_link_url(conn.jwt_token, callback)
 end
 
-function MPAPI._internal.set_use_discord_name(value, callback)
+MPAPI._internal.set_use_discord_name = function(value, callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)
@@ -197,7 +197,7 @@ function MPAPI._internal.set_use_discord_name(value, callback)
 	end)
 end
 
-function MPAPI._internal.set_preferred_joker(value, callback)
+MPAPI._internal.set_preferred_joker = function(value, callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)
@@ -223,7 +223,7 @@ function MPAPI._internal.set_preferred_joker(value, callback)
 	end)
 end
 
-function MPAPI._internal.unlink_discord(callback)
+MPAPI._internal.unlink_discord = function(callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)

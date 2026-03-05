@@ -8,7 +8,7 @@ local attach_account_button
 -- UI FUNCTIONS
 -----------------------------
 
-local function create_UIBox_account_button()
+local create_UIBox_account_button = function()
 	local status_colour = G.C.RED
 	if MPAPI.connection_state.state == 'connected' then
 		status_colour = G.C.WHITE
@@ -203,7 +203,7 @@ MPAPI.account_button = MPAPI.ui_element(create_UIBox_account_button)
 -----------------------------
 
 local _set_main_menu_UI_ref = set_main_menu_UI
-function set_main_menu_UI()
+set_main_menu_UI = function()
 	local active = MPAPI.get_active_mod_data()
 
 	if active and active.main_menu_ui then

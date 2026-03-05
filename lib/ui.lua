@@ -1,5 +1,5 @@
 -- Walk a UI node tree, calling visitor(node, config) on each node
-function MPAPI.walk_nodes(node, visitor)
+MPAPI.walk_nodes = function(node, visitor)
 	if not node then
 		return
 	end
@@ -30,7 +30,7 @@ end
 -- Returns a Joker card using the user's preferred joker id
 -- Can be easily added to UI using { n = G.UIT.O, config = { object = card } }
 -- card_parameters get added to the underlying card values
-function MPAPI.create_account_avatar(card_parameters)
+MPAPI.create_account_avatar = function(card_parameters)
 	local joker_id = MPAPI.connection_state.preferred_joker or 'j_joker'
 	local center = G.P_CENTERS[joker_id] or G.P_CENTERS['j_joker']
 	local card = Card(0, 0, G.CARD_W, G.CARD_H, G.P_CARDS.empty, center, card_parameters)
