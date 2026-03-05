@@ -75,13 +75,14 @@ end
 -----------------------------
 
 local _card_rows = {}
+local _joker_tables = {}
 
 -----------------------------
 -- UI FUNCTIONS
 -----------------------------
 
 local function create_UIBox_avatar_selection()
-	local joker_tables = {}
+	_joker_tables = {}
 
 	create_card_rows()
 	populate_page(1)
@@ -96,7 +97,7 @@ local function create_UIBox_avatar_selection()
 		{ n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
 			{ n = G.UIT.T, config = { text = 'Choose Avatar', scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 		} },
-		{ n = G.UIT.R, config = { align = 'cm', r = 0.1, colour = G.C.BLACK, emboss = 0.05 }, nodes = joker_tables },
+		{ n = G.UIT.R, config = { align = 'cm', r = 0.1, colour = G.C.BLACK, emboss = 0.05 }, nodes = _joker_tables },
 		{
 			n = G.UIT.R,
 			config = { align = 'cm' },
@@ -125,7 +126,7 @@ create_card_rows = function()
 	_card_rows = {}
 	for j = 1, ROWS do
 		_card_rows[j] = CardArea(G.ROOM.T.x + 0.2 * G.ROOM.T.w / 2, G.ROOM.T.h, COLS * G.CARD_W, 0.95 * G.CARD_H, { card_limit = COLS, type = 'title', highlight_limit = 0, collection = true })
-		joker_tables[#joker_tables + 1] = {
+		_joker_tables[#_joker_tables + 1] = {
 			n = G.UIT.R,
 			config = { align = 'cm', padding = 0.07, no_fill = true },
 			nodes = {
