@@ -77,6 +77,13 @@ function MPAPI.get_active_mod()
 	return _active_mod
 end
 
+function MPAPI.get_active_mod_data()
+	if not _active_mod then
+		return
+	end
+	return _registered_mods[_active_mod]
+end
+
 function MPAPI.get_registered_mods()
 	local result = {}
 	-- Official mods first, in order
