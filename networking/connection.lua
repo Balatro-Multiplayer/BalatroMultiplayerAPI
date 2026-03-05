@@ -22,6 +22,7 @@ function connection.new(opts)
 		display_name = nil,
 		use_discord_name = false,
 		preferred_joker = 'j_joker',
+		privileges = {},
 		steam_id = nil,
 		discord_name = nil,
 		is_temp = false,
@@ -69,6 +70,9 @@ function connection:_handle_auth_success(data)
 		self.display_name = data.player.displayName or self.steam_name
 		self.use_discord_name = data.player.useDiscordName or false
 		self.preferred_joker = data.player.preferredJoker or 'j_joker'
+		if data.player.privileges then
+			self.privileges = data.player.privileges
+		end
 	end
 
 	self.lobby_data = data.lobby or nil

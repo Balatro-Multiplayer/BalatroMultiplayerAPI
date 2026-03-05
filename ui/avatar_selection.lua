@@ -46,29 +46,7 @@ local AVATAR_JOKERS = {
 	'j_idol',
 	'j_matador',
 	'j_stuntman',
-	'j_hack',
-	'j_hologram',
-	'j_vagabond',
-	'j_photograph',
-	'j_hallucination',
-	'j_baseball',
-	'j_sock_and_buskin',
-	'j_blueprint',
-	'j_invisible',
-	'j_brainstorm',
-	'j_caino',
-	'j_triboulet',
-	'j_yorick',
-	'j_chicot',
-	'j_perkeo',
 }
-
-local avatar_centers = {}
-for _, id in ipairs(AVATAR_JOKERS) do
-	if G.P_CENTERS[id] then
-		avatar_centers[#avatar_centers + 1] = G.P_CENTERS[id]
-	end
-end
 
 -----------------------------
 -- STATE VARIABLES
@@ -76,6 +54,7 @@ end
 
 local _card_rows = {}
 local _joker_tables = {}
+local _avatar_centers = {}
 
 -----------------------------
 -- UI FUNCTIONS
@@ -84,10 +63,11 @@ local _joker_tables = {}
 local create_UIBox_avatar_selection = function()
 	_joker_tables = {}
 
+	calculate_avatar_centers(avatar_jokers_to_use)
 	create_card_rows()
 	populate_page(1)
 
-	local total_pages = math.ceil(#avatar_centers / CARDS_PER_PAGE)
+	local total_pages = math.ceil(#_avatar_centers / CARDS_PER_PAGE)
 	local page_options = {}
 	for i = 1, total_pages do
 		page_options[#page_options + 1] = localize('k_page') .. ' ' .. tostring(i) .. '/' .. tostring(total_pages)
@@ -122,6 +102,18 @@ local create_UIBox_avatar_selection = function()
 	})
 end
 
+calculate_avatar_centers = function()
+	local privilege_jokers = MPAPI.get_privileges()
+	local avatar_jokers_to_use = privilege_jokers.jokers and MPAPI.merge_unique(AVATAR_JOKERS, privilege_jokers.jokers) or AVATAR_JOKERS
+
+	_avatar_centers = {}
+	for _, id in ipairs(avatar_jokers_to_use) do
+		if G.P_CENTERS[id] then
+			_avatar_centers[#_avatar_centers + 1] = G.P_CENTERS[id]
+		end
+	end
+end
+
 create_card_rows = function()
 	_card_rows = {}
 	for j = 1, ROWS do
@@ -150,7 +142,7 @@ populate_page = function(page)
 	local page_offset = CARDS_PER_PAGE * (page - 1)
 	for i = 1, COLS do
 		for j = 1, ROWS do
-			local center = avatar_centers[i + (j - 1) * COLS + page_offset]
+			local center = _avatar_centers[i + (j - 1) * COLS + page_offset]
 			if not center then
 				break
 			end
