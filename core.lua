@@ -94,22 +94,18 @@ MPAPI.modules.api_client = MPAPI.load_mpapi_file('networking/api_client.lua')
 MPAPI.modules.connection = MPAPI.load_mpapi_file('networking/connection.lua')
 
 -----------------------------
--- FILE LOADING
+-- FILE LOADING & STARTUP
 -----------------------------
+
+function MPAPI.update()
+	-- This will be intentionally hooked by other files in the mod
+end
 
 MPAPI._internal = {}
 
 MPAPI.load_mpapi_dir('lib')
 MPAPI.load_mpapi_dir('api')
 MPAPI.load_mpapi_dir('ui')
-
------------------------------
--- GAME LOOP AND STARTUP
------------------------------
-
-function MPAPI.update()
-	-- This will be intentionally hooked by other files in the mod
-end
 
 G.E_MANAGER:add_event(Event({
 	blockable = false,

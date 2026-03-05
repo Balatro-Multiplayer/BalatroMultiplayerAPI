@@ -40,7 +40,7 @@ local function create_UIBox_account_overlay()
 							n = G.UIT.C,
 							config = { align = 'cm', padding = 0.05 },
 							nodes = {
-								account_info_rows(discord_linked),
+								account_info_rows(steam_name, name_colour, discord_linked),
 								settings_row(discord_linked),
 							},
 						},
@@ -141,7 +141,7 @@ account_info_row = function(label, value_nodes)
 	}
 end
 
-account_info_rows = function(discord_linked)
+account_info_rows = function(steam_name, name_colour, discord_linked)
 	local discord_value = discord_linked and MPAPI.connection_state.discord_name or localize('k_not_linked')
 	local discord_colour = discord_linked and G.C.GREEN or G.C.UI.TEXT_INACTIVE
 
@@ -162,7 +162,7 @@ account_info_rows = function(discord_linked)
 	}
 end
 
-display_name_option_cycle = function()
+display_name_option_cycle = function(discord_linked)
 	return {
 		n = G.UIT.C,
 		config = { align = 'cm', padding = 0.1 },
@@ -202,7 +202,7 @@ settings_row = function(discord_linked)
 		n = G.UIT.R,
 		config = { align = 'cm', padding = 0.1 },
 		nodes = {
-			display_name_option_cycle(),
+			display_name_option_cycle(discord_linked),
 			discord_linking_buttons(discord_linked),
 		},
 	}
