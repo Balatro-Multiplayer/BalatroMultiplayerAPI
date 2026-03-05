@@ -1,3 +1,15 @@
+-- Forward declarations for helper functions
+local connection_on_state_change
+local log_state_update
+local update_display_name
+local reset_connection_state_variables
+local set_connection_state_status_text
+local run_new_state_user_callbacks
+
+-----------------------------
+-- STATE VARIABLES
+-----------------------------
+
 MPAPI.connection_state = {
 	state = 'disconnected',
 	status_text = localize('k_status_offline'),
@@ -5,7 +17,6 @@ MPAPI.connection_state = {
 	display_name = localize('b_retry_connection'),
 	steam_name = '',
 	discord_name = '',
-	discord_id = '',
 	is_temp = false,
 	use_discord_name = false,
 	preferred_joker = 'j_joker',
@@ -17,30 +28,31 @@ local _ready = false
 local _ready_callbacks = {}
 local _last_opts = nil
 
-function MPAPI.update_display_name()
-	if MPAPI.connection_state.state ~= 'connected' then
-		MPAPI.connection_state.display_name = localize('b_retry_connection')
-		return
-	end
-	if _connection and _connection.display_name then
-		MPAPI.connection_state.display_name = MPAPI.truncate(_connection.display_name, 20)
-	elseif MPAPI.connection_state.steam_name ~= '' then
-		MPAPI.connection_state.display_name = MPAPI.connection_state.steam_name
-	else
-		MPAPI.connection_state.display_name = localize('k_unknown')
-	end
-	if MPAPI.account_button then
-		MPAPI.account_button:update()
-	end
-end
-
--- Server defaults
-local DEFAULTS = {
+local SERVER_DEFAULTS = {
 	api_url = 'http://localhost:8788',
 	mqtt_broker = 'localhost',
 	mqtt_port = 8883,
 	mqtt_secure = true,
 }
+
+local MPAPI_update_ref = MPAPI.update
+function MPAPI.update()
+	if _mqtt_instance then
+		_mqtt_instance:update()
+	end
+	MPAPI_update_ref()
+end
+
+-----------------------------
+-- API FUNCTIONS
+-----------------------------
+
+function MPAPI.on_loaded(fn)
+	if _ready then
+		return fn()
+	end
+	_ready_callbacks[#_ready_callbacks + 1] = fn
+end
 
 function MPAPI.connect(opts)
 	opts = opts or {}
@@ -56,11 +68,9 @@ function MPAPI.connect(opts)
 		return
 	end
 
-	-- Mod-provided overrides take precedence over defaults
-	local api_url = opts.api_url or DEFAULTS.api_url
-	local mqtt_broker = opts.mqtt_broker or DEFAULTS.mqtt_broker
-	local mqtt_port = opts.mqtt_port or DEFAULTS.mqtt_port
-	local mqtt_secure = DEFAULTS.mqtt_secure
+	local mqtt_broker = opts.mqtt_broker or SERVER_DEFAULTS.mqtt_broker
+	local mqtt_port = opts.mqtt_port or SERVER_DEFAULTS.mqtt_port
+	local mqtt_secure = SERVER_DEFAULTS.mqtt_secure
 	if opts.mqtt_secure ~= nil then
 		mqtt_secure = opts.mqtt_secure
 	end
@@ -71,7 +81,7 @@ function MPAPI.connect(opts)
 		secure = mqtt_secure,
 	})
 
-	local api = MPAPI.modules.api_client.new(_mqtt_instance, api_url)
+	local api = MPAPI.modules.api_client.new(_mqtt_instance, opts.api_url or SERVER_DEFAULTS.api_url)
 
 	_connection = MPAPI.modules.connection.new({
 		mqtt_client = _mqtt_instance,
@@ -85,72 +95,7 @@ function MPAPI.connect(opts)
 		},
 	})
 
-	local cs = MPAPI.connection_state
-
-	_connection.on_state_change = function(new_state, context)
-		context = context or {}
-
-		-- Update connection_state
-		cs.state = new_state
-		if new_state == 'connected' then
-			cs.status_text = localize('k_status_connected')
-			cs.player_id = _connection.player_id or ''
-			cs.steam_name = MPAPI.truncate(_connection.steam_name or '', 20)
-			cs.discord_name = MPAPI.truncate(_connection.discord_name or '', 20)
-			cs.is_temp = _connection.is_temp or false
-			cs.use_discord_name = _connection.use_discord_name or false
-			cs.preferred_joker = _connection.preferred_joker or 'j_joker'
-		else
-			if new_state == 'authenticating' then
-				cs.status_text = localize('k_status_signing_in')
-			elseif new_state == 'connecting' then
-				cs.status_text = localize('k_status_connecting')
-			else
-				cs.status_text = localize('k_status_offline')
-			end
-			cs.player_id = ''
-			cs.steam_name = ''
-			cs.discord_name = ''
-			cs.is_temp = false
-			cs.use_discord_name = false
-			cs.preferred_joker = 'j_joker'
-		end
-		MPAPI.update_display_name()
-
-		-- Player data update (e.g. discord linked/unlinked, display name changed)
-		if context.player_update then
-			cs.discord_name = MPAPI.truncate(_connection.discord_name or '', 20)
-			cs.use_discord_name = _connection.use_discord_name or false
-			cs.preferred_joker = _connection.preferred_joker or 'j_joker'
-			MPAPI.update_display_name()
-		end
-
-		-- Logging
-		if context.error then
-			MPAPI.sendWarnMessage('Connection error: ' .. tostring(context.error))
-		elseif new_state == 'connected' then
-			MPAPI.sendDebugMessage('Connected! Player ID: ' .. tostring(_connection.player_id))
-		elseif new_state == 'disconnected' and context.old_state == 'connected' then
-			MPAPI.sendDebugMessage('Disconnected from server')
-		end
-
-		-- User callbacks
-		if context.error and opts.on_error then
-			opts.on_error(context.error)
-		elseif new_state == 'connected' and context.reconnected_lobby and opts.on_reconnected then
-			opts.on_reconnected(_connection, context.reconnected_lobby)
-		elseif new_state == 'connected' and opts.on_connected then
-			opts.on_connected(_connection)
-		elseif new_state == 'disconnected' and context.old_state == 'connected' and opts.on_disconnected then
-			opts.on_disconnected()
-		end
-
-		-- UI refresh
-		if MPAPI.account_button then
-			MPAPI.account_button:update()
-			MPAPI.account_overlay:update()
-		end
-	end
+	_connection.on_state_change = connection_on_state_change
 
 	_connection:connect()
 end
@@ -164,15 +109,9 @@ function MPAPI.disconnect()
 		_mqtt_instance = nil
 	end
 	_connection = nil
-	local cs = MPAPI.connection_state
-	cs.state = 'disconnected'
-	cs.status_text = 'Offline'
-	cs.player_id = ''
-	cs.steam_name = ''
-	cs.discord_name = ''
-	cs.is_temp = false
-	cs.use_discord_name = false
-	cs.preferred_joker = 'j_joker'
+	MPAPI.connection_state.state = 'disconnected'
+	reset_connection_state_variables()
+	set_connection_state_status_text()
 end
 
 function MPAPI.is_connected()
@@ -194,13 +133,29 @@ function MPAPI.get_last_opts()
 	return _last_opts
 end
 
-function MPAPI.update()
-	if _mqtt_instance then
-		_mqtt_instance:update()
-	end
+function MPAPI.is_ready()
+	return _ready
 end
 
-function MPAPI.get_discord_link_url(callback)
+-----------------------------
+-- INTERNAL FUNCTIONS
+-----------------------------
+
+function MPAPI._internal.set_ready(ready)
+	_ready = ready
+end
+
+function MPAPI._internal.run_ready_callbacks()
+	for _, fn in ipairs(_ready_callbacks) do
+		local ok, err = pcall(fn)
+		if not ok then
+			MPAPI.sendWarnMessage('on_loaded callback error: ' .. tostring(err))
+		end
+	end
+	_ready_callbacks = {}
+end
+
+function MPAPI._internal.get_discord_link_url(callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)
@@ -213,7 +168,7 @@ function MPAPI.get_discord_link_url(callback)
 	conn.api:get_discord_link_url(conn.jwt_token, callback)
 end
 
-function MPAPI.set_use_discord_name(value, callback)
+function MPAPI._internal.set_use_discord_name(value, callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)
@@ -223,29 +178,26 @@ function MPAPI.set_use_discord_name(value, callback)
 		callback('No JWT token', nil)
 		return
 	end
+
 	conn.api:set_display_name_pref(conn.jwt_token, value, function(err, data)
 		if err then
 			callback(err, nil)
 			return
 		end
 
-		-- Update connection state immediately from the HTTP response
 		if data.player then
 			conn.display_name = data.player.displayName or conn.steam_name
 			conn.use_discord_name = data.player.useDiscordName or false
 		end
-		local cs = MPAPI.connection_state
-		cs.use_discord_name = conn.use_discord_name
-		MPAPI.update_display_name()
-		if MPAPI.account_overlay then
-			MPAPI.account_overlay:update()
-		end
+		MPAPI.connection_state.use_discord_name = conn.use_discord_name
+
+		update_display_name()
 
 		callback(nil, data)
 	end)
 end
 
-function MPAPI.set_preferred_joker(value, callback)
+function MPAPI._internal.set_preferred_joker(value, callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)
@@ -255,6 +207,7 @@ function MPAPI.set_preferred_joker(value, callback)
 		callback('No JWT token', nil)
 		return
 	end
+
 	conn.api:set_preferred_joker(conn.jwt_token, value, function(err, data)
 		if err then
 			callback(err, nil)
@@ -270,7 +223,7 @@ function MPAPI.set_preferred_joker(value, callback)
 	end)
 end
 
-function MPAPI.unlink_discord(callback)
+function MPAPI._internal.unlink_discord(callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)
@@ -280,37 +233,101 @@ function MPAPI.unlink_discord(callback)
 		callback('No JWT token', nil)
 		return
 	end
+
 	conn.api:unlink_discord(conn.jwt_token, callback)
 end
 
-function MPAPI.on_loaded(fn)
-	if _ready then
-		fn()
+-----------------------------
+-- HELPER FUNCTIONS
+-----------------------------
+
+update_display_name = function()
+	if MPAPI.connection_state.state ~= 'connected' then
+		MPAPI.connection_state.display_name = localize('b_retry_connection')
+		return
+	end
+
+	if _connection and _connection.display_name then
+		MPAPI.connection_state.display_name = MPAPI.truncate(_connection.display_name, 20)
+	elseif MPAPI.connection_state.steam_name ~= '' then
+		MPAPI.connection_state.display_name = MPAPI.connection_state.steam_name
 	else
-		_ready_callbacks[#_ready_callbacks + 1] = fn
+		MPAPI.connection_state.display_name = localize('k_unknown')
+	end
+
+	if MPAPI.account_button then
+		MPAPI.account_button:update()
+	end
+	if MPAPI.account_overlay then
+		MPAPI.account_overlay:update()
 	end
 end
 
-function MPAPI.is_ready()
-	return _ready
+connection_on_state_change = function(new_state, context)
+	context = context or {}
+
+	MPAPI.connection_state.state = new_state
+	if new_state == 'connected' or context.player_update then
+		MPAPI.connection_state.player_id = _connection.player_id or ''
+		MPAPI.connection_state.steam_name = MPAPI.truncate(_connection.steam_name or '', 20)
+		MPAPI.connection_state.discord_name = MPAPI.truncate(_connection.discord_name or '', 20)
+		MPAPI.connection_state.is_temp = _connection.is_temp or false
+		MPAPI.connection_state.use_discord_name = _connection.use_discord_name or false
+		MPAPI.connection_state.preferred_joker = _connection.preferred_joker or 'j_joker'
+	end
+	set_connection_state_status_text()
+
+	update_display_name()
+
+	if new_state ~= context.old_state then
+		if new_state ~= 'connected' then
+			reset_connection_state_variables()
+		end
+		log_state_update(new_state, context)
+	end
+
+	run_new_state_user_callbacks(new_state, context)
 end
 
-G.E_MANAGER:add_event(Event({
-	blockable = false,
-	blocking = false,
-	func = function()
-		if not G.STEAM then
-			return false
-		end
-		_ready = true
-		MPAPI.connect()
-		for _, fn in ipairs(_ready_callbacks) do
-			local ok, err = pcall(fn)
-			if not ok then
-				MPAPI.sendWarnMessage('on_loaded callback error: ' .. tostring(err))
-			end
-		end
-		_ready_callbacks = {}
-		return true
-	end,
-}))
+log_state_update = function(new_state, context)
+	if context.error then
+		MPAPI.sendWarnMessage('Connection error: ' .. tostring(context.error))
+	elseif new_state == 'connected' then
+		MPAPI.sendDebugMessage('Connected! Player ID: ' .. tostring(_connection.player_id))
+	elseif new_state == 'disconnected' then
+		MPAPI.sendDebugMessage('Disconnected from server')
+	end
+end
+
+reset_connection_state_variables = function()
+	MPAPI.connection_state.player_id = ''
+	MPAPI.connection_state.steam_name = ''
+	MPAPI.connection_state.discord_name = ''
+	MPAPI.connection_state.is_temp = false
+	MPAPI.connection_state.use_discord_name = false
+	MPAPI.connection_state.preferred_joker = 'j_joker'
+end
+
+set_connection_state_status_text = function()
+	if MPAPI.connection_state.state == 'connected' then
+		MPAPI.connection_state.status_text = localize('k_status_connected')
+	elseif MPAPI.connection_state.state == 'authenticating' then
+		MPAPI.connection_state.status_text = localize('k_status_signing_in')
+	elseif MPAPI.connection_state.state == 'connecting' then
+		MPAPI.connection_state.status_text = localize('k_status_connecting')
+	else
+		MPAPI.connection_state.status_text = localize('k_status_offline')
+	end
+end
+
+run_new_state_user_callbacks = function(new_state, context)
+	if context.error and _last_opts.on_error then
+		_last_opts.on_error(context.error)
+	elseif new_state == 'connected' and context.reconnected_lobby and _last_opts.on_reconnected then
+		_last_opts.on_reconnected(_connection, context.reconnected_lobby)
+	elseif new_state == 'connected' and _last_opts.on_connected then
+		_last_opts.on_connected(_connection)
+	elseif new_state == 'disconnected' and context.old_state == 'connected' and _last_opts.on_disconnected then
+		_last_opts.on_disconnected()
+	end
+end

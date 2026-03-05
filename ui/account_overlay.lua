@@ -214,7 +214,7 @@ end
 
 G.FUNCS.mpapi_change_use_discord_name = function(args)
 	local use_discord = args.to_key == 2
-	MPAPI.set_use_discord_name(use_discord, function(err, data)
+	MPAPI._internal.set_use_discord_name(use_discord, function(err, data)
 		if err then
 			MPAPI.sendWarnMessage('Failed to set display name preference: ' .. tostring(err))
 			return
@@ -224,7 +224,7 @@ G.FUNCS.mpapi_change_use_discord_name = function(args)
 end
 
 G.FUNCS.mpapi_unlink_discord = function(e)
-	MPAPI.unlink_discord(function(err, data)
+	MPAPI._internal.unlink_discord(function(err, data)
 		if err then
 			MPAPI.sendWarnMessage('Discord unlink error: ' .. tostring(err))
 			return
@@ -234,7 +234,7 @@ G.FUNCS.mpapi_unlink_discord = function(e)
 end
 
 G.FUNCS.mpapi_link_discord = function(e)
-	MPAPI.get_discord_link_url(function(err, data)
+	MPAPI._internal.get_discord_link_url(function(err, data)
 		if err then
 			MPAPI.sendWarnMessage('Discord link error: ' .. tostring(err))
 			return

@@ -1,16 +1,20 @@
 MPAPI = SMODS.current_mod
 
-MPAPI.sendDebugMessage = function(msg)
-	sendDebugMessage(msg, MPAPI.id)
-end
-
-MPAPI.sendWarnMessage = function(msg)
-	sendWarnMessage(msg, MPAPI.id)
-end
-
 -- Add mod root and networking/ to package.path so the MQTT thread can
 -- require("mqtt") (luamqtt at mqtt/init.lua) and require("openssl_ffi")
 package.path = MPAPI.path .. '/?.lua;' .. MPAPI.path .. '/?/init.lua;' .. MPAPI.path .. '/networking/?.lua;' .. package.path
+
+-----------------------------
+-- CORE FUNCTIONS
+-----------------------------
+
+function MPAPI.sendDebugMessage(msg)
+	sendDebugMessage(msg, MPAPI.id)
+end
+
+function MPAPI.sendWarnMessage(msg)
+	sendWarnMessage(msg, MPAPI.id)
+end
 
 function MPAPI.load_mpapi_file(file)
 	local chunk, err = SMODS.load_file(file, MPAPI.id)
@@ -43,6 +47,10 @@ function MPAPI.load_mpapi_dir(directory, recursive)
 		end
 	end
 end
+
+-----------------------------
+-- MODULES
+-----------------------------
 
 MPAPI.modules = {}
 
@@ -81,16 +89,27 @@ else
 	MPAPI.sendWarnMessage('Steam module failed to load')
 end
 
-MPAPI.load_mpapi_dir('lib')
-
 MPAPI.modules.token_store = MPAPI.load_mpapi_file('networking/token_store.lua')
 MPAPI.modules.api_client = MPAPI.load_mpapi_file('networking/api_client.lua')
 MPAPI.modules.connection = MPAPI.load_mpapi_file('networking/connection.lua')
 
-MPAPI.load_mpapi_file('api/connection.lua')
-MPAPI.load_mpapi_file('api/ui_element.lua')
-MPAPI.load_mpapi_file('api/mod_registry.lua')
+-----------------------------
+-- FILE LOADING
+-----------------------------
+
+MPAPI._internal = {}
+
+MPAPI.load_mpapi_dir('lib')
+MPAPI.load_mpapi_dir('api')
 MPAPI.load_mpapi_dir('ui')
+
+-----------------------------
+-- GAME LOOP AND STARTUP
+-----------------------------
+
+function MPAPI.update()
+	-- This will be intentionally hooked by other files in the mod
+end
 
 G.E_MANAGER:add_event(Event({
 	blockable = false,
@@ -98,5 +117,19 @@ G.E_MANAGER:add_event(Event({
 	no_delete = true,
 	func = function()
 		MPAPI.update()
+	end,
+}))
+
+G.E_MANAGER:add_event(Event({
+	blockable = false,
+	blocking = false,
+	func = function()
+		if not G.STEAM then
+			return false
+		end
+		MPAPI._internal.set_ready(true)
+		MPAPI.connect()
+		MPAPI._internal.run_ready_callbacks()
+		return true
 	end,
 }))
