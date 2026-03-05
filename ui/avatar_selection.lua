@@ -165,14 +165,14 @@ end
 avatar_preview_card_click_override = function(self)
 	if self.params.mpapi_avatar_preview then
 		G.FUNCS.mpapi_open_avatar_selection()
-		return
+		return true
 	end
 end
 
 avatar_preview_card_hover_override = function(self)
 	if self.params.mpapi_avatar_preview then
 		self:juice_up(0.05, 0.03)
-		return
+		return true
 	end
 end
 
@@ -182,12 +182,12 @@ avatar_selectable_card_click_override = function(self)
 		MPAPI._internal.set_preferred_joker(joker_key, function(err, data)
 			if err then
 				MPAPI.sendWarnMessage('Failed to set avatar: ' .. tostring(err))
-				return
+				return true
 			end
 			MPAPI.sendDebugMessage('Avatar set to: ' .. joker_key)
 		end)
 		G.FUNCS.mpapi_back_to_account_overlay()
-		return
+		return true
 	end
 end
 
@@ -195,7 +195,7 @@ avatar_selectable_card_hover_override = function(self)
 	if self.params.mpapi_avatar_selectable then
 		self:juice_up(0.05, 0.03)
 		play_sound('paper1', math.random() * 0.2 + 0.9, 0.35)
-		return
+		return true
 	end
 end
 
@@ -227,14 +227,22 @@ end
 
 local _card_click_ref = Card.click
 function Card:click()
-	avatar_preview_card_click_override(self)
-	avatar_selectable_card_click_override(self)
+	if avatar_preview_card_click_override(self) then
+		return
+	end
+	if avatar_selectable_card_click_override(self) then
+		return
+	end
 	_card_click_ref(self)
 end
 
 local _card_hover_ref = Card.hover
 function Card:hover()
-	avatar_preview_card_hover_override(self)
-	avatar_selectable_card_hover_override(self)
+	if avatar_preview_card_hover_override(self) then
+		return
+	end
+	if avatar_selectable_card_hover_override(self) then
+		return
+	end
 	_card_hover_ref(self)
 end
