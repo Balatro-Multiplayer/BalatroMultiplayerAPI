@@ -20,6 +20,7 @@ MPAPI.connection_state = {
 	is_temp = false,
 	use_discord_name = false,
 	preferred_joker = 'j_joker',
+	privileges = {},
 }
 
 local _mqtt_instance = nil
@@ -135,6 +136,10 @@ end
 
 MPAPI.is_ready = function()
 	return _ready
+end
+
+MPAPI.get_privileges = function()
+	return MPAPI.connection_state.privileges
 end
 
 -----------------------------
@@ -274,6 +279,7 @@ connection_on_state_change = function(new_state, context)
 		MPAPI.connection_state.is_temp = _connection.is_temp or false
 		MPAPI.connection_state.use_discord_name = _connection.use_discord_name or false
 		MPAPI.connection_state.preferred_joker = _connection.preferred_joker or 'j_joker'
+		MPAPI.connection_state.privileges = _connection.privileges
 	end
 	set_connection_state_status_text()
 
@@ -306,6 +312,7 @@ reset_connection_state_variables = function()
 	MPAPI.connection_state.is_temp = false
 	MPAPI.connection_state.use_discord_name = false
 	MPAPI.connection_state.preferred_joker = 'j_joker'
+	MPAPI.connection_state.privileges = nil
 end
 
 set_connection_state_status_text = function()
