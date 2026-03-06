@@ -28,6 +28,7 @@ local _connection = nil
 local _ready = false
 local _ready_callbacks = {}
 local _last_opts = nil
+local _state_change_callbacks = {}
 
 local SERVER_DEFAULTS = {
 	api_url = 'http://localhost:8788',
@@ -53,6 +54,10 @@ MPAPI.on_loaded = function(fn)
 		return fn()
 	end
 	_ready_callbacks[#_ready_callbacks + 1] = fn
+end
+
+MPAPI.on_connection_state_change = function(fn)
+	_state_change_callbacks[#_state_change_callbacks + 1] = fn
 end
 
 MPAPI.connect = function(opts)
@@ -293,6 +298,13 @@ connection_on_state_change = function(new_state, context)
 	end
 
 	run_new_state_user_callbacks(new_state, context)
+
+	for _, fn in ipairs(_state_change_callbacks) do
+		local ok, err = pcall(fn, new_state, context)
+		if not ok then
+			MPAPI.sendWarnMessage('on_connection_state_change callback error: ' .. tostring(err))
+		end
+	end
 end
 
 log_state_update = function(new_state, context)

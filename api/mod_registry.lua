@@ -47,10 +47,13 @@ MPAPI.register_mod = function(opts)
 		return
 	end
 
+	local hide_logo = opts.hide_logo == true
+
 	local existing = _registered_mods[opts.id]
 	if existing and existing.is_official then
 		existing.main_menu_ui = opts.main_menu_ui
 		existing.server_config = opts.server_config
+		existing.hide_logo = hide_logo
 		if opts.name then
 			existing.name = opts.name
 		end
@@ -65,6 +68,7 @@ MPAPI.register_mod = function(opts)
 			server_config = opts.server_config,
 			main_menu_ui = opts.main_menu_ui,
 			download_url = opts.download_url,
+			hide_logo = hide_logo,
 			is_official = false,
 		}
 		_mod_order[#_mod_order + 1] = opts.id
@@ -119,7 +123,7 @@ MPAPI._internal.activate_mod = function(id)
 
 	_active_mod = id
 
-	replace_main_menu(mod.main_menu_ui)
+	replace_main_menu(mod.main_menu_ui, mod.hide_logo)
 	update_account_button()
 end
 
@@ -160,9 +164,24 @@ update_account_button = function()
 	end
 end
 
-replace_main_menu = function(build_fn)
+replace_main_menu = function(build_fn, hide_logo)
 	if G.MAIN_MENU_UI then
 		G.MAIN_MENU_UI:remove()
+	end
+	if G.PROFILE_BUTTON then
+		G.PROFILE_BUTTON:remove()
+		G.PROFILE_BUTTON = nil
+	end
+	if hide_logo then
+		if G.SPLASH_LOGO then
+			G.SPLASH_LOGO.states.visible = false
+		end
+		if G.title_top then
+			G.title_top.states.visible = false
+			for _, card in ipairs(G.title_top.cards or {}) do
+				card.states.visible = false
+			end
+		end
 	end
 	G.MAIN_MENU_UI = UIBox({
 		definition = build_fn(),
@@ -172,9 +191,22 @@ replace_main_menu = function(build_fn)
 	G.MAIN_MENU_UI:align_to_major()
 end
 
+MPAPI._internal.replace_main_menu = function(build_fn, hide_logo)
+	replace_main_menu(build_fn, hide_logo)
+end
+
 restore_main_menu = function()
 	if G.MAIN_MENU_UI then
 		G.MAIN_MENU_UI:remove()
+	end
+	if G.SPLASH_LOGO then
+		G.SPLASH_LOGO.states.visible = true
+	end
+	if G.title_top then
+		G.title_top.states.visible = true
+		for _, card in ipairs(G.title_top.cards or {}) do
+			card.states.visible = true
+		end
 	end
 	if _original_set_main_menu_UI then
 		_original_set_main_menu_UI()
