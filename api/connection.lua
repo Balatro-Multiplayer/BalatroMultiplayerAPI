@@ -122,9 +122,9 @@ end
 
 MPAPI.is_connected = function()
 	if _connection then
-		return _connection:get_state()
+		return _connection:get_state() == 'connected'
 	end
-	return 'disconnected'
+	return false
 end
 
 MPAPI.get_mqtt = function()
@@ -295,6 +295,11 @@ connection_on_state_change = function(new_state, context)
 			reset_connection_state_variables()
 		end
 		log_state_update(new_state, context)
+	end
+
+	-- Auto-create lobby object on reconnection
+	if new_state == 'connected' and context.reconnected_lobby and MPAPI._internal.create_reconnected_lobby then
+		MPAPI._internal.create_reconnected_lobby(context.reconnected_lobby)
 	end
 
 	run_new_state_user_callbacks(new_state, context)

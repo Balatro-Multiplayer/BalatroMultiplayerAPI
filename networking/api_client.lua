@@ -39,7 +39,7 @@ function api_client:_setup_http_callback(callback)
 			return
 		end
 
-		if status ~= 200 then
+		if status < 200 or status >= 300 then
 			cb('Server returned status ' .. tostring(status) .. ': ' .. body, nil)
 			return
 		end
@@ -209,6 +209,85 @@ function api_client:set_preferred_joker(jwt_token, preferred_joker, callback)
 
 	local body = json_encode({ preferredJoker = preferred_joker })
 	self.mqtt:http_post_auth(self.base_url .. '/api/auth/preferences/joker', body, jwt_token)
+end
+
+function api_client:create_lobby(token, mod_id, max_players, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self:_setup_http_callback(callback)
+
+	local body = json_encode({ modId = mod_id, maxPlayers = max_players })
+	self.mqtt:http_post_auth(self.base_url .. '/api/lobbies', body, token)
+end
+
+function api_client:join_lobby(token, code, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self:_setup_http_callback(callback)
+
+	self.mqtt:http_post_auth(self.base_url .. '/api/lobbies/' .. code .. '/join', '{}', token)
+end
+
+function api_client:leave_lobby(token, code, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self:_setup_http_callback(callback)
+
+	self.mqtt:http_post_auth(self.base_url .. '/api/lobbies/' .. code .. '/leave', '{}', token)
+end
+
+function api_client:set_lobby_metadata(token, code, metadata, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self.pending_callback = callback
+
+	self.mqtt.on_http_response = function(status, body)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if not cb then
+			return
+		end
+
+		if status < 200 or status >= 300 then
+			cb('Server returned status ' .. tostring(status) .. ': ' .. body, nil)
+			return
+		end
+
+		local ok, data = pcall(json_decode, body)
+		if not ok or not data then
+			cb('Failed to parse server response', nil)
+			return
+		end
+
+		cb(nil, data)
+	end
+
+	self.mqtt.on_http_error = function(msg)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if cb then
+			cb('HTTP request failed: ' .. tostring(msg), nil)
+		end
+	end
+
+	local body = json_encode({ metadata = metadata })
+	self.mqtt:http_put_auth(self.base_url .. '/api/lobbies/' .. code .. '/metadata', body, token)
 end
 
 return api_client

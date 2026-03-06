@@ -231,6 +231,25 @@ function mqtt_client:http_post_auth(url, body, token)
 end
 
 ----------------------------------------------------------------------
+-- Send an HTTP PUT request with Authorization: Bearer header
+----------------------------------------------------------------------
+
+function mqtt_client:http_put_auth(url, body, token)
+	if not self.tx_channel then
+		return false, 'Thread not running'
+	end
+
+	self.tx_channel:push(table.concat({
+		'http_put_auth',
+		url,
+		body or '',
+		token or '',
+	}, SEP))
+
+	return true
+end
+
+----------------------------------------------------------------------
 -- Process network events (call from game loop)
 ----------------------------------------------------------------------
 

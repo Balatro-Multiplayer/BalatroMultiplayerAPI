@@ -7,6 +7,22 @@ MPAPI.shallow_copy = function(t)
 	return out
 end
 
+MPAPI.json_encode = function(tbl)
+	if json and json.encode then
+		return json.encode(tbl)
+	end
+	local j = require('json')
+	return j.encode(tbl)
+end
+
+MPAPI.json_decode = function(str)
+	if json and json.decode then
+		return json.decode(str)
+	end
+	local j = require('json')
+	return j.decode(str)
+end
+
 -- Merges two tables with unique values, preserves order
 MPAPI.merge_unique = function(a, b)
 	local seen = {}
