@@ -1,7 +1,6 @@
 -- Forward declarations for helper functions
 local build_mod_buttons
 local build_mod_button
-local set_modded_main_menu_ui
 local attach_account_button
 
 -----------------------------
@@ -140,18 +139,6 @@ build_mod_button = function(mod, inner_width)
 	}
 end
 
-set_modded_main_menu_ui = function(mod)
-	if G.MAIN_MENU_UI then
-		G.MAIN_MENU_UI:remove()
-	end
-	G.MAIN_MENU_UI = UIBox({
-		definition = mod.main_menu_ui(),
-		config = { align = 'bmi', offset = { x = 0, y = 10 }, major = G.ROOM_ATTACH, bond = 'Weak' },
-	})
-	G.MAIN_MENU_UI.alignment.offset.y = 0
-	G.MAIN_MENU_UI:align_to_major()
-end
-
 attach_account_button = function()
 	G.E_MANAGER:add_event(Event({
 		blockable = false,
@@ -207,7 +194,7 @@ set_main_menu_UI = function()
 	local active = MPAPI.get_active_mod_data()
 
 	if active and active.main_menu_ui then
-		set_modded_main_menu_ui(active)
+		MPAPI._internal.replace_main_menu(active.main_menu_ui, active.hide_logo)
 	else
 		_set_main_menu_UI_ref()
 	end

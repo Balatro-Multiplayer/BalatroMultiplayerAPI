@@ -22,6 +22,11 @@ return {
 			k_unlink_discord = 'Unlink Discord',
 			b_open_download_page = 'Open Download Page',
 			b_retry_connection = 'Retry Connection',
+			b_create_lobby_cap = { 'CREATE', 'LOBBY' },
+			b_join_lobby_cap = 'JOIN LOBBY',
+			b_by_code_cap = 'BY CODE',
+			b_from_clipboard_cap = 'FROM CLIPBOARD',
+			b_find_game_cap = 'FIND GAME',
 		},
 	},
 }
