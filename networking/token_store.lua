@@ -18,4 +18,4 @@ function token_store.clear()
 	pcall(love.filesystem.remove, STORE_PATH)
 end
 
-return token_store
+MPAPI.networking.token_store = token_store

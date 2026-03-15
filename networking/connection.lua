@@ -297,4 +297,4 @@ function connection:disconnect()
 	self.lobby_data = nil
 end
 
-return connection
+MPAPI.networking.connection = connection

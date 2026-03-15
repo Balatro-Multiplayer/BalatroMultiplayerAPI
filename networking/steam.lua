@@ -210,4 +210,4 @@ else
 	function steam.cancel_auth_ticket() end
 end
 
-return steam
+MPAPI.networking.steam = steam

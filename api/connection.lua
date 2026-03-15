@@ -69,7 +69,7 @@ MPAPI.connect = function(opts)
 		return
 	end
 
-	if not MPAPI.modules.mqtt_client then
+	if not MPAPI.networking.mqtt_client then
 		MPAPI.sendWarnMessage('MQTT client module not available')
 		return
 	end
@@ -81,19 +81,19 @@ MPAPI.connect = function(opts)
 		mqtt_secure = opts.mqtt_secure
 	end
 
-	_mqtt_instance = MPAPI.modules.mqtt_client.new({
+	_mqtt_instance = MPAPI.networking.mqtt_client.new({
 		broker = mqtt_broker,
 		port = mqtt_port,
 		secure = mqtt_secure,
 	})
 
-	local api = MPAPI.modules.api_client.new(_mqtt_instance, opts.api_url or SERVER_DEFAULTS.api_url)
+	local api = MPAPI.networking.api_client.new(_mqtt_instance, opts.api_url or SERVER_DEFAULTS.api_url)
 
-	_connection = MPAPI.modules.connection.new({
+	_connection = MPAPI.networking.connection.new({
 		mqtt_client = _mqtt_instance,
 		api_client = api,
-		steam = MPAPI.modules.steam,
-		token_store = MPAPI.modules.token_store,
+		steam = MPAPI.networking.steam,
+		token_store = MPAPI.networking.token_store,
 		config = {
 			mqtt_broker = mqtt_broker,
 			mqtt_port = mqtt_port,
