@@ -5,6 +5,8 @@ local subscribe_all
 local handle_event
 local handle_metadata
 local handle_own_state
+local handle_player_info
+local populate_initial_players
 local cleanup_lobby
 
 -----------------------------
@@ -71,8 +73,8 @@ MPAPI.join_lobby = function(mod_id, code, opts)
 	})
 
 	_current_lobby = lobby
-	
-	conn.api:join_lobby(conn.jwt_token, code, )
+
+	conn.api:join_lobby(conn.jwt_token, code, join_lobby_callback)
 
 	return lobby
 end
@@ -97,6 +99,7 @@ MPAPI._internal.create_reconnected_lobby = function(lobby_data)
 		code = lobby_data.code,
 		mod_id = lobby_data.modId,
 		is_host = lobby_data.isHost or false,
+		max_players = lobby_data.maxPlayers,
 		player_id = conn.player_id,
 		mqtt = mqtt,
 		api = conn.api,
@@ -104,6 +107,7 @@ MPAPI._internal.create_reconnected_lobby = function(lobby_data)
 		metadata = lobby_data.metadata or {},
 	})
 
+	populate_initial_players(lobby, lobby_data.players)
 	subscribe_all(lobby)
 	_current_lobby = lobby
 	lobby:_fire('connected')
@@ -119,12 +123,14 @@ join_lobby_callback = function(err, data)
 		return
 	end
 
-	conn.jwt_token = data.token
+	_current_lobby._connection.jwt_token = data.token
 
 	_current_lobby.code = data.lobby.code
 	_current_lobby.is_host = data.lobby.isHost or false
-	lo_current_lobbybby._metadata = data.lobby.metadata or {}
+	_current_lobby.max_players = data.lobby.maxPlayers or 16
+	_current_lobby._metadata = data.lobby.metadata or {}
 
+	populate_initial_players(_current_lobby, data.lobby.players)
 	subscribe_all(_current_lobby)
 	_current_lobby:_fire('connected')
 end
@@ -135,12 +141,14 @@ create_lobby_callback = function(err, data)
 		return
 	end
 
-	conn.jwt_token = data.token
+	_current_lobby._connection.jwt_token = data.token
 
 	_current_lobby.code = data.lobby.code
 	_current_lobby.is_host = true
+	_current_lobby.max_players = data.lobby.maxPlayers or 16
 	_current_lobby._metadata = data.lobby.metadata or {}
 
+	populate_initial_players(_current_lobby, data.lobby.players)
 	subscribe_all(_current_lobby)
 	_current_lobby:_fire('connected')
 end
@@ -150,6 +158,7 @@ create_lobby_object = function(opts)
 		code = opts.code,
 		mod_id = opts.mod_id,
 		is_host = opts.is_host or false,
+		max_players = opts.max_players or 16,
 		player_id = opts.player_id,
 		_mqtt = opts.mqtt,
 		_api = opts.api,
@@ -265,6 +274,11 @@ subscribe_all = function(lobby)
 	lobby._mqtt:subscribe(state_topic, 1, function(topic, payload)
 		handle_own_state(lobby, payload)
 	end)
+
+	local info_topic = lobby._mqtt:lobby_topic(lobby.code, 'players/+/info')
+	lobby._mqtt:subscribe(info_topic, 1, function(topic, payload)
+		handle_player_info(lobby, topic, payload)
+	end)
 end
 
 handle_event = function(lobby, payload)
@@ -281,11 +295,10 @@ handle_event = function(lobby, payload)
 
 	if event_type == 'player_joined' then
 		if data.playerId then
-			lobby._players[data.playerId] = {
-				id = data.playerId,
-				displayName = data.displayName,
-				is_away = false,
-			}
+			lobby._players[data.playerId] = lobby._players[data.playerId] or {}
+			lobby._players[data.playerId].id = data.playerId
+			lobby._players[data.playerId].displayName = data.displayName
+			lobby._players[data.playerId].is_away = false
 		end
 		lobby:_fire('player_joined', data.playerId)
 	elseif event_type == 'player_left' then
@@ -346,6 +359,57 @@ handle_own_state = function(lobby, payload)
 	lobby._player_state = data
 end
 
+handle_player_info = function(lobby, topic, payload)
+	if lobby._destroyed then
+		return
+	end
+
+	local player_id = topic:match('/players/([^/]+)/info$')
+	if not player_id then
+		return
+	end
+
+	if not payload or payload == '' then
+		if lobby._players[player_id] then
+			lobby._players[player_id] = nil
+			lobby:_fire('player_left', player_id)
+		end
+		return
+	end
+
+	local ok, data = pcall(MPAPI.json_decode, payload)
+	if not ok or not data then
+		return
+	end
+
+	local is_new = not lobby._players[player_id]
+	lobby._players[player_id] = lobby._players[player_id] or {}
+	lobby._players[player_id].id = player_id
+	lobby._players[player_id].displayName = data.displayName
+	lobby._players[player_id].preferredJoker = data.preferredJoker
+
+	if is_new then
+		lobby:_fire('player_joined', player_id)
+	end
+	lobby:_fire('player_info', player_id, lobby._players[player_id])
+end
+
+populate_initial_players = function(lobby, players)
+	if not players then
+		return
+	end
+	for _, p in ipairs(players) do
+		if p.id then
+			lobby._players[p.id] = {
+				id = p.id,
+				displayName = p.displayName,
+				preferredJoker = p.preferredJoker,
+				is_away = false,
+			}
+		end
+	end
+end
+
 cleanup_lobby = function(lobby)
 	if lobby._destroyed then
 		return
@@ -356,6 +420,7 @@ cleanup_lobby = function(lobby)
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'events'))
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'metadata'))
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'players/' .. lobby.player_id .. '/state'))
+		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'players/+/info'))
 	end
 
 	if _current_lobby == lobby then

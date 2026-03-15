@@ -1,0 +1,29 @@
+name: Strip dev files for release
+
+on:
+  push:
+    branches:
+      - mqtt-main
+
+jobs:
+  strip-dev:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mqtt-main
+
+      - name: Strip dev/ directory
+        run: |
+          if [ -d "dev" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git rm -r dev/
+            git commit -m "Strip dev/ directory for main"
+            git push
+          else
+            echo "No dev/ directory found, nothing to strip"
+          fi
