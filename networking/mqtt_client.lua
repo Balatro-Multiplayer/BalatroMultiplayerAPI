@@ -344,4 +344,4 @@ function mqtt_client:disconnect()
 	self.connected = false
 end
 
-return mqtt_client
+MPAPI.networking.mqtt_client = mqtt_client

@@ -290,4 +290,4 @@ function api_client:set_lobby_metadata(token, code, metadata, callback)
 	self.mqtt:http_put_auth(self.base_url .. '/api/lobbies/' .. code .. '/metadata', body, token)
 end
 
-return api_client
+MPAPI.networking.api_client = api_client
