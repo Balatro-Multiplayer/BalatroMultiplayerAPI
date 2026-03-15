@@ -27,6 +27,9 @@ return {
 			b_by_code_cap = 'BY CODE',
 			b_from_clipboard_cap = 'FROM CLIPBOARD',
 			b_find_game_cap = 'FIND GAME',
+			b_open_lobby_cap = { 'OPEN', 'LOBBY' },
+			b_lobby_options_cap = { 'LOBBY', 'OPTIONS' },
+			b_leave_lobby_cap = { 'LEAVE', 'LOBBY' },
 		},
 	},
 }

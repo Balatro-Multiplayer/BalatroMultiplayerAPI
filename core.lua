@@ -107,6 +107,12 @@ MPAPI.load_mpapi_dir('lib')
 MPAPI.load_mpapi_dir('api')
 MPAPI.load_mpapi_dir('ui')
 
+-- Load dev overrides if the dev/ directory exists (stripped in release builds)
+local dev_init = MPAPI.load_mpapi_file('dev/init.lua')
+if dev_init then
+	MPAPI.sendDebugMessage('Dev overrides loaded')
+end
+
 G.E_MANAGER:add_event(Event({
 	blockable = false,
 	blocking = false,

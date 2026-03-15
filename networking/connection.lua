@@ -152,6 +152,10 @@ function connection:_try_refresh_auth(steam_error)
 	end)
 end
 
+function connection:_start_auth()
+	self:_try_steam_auth()
+end
+
 function connection:connect()
 	if self.state ~= STATES.DISCONNECTED then
 		fire(self, self.state, { error = 'Already ' .. self.state })
@@ -159,7 +163,7 @@ function connection:connect()
 	end
 
 	set_state(self, STATES.AUTHENTICATING)
-	self:_try_steam_auth()
+	self:_start_auth()
 end
 
 function connection:_mqtt_connect_with_credentials()
