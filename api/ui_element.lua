@@ -58,13 +58,14 @@ MPAPI.ui_element = function(build_fn)
 		return { n = G.UIT.C, config = { id = id, align = 'cm', colour = G.C.CLEAR }, nodes = children }
 	end
 
-	-- Lazily build the inline node on first access
+	-- Build a fresh inline node on every access. No caching: the node table
+	-- is consumed by UIBox on render, so reusing a stale reference after the
+	-- enclosing UIBox has been destroyed (e.g. returning to game menu from a
+	-- lobby view and re-entering) would hand dead nodes to the new UIBox.
 	setmetatable(el, {
 		__index = function(t, k)
 			if k == 'node' then
-				local node = build_inline()
-				rawset(t, 'node', node)
-				return node
+				return build_inline()
 			end
 		end,
 	})
