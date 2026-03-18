@@ -264,6 +264,20 @@ create_lobby_object = function(opts)
 		end)
 	end
 
+	lobby._pending_actions = {}
+
+	lobby._action_types = {}
+	for _, key in ipairs(MPAPI.ActionType.obj_buffer) do
+		local at = MPAPI.ActionTypes[key]
+		if at.mod and at.mod.id == lobby.mod_id then
+			lobby._action_types[key] = at
+		end
+	end
+
+	function lobby:action(action_type)
+		return MPAPI._internal.create_action_instance(self, action_type)
+	end
+
 	return lobby
 end
 
@@ -290,6 +304,11 @@ subscribe_all = function(lobby)
 	local info_topic = lobby._mqtt:lobby_topic(lobby.code, 'players/+/info')
 	lobby._mqtt:subscribe(info_topic, 1, function(topic, payload)
 		handle_player_info(lobby, topic, payload)
+	end)
+
+	local actions_topic = lobby._mqtt:lobby_topic(lobby.code, 'players/+/actions')
+	lobby._mqtt:subscribe(actions_topic, 1, function(topic, payload)
+		MPAPI._internal.handle_action(lobby, topic, payload)
 	end)
 end
 
@@ -436,7 +455,10 @@ cleanup_lobby = function(lobby)
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'metadata'))
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'players/' .. lobby.player_id .. '/state'))
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'players/+/info'))
+		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'players/+/actions'))
 	end
+
+	lobby._pending_actions = {}
 
 	if _current_lobby == lobby then
 		_current_lobby = nil
