@@ -72,12 +72,16 @@ local create_UIBox_account_button = function()
 		account_button_node,
 	}
 
-	if MPAPI.get_active_mod() then
+	if MPAPI.get_focused_mod() then
+		-- A mod's menu is shown: offer a back button to return to the game menu.
 		account_button_nodes[#account_button_nodes + 1] = back_button_node
 	else
+		-- On the game main menu: list all registered mods.
+		-- If a lobby is active (_engaged_mod set), other mods are greyed out.
 		local mods = MPAPI.get_registered_mods()
+		local engaged = MPAPI.get_active_mod()
 		for _, mod in ipairs(mods) do
-			account_button_nodes[#account_button_nodes + 1] = build_mod_button(mod, inner_width)
+			account_button_nodes[#account_button_nodes + 1] = build_mod_button(mod, inner_width, engaged)
 		end
 	end
 
@@ -96,16 +100,26 @@ local create_UIBox_account_button = function()
 	}
 end
 
-build_mod_button = function(mod, inner_width)
+-- engaged_mod_id: the id of the mod that currently has an active lobby, or nil.
+-- When set, every other mod button is disabled so the player cannot switch mods
+-- mid-lobby. Clicking the engaged mod re-enters the lobby view.
+build_mod_button = function(mod, inner_width, engaged_mod_id)
 	local is_installed = mod.main_menu_ui ~= nil
-	local subtext = not is_installed and localize('b_open_download_page') or nil
+	local is_engaged   = engaged_mod_id ~= nil and mod.id == engaged_mod_id
+	local is_blocked   = engaged_mod_id ~= nil and not is_engaged
+	local is_disabled  = not is_installed or is_blocked
+
+	local subtext = not is_installed and not is_blocked and localize('b_open_download_page') or nil
 	local button_ref = { mod_id = mod.id }
 
 	local button_nodes = {
 		{ n = G.UIT.T, config = { text = mod.name, scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 	}
 	if subtext then
-		button_nodes[#button_nodes + 1] = { n = G.UIT.T, config = { text = subtext, scale = 0.25, colour = mix_colours(G.C.UI.TEXT_LIGHT, G.C.UI.TEXT_DARK, 0.8) } }
+		button_nodes[#button_nodes + 1] = {
+			n = G.UIT.T,
+			config = { text = subtext, scale = 0.25, colour = mix_colours(G.C.UI.TEXT_LIGHT, G.C.UI.TEXT_DARK, 0.8) },
+		}
 	end
 
 	local rows = {}
@@ -113,28 +127,34 @@ build_mod_button = function(mod, inner_width)
 		rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm' }, nodes = { node } }
 	end
 
+	local colour = (is_disabled and G.C.UI.BACKGROUND_INACTIVE)
+		or (is_engaged and mix_colours(mod.colour or G.C.PURPLE, G.C.WHITE, 0.3))
+		or mod.colour
+		or G.C.PURPLE
+
+	local config = {
+		align = 'cm',
+		padding = 0.08,
+		minw = inner_width,
+		maxw = inner_width,
+		minh = 0.6,
+		r = 0.1,
+		shadow = true,
+		colour = colour,
+	}
+
+	if not is_disabled then
+		config.hover = true
+		config.button = 'mpapi_mod_button'
+		config.ref_table = button_ref
+		config.ref_value = 'mod_id'
+	end
+
 	return {
 		n = G.UIT.R,
 		config = { align = 'cm', padding = 0.03 },
 		nodes = {
-			{
-				n = G.UIT.C,
-				config = {
-					align = 'cm',
-					padding = 0.08,
-					minw = inner_width,
-					maxw = inner_width,
-					minh = 0.6,
-					r = 0.1,
-					hover = true,
-					shadow = true,
-					colour = (not is_installed and G.C.UI.BACKGROUND_INACTIVE) or mod.colour or G.C.PURPLE,
-					button = 'mpapi_mod_button',
-					ref_table = button_ref,
-					ref_value = 'mod_id',
-				},
-				nodes = rows,
-			},
+			{ n = G.UIT.C, config = config, nodes = rows },
 		},
 	}
 end
@@ -191,11 +211,7 @@ MPAPI.account_button = MPAPI.ui_element(create_UIBox_account_button)
 
 local _set_main_menu_UI_ref = set_main_menu_UI
 set_main_menu_UI = function()
-	local active = MPAPI.get_active_mod_data()
-
-	if active and active.main_menu_ui then
-		MPAPI._internal.replace_main_menu(active.main_menu_ui, active.hide_logo)
-	else
+	if not MPAPI._internal.rebuild_current_menu() then
 		_set_main_menu_UI_ref()
 	end
 

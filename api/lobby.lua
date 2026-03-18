@@ -111,6 +111,9 @@ MPAPI._internal.create_reconnected_lobby = function(lobby_data)
 	subscribe_all(lobby)
 	_current_lobby = lobby
 	lobby:_fire('connected')
+	if MPAPI._internal.on_lobby_connected then
+		MPAPI._internal.on_lobby_connected(lobby)
+	end
 end
 
 -----------------------------
@@ -133,6 +136,9 @@ join_lobby_callback = function(err, data)
 	populate_initial_players(_current_lobby, data.lobby.players)
 	subscribe_all(_current_lobby)
 	_current_lobby:_fire('connected')
+	if MPAPI._internal.on_lobby_connected then
+		MPAPI._internal.on_lobby_connected(_current_lobby)
+	end
 end
 
 create_lobby_callback = function(err, data)
@@ -151,6 +157,9 @@ create_lobby_callback = function(err, data)
 	populate_initial_players(_current_lobby, data.lobby.players)
 	subscribe_all(_current_lobby)
 	_current_lobby:_fire('connected')
+	if MPAPI._internal.on_lobby_connected then
+		MPAPI._internal.on_lobby_connected(_current_lobby)
+	end
 end
 
 create_lobby_object = function(opts)
@@ -249,6 +258,9 @@ create_lobby_object = function(opts)
 			end
 			cleanup_lobby(self)
 			self:_fire('disconnected')
+			if MPAPI._internal.on_lobby_disconnected then
+				MPAPI._internal.on_lobby_disconnected()
+			end
 		end)
 	end
 
@@ -329,6 +341,9 @@ handle_event = function(lobby, payload)
 	elseif event_type == 'lobby_closed' then
 		cleanup_lobby(lobby)
 		lobby:_fire('disconnected')
+		if MPAPI._internal.on_lobby_disconnected then
+			MPAPI._internal.on_lobby_disconnected()
+		end
 	end
 end
 

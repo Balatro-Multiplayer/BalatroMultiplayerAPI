@@ -170,7 +170,7 @@ create_lobby_cards = function(lobby)
 	populate_page(1, lobby)
 end
 
-local create_UIBox_lobby = function(lobby)
+local build_lobby_nodes = function(lobby)
 	_current_lobby_ref = lobby
 	_player_card_map = {}
 	_max_players = lobby.max_players or 16
@@ -186,7 +186,7 @@ local create_UIBox_lobby = function(lobby)
 		page_options[#page_options + 1] = localize('k_page') .. ' ' .. tostring(i) .. '/' .. tostring(total_pages)
 	end
 
-	local contents = {
+	local nodes = {
 		{ n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
 			{ n = G.UIT.T, config = { text = 'Lobby', scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 		} },
@@ -198,7 +198,7 @@ local create_UIBox_lobby = function(lobby)
 	}
 
 	if total_pages > 1 then
-		contents[#contents + 1] = {
+		nodes[#nodes + 1] = {
 			n = G.UIT.R,
 			config = { align = 'cm' },
 			nodes = {
@@ -216,9 +216,11 @@ local create_UIBox_lobby = function(lobby)
 		}
 	end
 
-	return create_UIBox_generic_options({
-		contents = contents,
-	})
+	return {
+		n = G.UIT.ROOT,
+		config = { align = 'cm', colour = G.C.CLEAR },
+		nodes = nodes,
+	}
 end
 
 -----------------------------
@@ -227,7 +229,7 @@ end
 
 MPAPI.create_lobby_ui = function(lobby)
 	local build_fn = function()
-		return create_UIBox_lobby(lobby)
+		return build_lobby_nodes(lobby)
 	end
 
 	local el = MPAPI.ui_element(build_fn)
