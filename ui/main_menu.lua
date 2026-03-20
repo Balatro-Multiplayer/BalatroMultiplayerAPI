@@ -22,13 +22,24 @@ local create_UIBox_account_button = function()
 		{ n = G.UIT.T, config = { text = localize('k_multiplayer'), scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 	} }
 
+	local is_busy = MPAPI.connection_state.state == 'connecting' or MPAPI.connection_state.state == 'authenticating'
+	local account_button_config = {
+		align = 'cm', padding = 0.1, minw = inner_width, minh = 0.8, maxw = inner_width, r = 0.1,
+		colour = is_busy and G.C.UI.BACKGROUND_INACTIVE or mix_colours(G.C.WHITE, G.C.GREY, 0.2),
+	}
+	if not is_busy then
+		account_button_config.hover = true
+		account_button_config.button = 'mpapi_account_button'
+		account_button_config.shadow = true
+	end
+
 	local account_button_node = {
 		n = G.UIT.R,
 		config = { align = 'cm' },
 		nodes = {
 			{
 				n = G.UIT.C,
-				config = { align = 'cm', padding = 0.1, minw = inner_width, minh = 0.8, maxw = inner_width, r = 0.1, hover = true, colour = mix_colours(G.C.WHITE, G.C.GREY, 0.2), button = 'mpapi_account_button', shadow = true },
+				config = account_button_config,
 				nodes = {
 					{ n = G.UIT.T, config = { ref_table = MPAPI.connection_state, ref_value = 'display_name', scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 				},
@@ -105,11 +116,12 @@ end
 -- mid-lobby. Clicking the engaged mod re-enters the lobby view.
 build_mod_button = function(mod, inner_width, engaged_mod_id)
 	local is_installed = mod.main_menu_ui ~= nil
-	local is_engaged   = engaged_mod_id ~= nil and mod.id == engaged_mod_id
-	local is_blocked   = engaged_mod_id ~= nil and not is_engaged
-	local is_disabled  = not is_installed or is_blocked
+	local is_engaged = engaged_mod_id ~= nil and mod.id == engaged_mod_id
+	local is_blocked = engaged_mod_id ~= nil and not is_engaged
+	local is_disconnected = MPAPI.connection_state.state ~= 'connected'
+	local is_disabled = not is_installed or is_blocked or is_disconnected
 
-	local subtext = not is_installed and not is_blocked and localize('b_open_download_page') or nil
+	local subtext = not is_installed and not is_blocked and not is_disconnected and localize('b_open_download_page') or nil
 	local button_ref = { mod_id = mod.id }
 
 	local button_nodes = {
@@ -127,10 +139,7 @@ build_mod_button = function(mod, inner_width, engaged_mod_id)
 		rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm' }, nodes = { node } }
 	end
 
-	local colour = (is_disabled and G.C.UI.BACKGROUND_INACTIVE)
-		or (is_engaged and mix_colours(mod.colour or G.C.PURPLE, G.C.WHITE, 0.3))
-		or mod.colour
-		or G.C.PURPLE
+	local colour = (is_disabled and G.C.UI.BACKGROUND_INACTIVE) or (is_engaged and mix_colours(mod.colour or G.C.PURPLE, G.C.WHITE, 0.3)) or mod.colour or G.C.PURPLE
 
 	local config = {
 		align = 'cm',
@@ -160,14 +169,17 @@ build_mod_button = function(mod, inner_width, engaged_mod_id)
 end
 
 attach_account_button = function()
+	MPAPI.sendDebugMessage('[main_menu] attach_account_button queued | UIBOX: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?'))
 	G.E_MANAGER:add_event(Event({
 		blockable = false,
 		blocking = false,
 		func = function()
+			MPAPI.sendDebugMessage('[main_menu] as_uibox firing | UIBOX before: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?'))
 			MPAPI.account_button:as_uibox({ align = 'tli', offset = { x = -10, y = 0 }, major = G.ROOM_ATTACH, bond = 'Weak' }, function(uibox)
 				uibox.alignment.offset.x = 0
 				uibox:align_to_major()
 			end)
+			MPAPI.sendDebugMessage('[main_menu] as_uibox done | UIBOX after: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?'))
 			return true
 		end,
 	}))
@@ -178,13 +190,24 @@ end
 -----------------------------
 
 G.FUNCS.mpapi_account_button = function(e)
-	if MPAPI.connection_state.state == 'connected' then
+	local state = MPAPI.connection_state.state
+	if state == 'connected' then
 		MPAPI.account_overlay:as_overlay()
-	end
-	if MPAPI.connection_state.state == 'disconnected' then
+	elseif state == 'disconnected' then
+		MPAPI.sendDebugMessage('[main_menu] retry pressed | UIBOX: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?') .. ' | ROOM_ATTACH scale: ' .. tostring(G.ROOM_ATTACH and G.ROOM_ATTACH.VT and G.ROOM_ATTACH.VT.scale or '?'))
 		MPAPI.disconnect()
-		local last_opts = MPAPI.get_last_opts()
+		local last_opts = MPAPI.shallow_copy(MPAPI.get_last_opts() or {})
+		last_opts.force_login = true
 		MPAPI.connect(last_opts)
+	elseif state == 'tos_required' then
+		if MPAPI._internal.show_tos_overlay then
+			MPAPI._internal.show_tos_overlay(MPAPI.connection_state.tos_is_update)
+		end
+	elseif state == 'login_available' then
+		local conn = MPAPI.get_connection()
+		if conn then
+			conn:login()
+		end
 	end
 end
 
@@ -209,11 +232,19 @@ MPAPI.account_button = MPAPI.ui_element(create_UIBox_account_button)
 -- OVERRIDES
 -----------------------------
 
+local _set_main_menu_UI_call_count = 0
 local _set_main_menu_UI_ref = set_main_menu_UI
 set_main_menu_UI = function()
+	_set_main_menu_UI_call_count = _set_main_menu_UI_call_count + 1
+	MPAPI.sendDebugMessage('[main_menu] set_main_menu_UI #' .. _set_main_menu_UI_call_count .. ' | UIBOX: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?'))
 	if not MPAPI._internal.rebuild_current_menu() then
 		_set_main_menu_UI_ref()
 	end
 
 	attach_account_button()
+
+	-- Show any ToS overlay that was queued before the menu was ready
+	if MPAPI._internal.flush_tos_overlay then
+		MPAPI._internal.flush_tos_overlay()
+	end
 end

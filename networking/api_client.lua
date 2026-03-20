@@ -211,6 +211,17 @@ function api_client:set_preferred_joker(jwt_token, preferred_joker, callback)
 	self.mqtt:http_post_auth(self.base_url .. '/api/auth/preferences/joker', body, jwt_token)
 end
 
+function api_client:accept_tos_update(pending_token, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self:_setup_http_callback(callback)
+
+	self.mqtt:http_post_auth(self.base_url .. '/api/auth/accept-tos', '{}', pending_token)
+end
+
 function api_client:create_lobby(token, mod_id, max_players, callback)
 	if not self.mqtt or not self.mqtt.tx_channel then
 		callback('MQTT thread not running', nil)
