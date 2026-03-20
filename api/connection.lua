@@ -19,8 +19,10 @@ MPAPI.connection_state = {
 	discord_name = '',
 	is_temp = false,
 	use_discord_name = false,
+	auto_login = true,
 	preferred_joker = 'j_joker',
 	privileges = {},
+	tos_is_update = false,
 }
 
 local _mqtt_instance = nil
@@ -98,6 +100,7 @@ MPAPI.connect = function(opts)
 			mqtt_broker = mqtt_broker,
 			mqtt_port = mqtt_port,
 			mqtt_secure = mqtt_secure,
+			force_login = opts.force_login or false,
 		},
 	})
 
@@ -253,11 +256,12 @@ end
 
 update_display_name = function()
 	if MPAPI.connection_state.state ~= 'connected' then
-		MPAPI.connection_state.display_name = localize('b_retry_connection')
-		return
-	end
-
-	if _connection and _connection.display_name then
+		if MPAPI.connection_state.state == 'login_available' then
+			MPAPI.connection_state.display_name = localize('b_log_in')
+		else
+			MPAPI.connection_state.display_name = localize('b_retry_connection')
+		end
+	elseif _connection and _connection.display_name then
 		MPAPI.connection_state.display_name = MPAPI.truncate(_connection.display_name, 20)
 	elseif MPAPI.connection_state.steam_name ~= '' then
 		MPAPI.connection_state.display_name = MPAPI.connection_state.steam_name
@@ -283,12 +287,20 @@ connection_on_state_change = function(new_state, context)
 		MPAPI.connection_state.discord_name = MPAPI.truncate(_connection.discord_name or '', 20)
 		MPAPI.connection_state.is_temp = _connection.is_temp or false
 		MPAPI.connection_state.use_discord_name = _connection.use_discord_name or false
+		MPAPI.connection_state.auto_login = _connection._auto_login ~= false
 		MPAPI.connection_state.preferred_joker = _connection.preferred_joker or 'j_joker'
 		MPAPI.connection_state.privileges = _connection.privileges
 	end
 	set_connection_state_status_text()
 
 	update_display_name()
+
+	if new_state == 'tos_required' then
+		MPAPI.connection_state.tos_is_update = context.tos_update or false
+		if MPAPI._internal.show_tos_overlay then
+			MPAPI._internal.show_tos_overlay(context.tos_update or false)
+		end
+	end
 
 	if new_state ~= context.old_state then
 		if new_state ~= 'connected' then
@@ -319,6 +331,14 @@ log_state_update = function(new_state, context)
 		MPAPI.sendDebugMessage('Connected! Player ID: ' .. tostring(_connection.player_id))
 	elseif new_state == 'disconnected' then
 		MPAPI.sendDebugMessage('Disconnected from server')
+	elseif new_state == 'tos_required' then
+		MPAPI.sendDebugMessage('ToS acceptance required for: ' .. tostring(context.steam_name))
+	elseif new_state == 'login_available' then
+		MPAPI.sendDebugMessage('Login available (auto-login off) for: ' .. tostring(context.steam_name))
+	elseif new_state == 'authenticating' then
+		MPAPI.sendDebugMessage('Authenticating...')
+	elseif new_state == 'connecting' then
+		MPAPI.sendDebugMessage('Connecting to MQTT broker...')
 	end
 end
 
@@ -328,6 +348,7 @@ reset_connection_state_variables = function()
 	MPAPI.connection_state.discord_name = ''
 	MPAPI.connection_state.is_temp = false
 	MPAPI.connection_state.use_discord_name = false
+	MPAPI.connection_state.auto_login = true
 	MPAPI.connection_state.preferred_joker = 'j_joker'
 	MPAPI.connection_state.privileges = nil
 end
