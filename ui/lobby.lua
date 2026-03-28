@@ -15,8 +15,8 @@ local lobby_card_hover_override
 -- CONSTANTS
 -----------------------------
 
-local COLS = 8
-local ROWS_PER_PAGE = 2
+local COLS = 4
+local ROWS_PER_PAGE = 4
 local SLOTS_PER_PAGE = COLS * ROWS_PER_PAGE
 
 -----------------------------
@@ -47,13 +47,7 @@ end
 
 make_card = function(card_area, joker_key, face_down)
 	local center = G.P_CENTERS[joker_key] or G.P_CENTERS['j_joker']
-	local card = Card(
-		card_area.T.x + card_area.T.w / 2,
-		card_area.T.y,
-		G.CARD_W, G.CARD_H,
-		nil, center,
-		{ mpapi_lobby_card = true, bypass_back = G.P_CENTERS['b_black'].pos }
-	)
+	local card = Card(card_area.T.x + card_area.T.w / 2, card_area.T.y, G.CARD_W, G.CARD_H, nil, center, { mpapi_lobby_card = true, bypass_back = G.P_CENTERS['b_black'].pos })
 	card.no_ui = true
 	card.states.drag.can = false
 
@@ -85,20 +79,16 @@ end
 -- UI BUILD FUNCTIONS
 -----------------------------
 
-create_card_rows = function()
+create_card_rows = function(player_count)
 	_card_rows = {}
 	_row_nodes = {}
-	local rows_needed = math.min(ROWS_PER_PAGE, math.ceil(_max_players / COLS))
+	local rows_needed = math.max(1, math.min(ROWS_PER_PAGE, math.ceil(player_count / COLS)))
 	for j = 1, rows_needed do
 		local cols_in_row = math.min(COLS, _max_players - (j - 1) * COLS)
-		if cols_in_row < 1 then break end
-		_card_rows[j] = CardArea(
-			G.ROOM.T.x + 0.2 * G.ROOM.T.w / 2,
-			G.ROOM.T.h,
-			cols_in_row * G.CARD_W,
-			0.95 * G.CARD_H,
-			{ card_limit = COLS, type = 'title', highlight_limit = 0, collection = true }
-		)
+		if cols_in_row < 1 then
+			break
+		end
+		_card_rows[j] = CardArea(G.ROOM.T.x + 0.2 * G.ROOM.T.w / 2, G.ROOM.T.h, cols_in_row * G.CARD_W, 0.95 * G.CARD_H, { card_limit = COLS, type = 'title', highlight_limit = 0, collection = true })
 		_row_nodes[#_row_nodes + 1] = {
 			n = G.UIT.R,
 			config = { align = 'cm', padding = 0.07, no_fill = true },
@@ -130,11 +120,15 @@ populate_page = function(page, lobby)
 
 	for i = 1, SLOTS_PER_PAGE do
 		local global_slot = page_offset + i
-		if global_slot > _max_players then break end
+		if global_slot > _max_players then
+			break
+		end
 
 		local row_idx = math.ceil(i / COLS)
 		local card_area = _card_rows[row_idx]
-		if not card_area then break end
+		if not card_area then
+			break
+		end
 
 		local pid = assigned[global_slot]
 		local player_data = nil
@@ -163,7 +157,9 @@ create_lobby_cards = function(lobby)
 	local players = lobby:get_players()
 
 	for i, p in ipairs(players) do
-		if i > _max_players then break end
+		if i > _max_players then
+			break
+		end
 		_player_card_map[p.id] = i
 	end
 
@@ -175,7 +171,8 @@ local build_lobby_nodes = function(lobby)
 	_player_card_map = {}
 	_max_players = lobby.max_players or 16
 
-	create_card_rows()
+	local players = lobby:get_players()
+	create_card_rows(math.max(1, #players))
 	create_lobby_cards(lobby)
 
 	local code_text = lobby.code or '...'
@@ -190,10 +187,14 @@ local build_lobby_nodes = function(lobby)
 		{ n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
 			{ n = G.UIT.T, config = { text = 'Lobby', scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 		} },
-		{ n = G.UIT.R, config = { align = 'cm', padding = 0.05 }, nodes = {
-			{ n = G.UIT.T, config = { text = 'Code: ', scale = 0.4, colour = G.C.UI.TEXT_INACTIVE } },
-			{ n = G.UIT.T, config = { text = code_text, scale = 0.5, colour = G.C.GOLD, shadow = true } },
-		} },
+		{
+			n = G.UIT.R,
+			config = { align = 'cm', padding = 0.05 },
+			nodes = {
+				{ n = G.UIT.T, config = { text = 'Code: ', scale = 0.4, colour = G.C.UI.TEXT_INACTIVE } },
+				{ n = G.UIT.T, config = { text = code_text, scale = 0.5, colour = G.C.GOLD, shadow = true } },
+			},
+		},
 		{ n = G.UIT.R, config = { align = 'cm', r = 0.1, colour = G.C.BLACK, emboss = 0.05 }, nodes = _row_nodes },
 	}
 
@@ -256,6 +257,10 @@ MPAPI.create_lobby_ui = function(lobby)
 		-- New player — find an empty (face-down) slot
 		local slot = find_empty_slot()
 		if not slot then
+			clear_page_cards()
+			_card_rows = {}
+			_cards = {}
+			el:update()
 			return
 		end
 
@@ -277,7 +282,7 @@ MPAPI.create_lobby_ui = function(lobby)
 				play_sound('card1')
 				card:juice_up(0.3, 0.3)
 				return true
-			end
+			end,
 		}))
 	end)
 
@@ -303,7 +308,7 @@ MPAPI.create_lobby_ui = function(lobby)
 				card:flip()
 				play_sound('card1')
 				return true
-			end
+			end,
 		}))
 
 		-- Reset center back to joker after flip
@@ -314,7 +319,7 @@ MPAPI.create_lobby_ui = function(lobby)
 				local joker_center = G.P_CENTERS['j_joker']
 				card:set_ability(joker_center)
 				return true
-			end
+			end,
 		}))
 	end)
 
@@ -401,15 +406,29 @@ lobby_card_hover_override = function(self)
 	-- Build popup manually to avoid rarity badge logic
 	local card_type_background = darken(G.C.BLACK, 0.1)
 	self.config.h_popup = {
-		n = G.UIT.ROOT, config = { align = 'cm', colour = G.C.CLEAR }, nodes = {
-			{ n = G.UIT.C, config = { align = 'cm' }, nodes = {
-				{ n = G.UIT.R, config = { padding = 0.05, r = 0.12, colour = lighten(G.C.JOKER_GREY, 0.5), emboss = 0.07 }, nodes = {
-					{ n = G.UIT.R, config = { align = 'cm', padding = 0.07, r = 0.1, colour = adjust_alpha(card_type_background, 0.8) }, nodes = {
-						name_from_rows(self.ability_UIBox_table.name),
-						{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = { badge } },
-					} },
-				} },
-			} },
+		n = G.UIT.ROOT,
+		config = { align = 'cm', colour = G.C.CLEAR },
+		nodes = {
+			{
+				n = G.UIT.C,
+				config = { align = 'cm' },
+				nodes = {
+					{
+						n = G.UIT.R,
+						config = { padding = 0.05, r = 0.12, colour = lighten(G.C.JOKER_GREY, 0.5), emboss = 0.07 },
+						nodes = {
+							{
+								n = G.UIT.R,
+								config = { align = 'cm', padding = 0.07, r = 0.1, colour = adjust_alpha(card_type_background, 0.8) },
+								nodes = {
+									name_from_rows(self.ability_UIBox_table.name),
+									{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = { badge } },
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 	self.config.h_popup_config = self:align_h_popup()
