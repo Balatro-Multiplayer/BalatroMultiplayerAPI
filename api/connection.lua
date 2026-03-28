@@ -101,6 +101,7 @@ MPAPI.connect = function(opts)
 			mqtt_port = mqtt_port,
 			mqtt_secure = mqtt_secure,
 			force_login = opts.force_login or false,
+			dev_name = opts.dev_name or nil,
 		},
 	})
 

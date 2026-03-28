@@ -174,14 +174,33 @@ function connection:_try_steam_auth()
 	end)
 end
 
+function connection:_try_dev_auth()
+	set_state(self, STATES.AUTHENTICATING)
+	self.mqtt:start_thread()
+
+	local dev_name = (self.steam and self.steam.available() and self.steam.get_persona_name()) or self.config.dev_name or 'DevPlayer'
+	self.steam_name = dev_name
+
+	self.api:authenticate_dev(dev_name, function(err, data)
+		if err then
+			set_state(self, STATES.DISCONNECTED, { error = 'Dev auth failed: ' .. tostring(err) })
+			return
+		end
+		self:_handle_auth_success(data)
+	end)
+end
+
 -- Entry point called by the UI / game to initiate a connection.
--- Checks the login file before touching the network.
 function connection:connect()
 	if self.state ~= STATES.DISCONNECTED then
 		fire(self, self.state, { error = 'Already ' .. self.state })
 		return
 	end
 
+	self:_try_dev_auth()
+end
+
+--[[ ORIGINAL STEAM AUTH (preserved for reference)
 	-- We need a Steam ID to key the login file.
 	if not self.steam or not self.steam.available() then
 		set_state(self, STATES.DISCONNECTED, { error = 'Steam is not available' })
@@ -216,7 +235,7 @@ function connection:connect()
 
 	-- auto_login = true — proceed silently.
 	self:_do_auth()
-end
+end]]
 
 -- Called by the UI after the user reads and accepts the ToS / Privacy Policy.
 -- Branches on whether this is a first-time acceptance (local) or a server-side
