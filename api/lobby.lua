@@ -177,6 +177,7 @@ create_lobby_object = function(opts)
 		_players = {},
 		_event_handlers = {},
 		_destroyed = false,
+		_gamemode_instance = nil,
 	}
 
 	function lobby:on(event_name, handler)
@@ -221,6 +222,10 @@ create_lobby_object = function(opts)
 
 	function lobby:get_metadata()
 		return self._metadata
+	end
+
+	function lobby:get_gamemode_instance()
+		return self._gamemode_instance
 	end
 
 	function lobby:set_player_state(tbl)
