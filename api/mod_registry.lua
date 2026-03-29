@@ -57,6 +57,8 @@ MPAPI.register_mod = function(opts)
 		existing.main_menu_ui = opts.main_menu_ui
 		existing.lobby_ui = opts.lobby_ui
 		existing.server_config = opts.server_config
+		existing.prevent_pause = opts.prevent_pause or false
+		existing.options_builder = opts.options_builder or nil
 		if opts.name then existing.name = opts.name end
 		if opts.colour then existing.colour = opts.colour end
 	else
@@ -68,6 +70,8 @@ MPAPI.register_mod = function(opts)
 			main_menu_ui = opts.main_menu_ui,
 			lobby_ui = opts.lobby_ui,
 			download_url = opts.download_url,
+			prevent_pause = opts.prevent_pause or false,
+			options_builder = opts.options_builder or nil,
 			is_official = false,
 		}
 		_mod_order[#_mod_order + 1] = opts.id
@@ -187,6 +191,16 @@ MPAPI._internal.on_lobby_disconnected = function()
 	local was_in_lobby_view = _current_view == 'lobby_menu'
 	_engaged_mod = nil
 	_pending_cleanup = nil
+
+	-- If disconnecting while in a run (e.g. "Continue in Singleplayer"),
+	-- clear focused state so the game returns to the vanilla main menu
+	-- when the run ends. Skip update_account_button() to avoid recreating
+	-- the UIBox (which is in uibox mode from the main menu) over the game.
+	if G.STAGE == G.STAGES.RUN then
+		_focused_mod = nil
+		_current_view = nil
+		return
+	end
 
 	if was_in_lobby_view and _focused_mod then
 		local mod = _registered_mods[_focused_mod]
@@ -311,6 +325,22 @@ restore_main_menu = function()
 	MPAPI.set_logo_offset(0, true)
 	if _original_set_main_menu_UI then
 		_original_set_main_menu_UI()
+	end
+end
+
+local _original_options = G.FUNCS.options
+G.FUNCS.options = function(e)
+	local mod = MPAPI.get_active_mod_data()
+	if mod and mod.prevent_pause then
+		local def
+		if mod.options_builder and G.STAGE == G.STAGES.RUN then
+			def = mod.options_builder()
+		else
+			def = create_UIBox_options()
+		end
+		G.FUNCS.overlay_menu{ definition = def }
+	else
+		_original_options(e)
 	end
 end
 
