@@ -1,12 +1,5 @@
--- the_order.lua
--- Reference overlay for The Order multiplayer ruleset.
--- Layout: tabs on the left, description on the right, page selector at the bottom.
--- Mirrors Balatro's Challenge Deck UI pattern (left list + right description).
--- Text content lives in localization/en-us.lua (descriptions.Other, keys to_pNtM).
-
 -----------------------------
--- CONSTANTS (layout / "CSS")
--- Numeric values only — colours are referenced via G.C inside functions.
+-- CONSTANTS
 -----------------------------
 
 local LAYOUT = {
@@ -59,117 +52,129 @@ local THE_ORDER_PAGES = {
 
 	-- ── 1 ── Skip Tags ────────────────────────────────────────────────────────
 	{
-		name = "Skip Tags",
+		name = 'Skip Tags',
 		tabs = {
-			{ label = "Uncommon Tag",    loc_key = "to_p1t1", tags = { "tag_uncommon" } },
-			{ label = "Voucher Tag",     loc_key = "to_p1t2", tags = { "tag_voucher" } },
+			{ label = 'Uncommon Tag!', loc_key = 'to_p1t1', tags = { 'tag_uncommon' } },
+			{ label = 'Voucher Tag!', loc_key = 'to_p1t2', tags = { 'tag_voucher' } },
 			{
-				label = "Riff-raff / Top Up", loc_key = "to_p1t3",
-				jokers = { "j_riff_raff" }, tags = { "tag_top_up" },
+				label = 'Riff-raff / Top Up',
+				loc_key = 'to_p1t3',
+				jokers = { 'j_riff_raff' },
+				tags = { 'tag_top_up' },
 			},
-			{ label = "Orbital Tag",     loc_key = "to_p1t4", tags = { "tag_orbital" } },
+			{ label = 'Orbital Tag', loc_key = 'to_p1t4', tags = { 'tag_orbital' } },
 			{
-				label = "Rare Tag / Wraith", loc_key = "to_p1t5",
-				tags = { "tag_rare" }, consumables = { "c_wraith" },
+				label = 'Rare Tag / Wraith',
+				loc_key = 'to_p1t5',
+				tags = { 'tag_rare' },
+				consumables = { 'c_wraith' },
 			},
 		},
 	},
 
 	-- ── 2 ── Consumables ──────────────────────────────────────────────────────
 	{
-		name = "Consumables",
+		name = 'Consumables',
 		tabs = {
-			{ label = "Aura",            loc_key = "to_p2t1", consumables = { "c_aura" } },
+			{ label = 'Aura', loc_key = 'to_p2t1', consumables = { 'c_aura' } },
 			{
-				label = "Rare Tag / Wraith", loc_key = "to_p2t2",
-				tags = { "tag_rare" }, consumables = { "c_wraith" },
+				label = 'Rare Tag / Wraith',
+				loc_key = 'to_p2t2',
+				tags = { 'tag_rare' },
+				consumables = { 'c_wraith' },
 			},
-			{ label = "Judgement",       loc_key = "to_p2t3", consumables = { "c_judgement" } },
+			{ label = 'Judgement', loc_key = 'to_p2t3', consumables = { 'c_judgement' } },
 		},
 	},
 
 	-- ── 3 ── Card Modifiers ───────────────────────────────────────────────────
 	{
-		name = "Card Modifiers",
+		name = 'Card Modifiers',
 		tabs = {
 			{
-				label = "Glass", loc_key = "to_p3t1",
-				consumables = { "c_familiar", "c_grim", "c_incantation" },
+				label = 'Glass',
+				loc_key = 'to_p3t1',
+				consumables = { 'c_familiar', 'c_grim', 'c_incantation' },
 			},
-			{ label = "Lucky",           loc_key = "to_p3t2" },
-			{ label = "Purple Seal",     loc_key = "to_p3t3" },
+			{ label = 'Lucky', loc_key = 'to_p3t2' },
+			{ label = 'Purple Seal', loc_key = 'to_p3t3' },
 		},
 	},
 
 	-- ── 4 ── Decks ────────────────────────────────────────────────────────────
 	{
-		name = "Decks",
+		name = 'Decks',
 		tabs = {
-			{ label = "Orange Deck",     loc_key = "to_p4t1", consumables = { "c_hanged_man" } },
-			{ label = "Purple Deck",     loc_key = "to_p4t2" },
+			{ label = 'Orange Deck', loc_key = 'to_p4t1', consumables = { 'c_hanged_man' } },
+			{ label = 'Purple Deck', loc_key = 'to_p4t2' },
 		},
 	},
 
 	-- ── 5 ── Jokers ───────────────────────────────────────────────────────────
 	{
-		name = "Jokers",
+		name = 'Jokers',
 		tabs = {
 			{
-				label = "Superposition +", loc_key = "to_p5t1",
-				jokers = { "j_superposition", "j_vagabond", "j_cartomancer" },
+				label = 'Superposition +',
+				loc_key = 'to_p5t1',
+				jokers = { 'j_superposition', 'j_vagabond', 'j_cartomancer' },
 			},
 			{
-				label = "Prob. Jokers", loc_key = "to_p5t2",
-				jokers = { "j_8_ball", "j_business", "j_gros_michel", "j_space", "j_hallucination", "j_cavendish" },
+				label = 'Prob. Jokers',
+				loc_key = 'to_p5t2',
+				jokers = { 'j_8_ball', 'j_business', 'j_gros_michel', 'j_space', 'j_hallucination', 'j_cavendish' },
 			},
-			{ label = "Golden Ticket",   loc_key = "to_p5t3", jokers = { "j_ticket" } },
+			{ label = 'Golden Ticket', loc_key = 'to_p5t3', jokers = { 'j_ticket' } },
 			{
-				label = "Seance / Sixth Sense", loc_key = "to_p5t4",
-				jokers = { "j_seance", "j_sixth_sense" },
+				label = 'Seance / Sixth Sense',
+				loc_key = 'to_p5t4',
+				jokers = { 'j_seance', 'j_sixth_sense' },
 			},
 			{
-				label = "Riff-Raff / Top Up", loc_key = "to_p5t5",
-				jokers = { "j_riff_raff" }, tags = { "tag_top_up" },
+				label = 'Riff-Raff / Top Up',
+				loc_key = 'to_p5t5',
+				jokers = { 'j_riff_raff' },
+				tags = { 'tag_top_up' },
 			},
-			{ label = "To Do List",      loc_key = "to_p5t6", jokers = { "j_todo_list" } },
-			{ label = "Invisible Joker", loc_key = "to_p5t7", jokers = { "j_invisible" } },
-			{ label = "Bloodstone",      loc_key = "to_p5t8", jokers = { "j_bloodstone" } },
+			{ label = 'To Do List', loc_key = 'to_p5t6', jokers = { 'j_todo_list' } },
+			{ label = 'Invisible Joker', loc_key = 'to_p5t7', jokers = { 'j_invisible' } },
+			{ label = 'Bloodstone', loc_key = 'to_p5t8', jokers = { 'j_bloodstone' } },
 		},
 	},
 
 	-- ── 6 ── Misc ─────────────────────────────────────────────────────────────
 	{
-		name = "Misc",
+		name = 'Misc',
 		tabs = {
-			{ label = "Hand Smoothing",  loc_key = "to_p6t1" },
+			{ label = 'Hand Smoothing', loc_key = 'to_p6t1' },
 		},
 	},
 
 	-- ── 7 ── Packs ────────────────────────────────────────────────────────────
 	{
-		name = "Packs",
+		name = 'Packs',
 		tabs = {
-			{ label = "Arcana / Spectral", loc_key = "to_p7t1" },
-			{ label = "Buffoon Pack",    loc_key = "to_p7t2" },
-			{ label = "Standard Pack",   loc_key = "to_p7t3" },
+			{ label = 'Arcana / Spectral', loc_key = 'to_p7t1' },
+			{ label = 'Buffoon Pack', loc_key = 'to_p7t2' },
+			{ label = 'Standard Pack', loc_key = 'to_p7t3' },
 		},
 	},
 
 	-- ── 8 ── Shop Queue ───────────────────────────────────────────────────────
 	{
-		name = "Shop Queue",
+		name = 'Shop Queue',
 		tabs = {
-			{ label = "Overview",        loc_key = "to_p8t1" },
-			{ label = "Sub-Queues",      loc_key = "to_p8t2" },
-			{ label = "How It Works",    loc_key = "to_p8t3" },
+			{ label = 'Overview', loc_key = 'to_p8t1' },
+			{ label = 'Sub-Queues', loc_key = 'to_p8t2' },
+			{ label = 'How It Works', loc_key = 'to_p8t3' },
 		},
 	},
 
 	-- ── 9 ── Vouchers ─────────────────────────────────────────────────────────
 	{
-		name = "Vouchers",
+		name = 'Vouchers',
 		tabs = {
-			{ label = "Vouchers",        loc_key = "to_p9t1" },
+			{ label = 'Vouchers', loc_key = 'to_p9t1' },
 		},
 	},
 }
@@ -189,7 +194,7 @@ local function build_card_area_node(keys)
 		if G.P_CENTERS[key] then
 			valid_keys[#valid_keys + 1] = key
 		else
-			MPAPI.sendWarnMessage("[the_order] unknown center key: " .. tostring(key))
+			MPAPI.sendWarnMessage('[the_order] unknown center key: ' .. tostring(key))
 		end
 	end
 	if #valid_keys == 0 then
@@ -197,24 +202,10 @@ local function build_card_area_node(keys)
 	end
 
 	local sz = LAYOUT.CARD_SIZE
-	local area = CardArea(
-		G.ROOM.T.x + 0.2 * G.ROOM.T.w / 2,
-		G.ROOM.T.h,
-		#valid_keys * G.CARD_W * sz + 0.1,
-		G.CARD_H * sz,
-		{ card_limit = #valid_keys, type = "title_2", highlight_limit = 0 }
-	)
+	local area = CardArea(G.ROOM.T.x + 0.2 * G.ROOM.T.w / 2, G.ROOM.T.h, #valid_keys * G.CARD_W * sz + 0.1, G.CARD_H * sz, { card_limit = #valid_keys, type = 'title_2', highlight_limit = 0 })
 
 	for _, key in ipairs(valid_keys) do
-		local card = Card(
-			area.T.x + area.T.w / 2,
-			area.T.y,
-			G.CARD_W * sz,
-			G.CARD_H * sz,
-			nil,
-			G.P_CENTERS[key],
-			{ bypass_discovery_center = true, bypass_discovery_ui = true, bypass_lock = true }
-		)
+		local card = Card(area.T.x + area.T.w / 2, area.T.y, G.CARD_W * sz, G.CARD_H * sz, nil, G.P_CENTERS[key], { bypass_discovery_center = true, bypass_discovery_ui = true, bypass_lock = true })
 		area:emplace(card)
 	end
 
@@ -232,7 +223,7 @@ local function build_objects_section(tab_data)
 	if joker_node then
 		cols[#cols + 1] = {
 			n = G.UIT.C,
-			config = { align = "cm", padding = 0.05 },
+			config = { align = 'cm', padding = 0.05 },
 			nodes = { joker_node },
 		}
 	end
@@ -242,7 +233,7 @@ local function build_objects_section(tab_data)
 	if consumable_node then
 		cols[#cols + 1] = {
 			n = G.UIT.C,
-			config = { align = "cm", padding = 0.05 },
+			config = { align = 'cm', padding = 0.05 },
 			nodes = { consumable_node },
 		}
 	end
@@ -255,11 +246,11 @@ local function build_objects_section(tab_data)
 				local tag_ui, _ = temp_tag:generate_UI()
 				cols[#cols + 1] = {
 					n = G.UIT.C,
-					config = { align = "cm", padding = 0.06 },
+					config = { align = 'cm', padding = 0.06 },
 					nodes = { tag_ui },
 				}
 			else
-				MPAPI.sendWarnMessage("[the_order] unknown tag key: " .. tostring(key))
+				MPAPI.sendWarnMessage('[the_order] unknown tag key: ' .. tostring(key))
 			end
 		end
 	end
@@ -271,7 +262,7 @@ local function build_objects_section(tab_data)
 	-- Single horizontal row containing all objects side by side
 	return {
 		n = G.UIT.R,
-		config = { align = "cm", padding = 0.05 },
+		config = { align = 'cm', padding = 0.05 },
 		nodes = cols,
 	}
 end
@@ -281,14 +272,13 @@ end
 -- Each text entry supports {C:colorname}text{} inline colour codes.
 -- Lines that are only whitespace (" ") are rendered as blank spacers.
 local function build_text_section(loc_key)
-	if not loc_key then return nil end
+	if not loc_key then
+		return nil
+	end
 
-	local desc = G.localization
-		and G.localization.descriptions
-		and G.localization.descriptions.Other
-		and G.localization.descriptions.Other[loc_key]
+	local desc = G.localization and G.localization.descriptions and G.localization.descriptions.Other and G.localization.descriptions.Other[loc_key]
 	if not desc or not desc.text_parsed then
-		MPAPI.sendWarnMessage("[the_order] missing loc key: " .. tostring(loc_key))
+		MPAPI.sendWarnMessage('[the_order] missing loc key: ' .. tostring(loc_key))
 		return nil
 	end
 
@@ -297,44 +287,50 @@ local function build_text_section(loc_key)
 		-- parsed_line is an array of {strings, control} parts from loc_parse_string.
 		-- A spacer line (" ") produces one part whose assembled text is all whitespace.
 		if not parsed_line or #parsed_line == 0 then
-			line_rows[#line_rows + 1] = { n = G.UIT.R, config = { align = "cl", minh = 0.18 }, nodes = {} }
+			line_rows[#line_rows + 1] = { n = G.UIT.R, config = { align = 'cl', minh = 0.18 }, nodes = {} }
 		else
 			local segments = {}
 			local all_whitespace = true
 			for _, part in ipairs(parsed_line) do
-				local text = ""
+				local text = ''
 				for _, subpart in ipairs(part.strings) do
-					if type(subpart) == "string" then text = text .. subpart end
+					if type(subpart) == 'string' then
+						text = text .. subpart
+					end
 				end
-				if text ~= "" then
-					if not text:match("^%s*$") then all_whitespace = false end
+				if text ~= '' then
+					if not text:match('^%s*$') then
+						all_whitespace = false
+					end
 					segments[#segments + 1] = {
 						n = G.UIT.T,
 						config = {
 							text = text,
 							scale = LAYOUT.DESC_TEXT_SCALE,
-							colour = loc_colour(part.control.C or nil),
+							colour = part.control.C and loc_colour(part.control.C) or G.C.UI.TEXT_LIGHT,
 							shadow = true,
 						},
 					}
 				end
 			end
 			if all_whitespace or #segments == 0 then
-				line_rows[#line_rows + 1] = { n = G.UIT.R, config = { align = "cl", minh = 0.18 }, nodes = {} }
+				line_rows[#line_rows + 1] = { n = G.UIT.R, config = { align = 'cl', minh = 0.18 }, nodes = {} }
 			else
 				line_rows[#line_rows + 1] = {
 					n = G.UIT.R,
-					config = { align = "cl", padding = LAYOUT.DESC_LINE_PAD },
+					config = { align = 'cl', padding = LAYOUT.DESC_LINE_PAD },
 					nodes = segments,
 				}
 			end
 		end
 	end
 
-	if #line_rows == 0 then return nil end
+	if #line_rows == 0 then
+		return nil
+	end
 	return {
 		n = G.UIT.C,
-		config = { align = "tl", padding = 0.05 },
+		config = { align = 'tl', padding = 0.05 },
 		nodes = line_rows,
 	}
 end
@@ -354,11 +350,11 @@ local function build_the_order_inner()
 		local is_selected = (i == _state.tab)
 		tab_button_rows[#tab_button_rows + 1] = {
 			n = G.UIT.R,
-			config = { align = "cm", padding = LAYOUT.TAB_PADDING },
+			config = { align = 'cm', padding = LAYOUT.TAB_PADDING },
 			nodes = {
 				UIBox_button({
 					label = { tab.label },
-					button = is_selected and "nil" or "the_order_select_tab",
+					button = is_selected and 'nil' or 'the_order_select_tab',
 					ref_table = { idx = i },
 					minw = LAYOUT.TAB_W,
 					minh = LAYOUT.TAB_H,
@@ -367,7 +363,7 @@ local function build_the_order_inner()
 					choice = true,
 					chosen = is_selected,
 					colour = is_selected and G.C.RED or G.C.UI.BACKGROUND_INACTIVE,
-					focus_args = { type = "none" },
+					focus_args = { type = 'none' },
 				}),
 			},
 		}
@@ -376,7 +372,7 @@ local function build_the_order_inner()
 	local tabs_col = {
 		n = G.UIT.C,
 		config = {
-			align = "tm",
+			align = 'tm',
 			padding = 0.08,
 			minw = LAYOUT.TAB_W + 0.2,
 			colour = G.C.L_BLACK,
@@ -396,7 +392,7 @@ local function build_the_order_inner()
 		-- Title
 		{
 			n = G.UIT.R,
-			config = { align = "cm", padding = 0.06 },
+			config = { align = 'cm', padding = 0.06 },
 			nodes = {
 				{
 					n = G.UIT.T,
@@ -418,13 +414,13 @@ local function build_the_order_inner()
 		-- Full-width text body
 		text_section and {
 			n = G.UIT.R,
-			config = { align = "tl", padding = 0.06 },
+			config = { align = 'tl', padding = 0.06 },
 			nodes = { text_section },
 		} or nil,
 		-- Objects (cards + tags) below text, all in one horizontal row
 		objects_section and {
 			n = G.UIT.R,
-			config = { align = "cm", padding = 0.08 },
+			config = { align = 'cm', padding = 0.08 },
 			nodes = { objects_section },
 		} or nil,
 	}
@@ -432,7 +428,7 @@ local function build_the_order_inner()
 	local description_col = {
 		n = G.UIT.C,
 		config = {
-			align = "tm",
+			align = 'tm',
 			padding = LAYOUT.DESC_PADDING,
 			minw = LAYOUT.CONTENT_W,
 			minh = LAYOUT.CONTENT_H,
@@ -451,17 +447,17 @@ local function build_the_order_inner()
 
 	local page_selector_row = {
 		n = G.UIT.R,
-		config = { align = "cm", padding = 0.1 },
+		config = { align = 'cm', padding = 0.1 },
 		nodes = {
 			create_option_cycle({
 				options = page_options,
 				w = LAYOUT.PAGE_CYCLE_W,
 				cycle_shoulders = true,
-				opt_callback = "the_order_change_page",
+				opt_callback = 'the_order_change_page',
 				current_option = _state.page,
 				colour = G.C.RED,
 				no_pips = true,
-				focus_args = { snap_to = true, nav = "wide" },
+				focus_args = { snap_to = true, nav = 'wide' },
 			}),
 		},
 	}
@@ -469,17 +465,17 @@ local function build_the_order_inner()
 	-- ── Assemble: title / tabs+desc / page selector stacked vertically ────
 	return {
 		n = G.UIT.ROOT,
-		config = { align = "cm", colour = G.C.CLEAR },
+		config = { align = 'cm', colour = G.C.CLEAR },
 		nodes = {
 			-- Title
 			{
 				n = G.UIT.R,
-				config = { align = "cm", padding = 0.08 },
+				config = { align = 'cm', padding = 0.08 },
 				nodes = {
 					{
 						n = G.UIT.T,
 						config = {
-							text = "The Order  —  Ruleset Reference",
+							text = "What Does 'The Order' Do?",
 							scale = LAYOUT.TITLE_SCALE,
 							colour = G.C.UI.TEXT_LIGHT,
 							shadow = true,
@@ -490,7 +486,7 @@ local function build_the_order_inner()
 			-- Tabs + description
 			{
 				n = G.UIT.R,
-				config = { align = "cm", padding = 0.1 },
+				config = { align = 'cm', padding = 0.1 },
 				nodes = {
 					tabs_col,
 					{ n = G.UIT.C, config = { minw = 0.12 } }, -- gap
@@ -562,12 +558,12 @@ end
 local function build_the_order_button()
 	return {
 		n = G.UIT.ROOT,
-		config = { align = "cm", colour = G.C.CLEAR },
+		config = { align = 'cm', colour = G.C.CLEAR },
 		nodes = {
 			{
 				n = G.UIT.R,
 				config = {
-					align = "cm",
+					align = 'cm',
 					padding = 0.08,
 					r = 0.1,
 					emboss = 0.08,
@@ -578,12 +574,12 @@ local function build_the_order_button()
 				nodes = {
 					{
 						n = G.UIT.R,
-						config = { align = "cm" },
+						config = { align = 'cm' },
 						nodes = {
 							{
 								n = G.UIT.T,
 								config = {
-									text = "The Order",
+									text = 'The Order',
 									scale = 0.3,
 									colour = G.C.UI.TEXT_LIGHT,
 									shadow = true,
@@ -593,12 +589,12 @@ local function build_the_order_button()
 					},
 					{
 						n = G.UIT.R,
-						config = { align = "cm", padding = 0.05 },
+						config = { align = 'cm', padding = 0.05 },
 						nodes = {
 							{
 								n = G.UIT.C,
 								config = {
-									align = "cm",
+									align = 'cm',
 									padding = 0.08,
 									minw = 2.2,
 									maxw = 2.2,
@@ -607,13 +603,13 @@ local function build_the_order_button()
 									hover = true,
 									shadow = true,
 									colour = G.C.ORANGE,
-									button = "the_order_open",
+									button = 'the_order_open',
 								},
 								nodes = {
 									{
 										n = G.UIT.T,
 										config = {
-											text = "Ruleset Reference",
+											text = 'Ruleset Reference',
 											scale = 0.28,
 											colour = G.C.UI.TEXT_LIGHT,
 											shadow = true,
@@ -636,13 +632,10 @@ local function attach_the_order_button()
 		blockable = false,
 		blocking = false,
 		func = function()
-			MPAPI.the_order_button:as_uibox(
-				{ align = "tri", offset = { x = 10, y = 0 }, major = G.ROOM_ATTACH, bond = "Weak" },
-				function(uibox)
-					uibox.alignment.offset.x = 0
-					uibox:align_to_major()
-				end
-			)
+			MPAPI.the_order_button:as_uibox({ align = 'tri', offset = { x = 10, y = 0 }, major = G.ROOM_ATTACH, bond = 'Weak' }, function(uibox)
+				uibox.alignment.offset.x = 0
+				uibox:align_to_major()
+			end)
 			return true
 		end,
 	}))
