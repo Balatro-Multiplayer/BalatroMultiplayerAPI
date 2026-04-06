@@ -315,6 +315,8 @@ subscribe_all = function(lobby)
 	lobby._mqtt:subscribe(actions_topic, 1, function(topic, payload)
 		MPAPI._internal.handle_action(lobby, topic, payload)
 	end)
+
+	MPAPI.chat.init(lobby)
 end
 
 handle_event = function(lobby, payload)
@@ -461,7 +463,12 @@ cleanup_lobby = function(lobby)
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'players/' .. lobby.player_id .. '/state'))
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'players/+/info'))
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'players/+/actions'))
+		if MPAPI.config.chat_enabled then
+			lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'chat/+'))
+		end
 	end
+
+	MPAPI.chat.cleanup()
 
 	lobby._pending_actions = {}
 
