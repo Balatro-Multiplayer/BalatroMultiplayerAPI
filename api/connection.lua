@@ -23,6 +23,8 @@ MPAPI.connection_state = {
 	preferred_joker = 'j_joker',
 	privileges = {},
 	tos_is_update = false,
+	chat_enabled = false,
+	chat_blocked = false,
 }
 
 local _mqtt_instance = nil
@@ -251,6 +253,48 @@ MPAPI._internal.unlink_discord = function(callback)
 	conn.api:unlink_discord(conn.jwt_token, callback)
 end
 
+MPAPI._internal.enable_chat = function(birth_year, birth_month, birth_day, callback)
+	local conn = _connection
+	if not conn or conn:get_state() ~= 'connected' then
+		callback('Not connected', nil)
+		return
+	end
+	if not conn.jwt_token then
+		callback('No JWT token', nil)
+		return
+	end
+
+	conn.api:enable_chat(conn.jwt_token, birth_year, birth_month, birth_day, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+
+		if data.player then
+			conn.chat_enabled = data.player.chatEnabled or false
+			conn.chat_blocked = data.player.chatBlocked or false
+			MPAPI.connection_state.chat_enabled = conn.chat_enabled
+			MPAPI.connection_state.chat_blocked = conn.chat_blocked
+		end
+
+		callback(nil, data)
+	end)
+end
+
+MPAPI._internal.send_chat_message = function(code, message, callback)
+	local conn = _connection
+	if not conn or conn:get_state() ~= 'connected' then
+		callback('Not connected', nil)
+		return
+	end
+	if not conn.jwt_token then
+		callback('No JWT token', nil)
+		return
+	end
+
+	conn.api:send_chat_message(conn.jwt_token, code, message, callback)
+end
+
 -----------------------------
 -- HELPER FUNCTIONS
 -----------------------------
@@ -291,6 +335,8 @@ connection_on_state_change = function(new_state, context)
 		MPAPI.connection_state.auto_login = _connection._auto_login ~= false
 		MPAPI.connection_state.preferred_joker = _connection.preferred_joker or 'j_joker'
 		MPAPI.connection_state.privileges = _connection.privileges
+		MPAPI.connection_state.chat_enabled = _connection.chat_enabled or false
+		MPAPI.connection_state.chat_blocked = _connection.chat_blocked or false
 	end
 	set_connection_state_status_text()
 
@@ -352,6 +398,8 @@ reset_connection_state_variables = function()
 	MPAPI.connection_state.auto_login = true
 	MPAPI.connection_state.preferred_joker = 'j_joker'
 	MPAPI.connection_state.privileges = nil
+	MPAPI.connection_state.chat_enabled = false
+	MPAPI.connection_state.chat_blocked = false
 end
 
 set_connection_state_status_text = function()

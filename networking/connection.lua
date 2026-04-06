@@ -28,6 +28,8 @@ function connection.new(opts)
 		discord_linked = false,
 		discord_name = nil,
 		is_temp = false,
+		chat_enabled = false,
+		chat_blocked = false,
 		auth_ticket_handle = nil,
 
 		-- Steam ID of the currently active Steam account (raw, used only for token_store keying)
@@ -79,6 +81,8 @@ function connection:_handle_auth_success(data)
 		if data.player.privileges then
 			self.privileges = data.player.privileges
 		end
+		self.chat_enabled = data.player.chatEnabled or false
+		self.chat_blocked = data.player.chatBlocked or false
 	end
 
 	self.lobby_data = data.lobby or nil
