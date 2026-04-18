@@ -396,4 +396,121 @@ function api_client:send_chat_message(jwt_token, code, message, callback)
 	self.mqtt:http_post_auth(self.base_url .. '/api/lobbies/' .. code .. '/chat', body, jwt_token)
 end
 
+-- Generic JSON-only response handler (no token field required)
+function api_client:_setup_json_callback(callback)
+	self.pending_callback = callback
+
+	self.mqtt.on_http_response = function(status, body)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if not cb then return end
+
+		if status == 204 then
+			cb(nil, nil)
+			return
+		end
+
+		if status < 200 or status >= 300 then
+			local ok, data = pcall(json_decode, body)
+			local errMsg = (ok and data and data.error) or ('Server returned status ' .. tostring(status))
+			cb(errMsg, nil)
+			return
+		end
+
+		if body == '' or body == nil then
+			cb(nil, nil)
+			return
+		end
+
+		local ok, data = pcall(json_decode, body)
+		if not ok or not data then
+			cb('Failed to parse server response', nil)
+			return
+		end
+
+		cb(nil, data)
+	end
+
+	self.mqtt.on_http_error = function(msg)
+		self.mqtt.on_http_response = nil
+		self.mqtt.on_http_error = nil
+		local cb = self.pending_callback
+		self.pending_callback = nil
+		if cb then cb('HTTP request failed: ' .. tostring(msg), nil) end
+	end
+end
+
+function api_client:queue_matchmaking(token, opts, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	local body = json_encode(opts)
+	self.mqtt:http_post_auth(self.base_url .. '/api/matchmaking/queue', body, token)
+end
+
+function api_client:leave_matchmaking_queue(token, opts, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	local body = json_encode(opts)
+	self.mqtt:http_delete_with_body_auth(self.base_url .. '/api/matchmaking/queue', body, token)
+end
+
+function api_client:leave_all_matchmaking_queues(token, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	self.mqtt:http_delete_auth(self.base_url .. '/api/matchmaking/queue/all', token)
+end
+
+function api_client:get_matchmaking_status(token, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	self.mqtt:http_get_auth(self.base_url .. '/api/matchmaking/queue', token)
+end
+
+function api_client:report_match_result(token, match_id, placements, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	local body = json_encode({ placements = placements })
+	self.mqtt:http_post_auth(self.base_url .. '/api/matchmaking/matches/' .. match_id .. '/result', body, token)
+end
+
+function api_client:get_matchmaking_rating(token, mod_id, game_mode, season, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	local url = self.base_url .. '/api/matchmaking/ratings?modId=' .. mod_id ..
+		'&gameMode=' .. game_mode .. '&season=' .. tostring(season)
+	self.mqtt:http_get_auth(url, token)
+end
+
+function api_client:get_matchmaking_leaderboard(token, mod_id, game_mode, season, limit, offset, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	local url = self.base_url .. '/api/matchmaking/leaderboard?modId=' .. mod_id ..
+		'&gameMode=' .. game_mode .. '&season=' .. tostring(season) ..
+		'&limit=' .. tostring(limit or 100) .. '&offset=' .. tostring(offset or 0)
+	self.mqtt:http_get_auth(url, token)
+end
+
 MPAPI.networking.api_client = api_client

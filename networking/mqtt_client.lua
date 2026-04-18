@@ -250,6 +250,61 @@ function mqtt_client:http_put_auth(url, body, token)
 end
 
 ----------------------------------------------------------------------
+-- Send an HTTP GET request with Authorization: Bearer header
+----------------------------------------------------------------------
+
+function mqtt_client:http_get_auth(url, token)
+	if not self.tx_channel then
+		return false, 'Thread not running'
+	end
+
+	self.tx_channel:push(table.concat({
+		'http_get_auth',
+		url,
+		token or '',
+	}, SEP))
+
+	return true
+end
+
+----------------------------------------------------------------------
+-- Send an HTTP DELETE request with Authorization: Bearer header
+----------------------------------------------------------------------
+
+function mqtt_client:http_delete_auth(url, token)
+	if not self.tx_channel then
+		return false, 'Thread not running'
+	end
+
+	self.tx_channel:push(table.concat({
+		'http_delete_auth',
+		url,
+		token or '',
+	}, SEP))
+
+	return true
+end
+
+----------------------------------------------------------------------
+-- Send an HTTP DELETE request with body and Authorization: Bearer header
+----------------------------------------------------------------------
+
+function mqtt_client:http_delete_with_body_auth(url, body, token)
+	if not self.tx_channel then
+		return false, 'Thread not running'
+	end
+
+	self.tx_channel:push(table.concat({
+		'http_delete_with_body_auth',
+		url,
+		body or '',
+		token or '',
+	}, SEP))
+
+	return true
+end
+
+----------------------------------------------------------------------
 -- Process network events (call from game loop)
 ----------------------------------------------------------------------
 

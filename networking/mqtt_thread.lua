@@ -152,6 +152,70 @@ local function handle_http_put_auth(url, body, token)
 	end
 end
 
+-- Handle an HTTP GET request with Authorization: Bearer header
+local function handle_http_get_auth(url, token)
+	local http = require('socket.http')
+	local ltn12 = require('ltn12')
+	local response_body = {}
+	local result, status = http.request({
+		url = url,
+		method = 'GET',
+		headers = {
+			['Authorization'] = 'Bearer ' .. token,
+		},
+		sink = ltn12.sink.table(response_body),
+	})
+	if result then
+		push_event('http_response', tostring(status), table.concat(response_body))
+	else
+		push_event('http_error', tostring(status))
+	end
+end
+
+-- Handle an HTTP DELETE request with Authorization: Bearer header (no body)
+local function handle_http_delete_auth(url, token)
+	local http = require('socket.http')
+	local ltn12 = require('ltn12')
+	local response_body = {}
+	local result, status = http.request({
+		url = url,
+		method = 'DELETE',
+		headers = {
+			['Content-Length'] = '0',
+			['Authorization'] = 'Bearer ' .. token,
+		},
+		sink = ltn12.sink.table(response_body),
+	})
+	if result then
+		push_event('http_response', tostring(status), table.concat(response_body))
+	else
+		push_event('http_error', tostring(status))
+	end
+end
+
+-- Handle an HTTP DELETE request with body and Authorization: Bearer header
+local function handle_http_delete_with_body_auth(url, body, token)
+	local http = require('socket.http')
+	local ltn12 = require('ltn12')
+	local response_body = {}
+	local result, status = http.request({
+		url = url,
+		method = 'DELETE',
+		headers = {
+			['Content-Type'] = 'application/json',
+			['Content-Length'] = tostring(#body),
+			['Authorization'] = 'Bearer ' .. token,
+		},
+		source = ltn12.source.string(body),
+		sink = ltn12.sink.table(response_body),
+	})
+	if result then
+		push_event('http_response', tostring(status), table.concat(response_body))
+	else
+		push_event('http_error', tostring(status))
+	end
+end
+
 -- Handle a connect command
 local function handle_connect(broker, port, secure, client_id, keep_alive, verify, username, password)
 	if client then
@@ -261,6 +325,12 @@ local function dispatch_command(cmd)
 		handle_http_post_auth(parts[2], parts[3], parts[4])
 	elseif action == 'http_put_auth' then
 		handle_http_put_auth(parts[2], parts[3], parts[4])
+	elseif action == 'http_get_auth' then
+		handle_http_get_auth(parts[2], parts[3])
+	elseif action == 'http_delete_auth' then
+		handle_http_delete_auth(parts[2], parts[3])
+	elseif action == 'http_delete_with_body_auth' then
+		handle_http_delete_with_body_auth(parts[2], parts[3], parts[4])
 	elseif action == 'disconnect' then
 		handle_disconnect()
 	elseif action == 'shutdown' then
