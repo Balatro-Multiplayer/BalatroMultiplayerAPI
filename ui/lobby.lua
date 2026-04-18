@@ -184,17 +184,6 @@ local build_lobby_nodes = function(lobby)
 	end
 
 	local nodes = {
-		{ n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
-			{ n = G.UIT.T, config = { text = 'Lobby', scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
-		} },
-		{
-			n = G.UIT.R,
-			config = { align = 'cm', padding = 0.05 },
-			nodes = {
-				{ n = G.UIT.T, config = { text = 'Code: ', scale = 0.4, colour = G.C.UI.TEXT_INACTIVE } },
-				{ n = G.UIT.T, config = { text = code_text, scale = 0.5, colour = G.C.GOLD, shadow = true } },
-			},
-		},
 		{ n = G.UIT.R, config = { align = 'cm', r = 0.1, colour = G.C.BLACK, emboss = 0.05 }, nodes = _row_nodes },
 	}
 
@@ -245,7 +234,6 @@ MPAPI.create_lobby_ui = function(lobby)
 
 		local existing_idx = find_card_for_player(player_id)
 		if existing_idx then
-			-- Avatar changed — update center in place
 			local card = _cards[existing_idx]
 			if card and get_row_for_slot(existing_idx) then
 				card:set_ability(center)
@@ -254,7 +242,6 @@ MPAPI.create_lobby_ui = function(lobby)
 			return
 		end
 
-		-- New player — find an empty (face-down) slot
 		local slot = find_empty_slot()
 		if not slot then
 			clear_page_cards()
@@ -271,7 +258,6 @@ MPAPI.create_lobby_ui = function(lobby)
 			return
 		end
 
-		-- Change the center while still face-down, then flip to reveal
 		card:set_ability(center)
 
 		G.E_MANAGER:add_event(Event({
@@ -300,7 +286,6 @@ MPAPI.create_lobby_ui = function(lobby)
 			return
 		end
 
-		-- Flip to back
 		G.E_MANAGER:add_event(Event({
 			trigger = 'after',
 			delay = 0.15,
@@ -311,7 +296,6 @@ MPAPI.create_lobby_ui = function(lobby)
 			end,
 		}))
 
-		-- Reset center back to joker after flip
 		G.E_MANAGER:add_event(Event({
 			trigger = 'after',
 			delay = 0.3,
