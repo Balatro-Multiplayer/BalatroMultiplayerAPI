@@ -19,7 +19,6 @@ MPAPI.connection_state = {
 	discord_name = '',
 	is_temp = false,
 	use_discord_name = false,
-	auto_login = true,
 	preferred_joker = 'j_joker',
 	privileges = {},
 	tos_is_update = false,
@@ -104,6 +103,7 @@ MPAPI.connect = function(opts)
 			mqtt_secure = mqtt_secure,
 			force_login = opts.force_login or false,
 			dev_name = opts.dev_name or nil,
+			auto_login = MPAPI.config.auto_login ~= false,
 		},
 	})
 
@@ -253,7 +253,7 @@ MPAPI._internal.unlink_discord = function(callback)
 	conn.api:unlink_discord(conn.jwt_token, callback)
 end
 
-MPAPI._internal.enable_chat = function(birth_year, birth_month, birth_day, callback)
+MPAPI._internal.enable_chat = function(callback)
 	local conn = _connection
 	if not conn or conn:get_state() ~= 'connected' then
 		callback('Not connected', nil)
@@ -264,7 +264,7 @@ MPAPI._internal.enable_chat = function(birth_year, birth_month, birth_day, callb
 		return
 	end
 
-	conn.api:enable_chat(conn.jwt_token, birth_year, birth_month, birth_day, function(err, data)
+	conn.api:enable_chat(conn.jwt_token, function(err, data)
 		if err then
 			callback(err, nil)
 			return
@@ -332,7 +332,6 @@ connection_on_state_change = function(new_state, context)
 		MPAPI.connection_state.discord_name = MPAPI.truncate(_connection.discord_name or '', 20)
 		MPAPI.connection_state.is_temp = _connection.is_temp or false
 		MPAPI.connection_state.use_discord_name = _connection.use_discord_name or false
-		MPAPI.connection_state.auto_login = _connection._auto_login ~= false
 		MPAPI.connection_state.preferred_joker = _connection.preferred_joker or 'j_joker'
 		MPAPI.connection_state.privileges = _connection.privileges
 		MPAPI.connection_state.chat_enabled = _connection.chat_enabled or false
@@ -344,9 +343,6 @@ connection_on_state_change = function(new_state, context)
 
 	if new_state == 'tos_required' then
 		MPAPI.connection_state.tos_is_update = context.tos_update or false
-		if MPAPI._internal.show_tos_overlay then
-			MPAPI._internal.show_tos_overlay(context.tos_update or false)
-		end
 	end
 
 	if new_state ~= context.old_state then
@@ -395,7 +391,6 @@ reset_connection_state_variables = function()
 	MPAPI.connection_state.discord_name = ''
 	MPAPI.connection_state.is_temp = false
 	MPAPI.connection_state.use_discord_name = false
-	MPAPI.connection_state.auto_login = true
 	MPAPI.connection_state.preferred_joker = 'j_joker'
 	MPAPI.connection_state.privileges = nil
 	MPAPI.connection_state.chat_enabled = false

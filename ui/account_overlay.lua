@@ -191,7 +191,7 @@ auto_login_toggle = function()
 		nodes = {
 			MPAPI.disableable_toggle({
 				label = localize('k_auto_login'),
-				ref_table = MPAPI.connection_state,
+				ref_table = MPAPI.config,
 				ref_value = 'auto_login',
 				callback = G.FUNCS.mpapi_change_auto_login,
 				enabled = true,
@@ -245,19 +245,8 @@ chat_section = function()
 		},
 	}
 
-	if chat_blocked then
-		nodes[#nodes + 1] = {
-			n = G.UIT.R,
-			config = { align = 'cm', padding = 0.04 },
-			nodes = {
-				{ n = G.UIT.T, config = {
-					text = localize('k_chat_status_blocked'),
-					scale = 0.35, colour = G.C.RED,
-				} },
-			},
-		}
-	elseif server_enabled then
-		-- Client-side enable/disable toggle (no re-verification needed)
+	if server_enabled and not chat_blocked then
+		-- Client-side toggle only — chat eligibility is set at account creation and never changes
 		nodes[#nodes + 1] = {
 			n = G.UIT.R,
 			config = { align = 'cm', padding = 0.04 },
@@ -272,35 +261,14 @@ chat_section = function()
 			},
 		}
 	else
-		-- Not verified yet: show status + button
 		nodes[#nodes + 1] = {
 			n = G.UIT.R,
 			config = { align = 'cm', padding = 0.04 },
 			nodes = {
 				{ n = G.UIT.T, config = {
-					text = localize('k_chat_status_none'),
-					scale = 0.35, colour = G.C.UI.TEXT_INACTIVE,
+					text = localize('k_chat_status_blocked'),
+					scale = 0.35, colour = G.C.RED,
 				} },
-			},
-		}
-		nodes[#nodes + 1] = {
-			n = G.UIT.R,
-			config = { align = 'cm', padding = 0.08 },
-			nodes = {
-				{
-					n = G.UIT.C,
-					config = {
-						align = 'cm', padding = 0.1, minw = 5, minh = 0.7,
-						r = 0.1, hover = true, colour = G.C.GREEN,
-						button = 'mpapi_open_chat_enable', shadow = true,
-					},
-					nodes = {
-						{ n = G.UIT.T, config = {
-							text = localize('b_chat_enable'),
-							scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
-						} },
-					},
-				},
 			},
 		}
 	end
@@ -334,14 +302,7 @@ G.FUNCS.mpapi_change_use_discord_name = function(args)
 end
 
 G.FUNCS.mpapi_change_auto_login = function(new_value)
-	local conn = MPAPI.get_connection()
-	if conn then
-		if new_value then
-			conn:enable_auto_login()
-		else
-			conn:disable_auto_login()
-		end
-	end
+	MPAPI._internal.config_set('auto_login', new_value)
 end
 
 G.FUNCS.mpapi_unlink_discord = function(e)

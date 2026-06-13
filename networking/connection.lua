@@ -201,7 +201,20 @@ function connection:connect()
 		return
 	end
 
-	self:_try_dev_auth()
+	if not self.steam or not self.steam.available() then
+		set_state(self, STATES.DISCONNECTED, { error = 'Steam is not available' })
+		return
+	end
+
+	self._steam_id = self.steam.get_steam_id()
+	self.steam_name = self.steam.get_persona_name() or 'Player'
+
+	if not self.config.auto_login and not self.config.force_login then
+		set_state(self, STATES.LOGIN_AVAILABLE, { steam_name = self.steam_name })
+		return
+	end
+
+	self:_do_auth()
 end
 
 --[[ ORIGINAL STEAM AUTH (preserved for reference)
@@ -242,9 +255,8 @@ end
 end]]
 
 -- Called by the UI after the user reads and accepts the ToS / Privacy Policy.
--- Branches on whether this is a first-time acceptance (local) or a server-side
--- ToS version update (requires calling the accept-tos endpoint).
-function connection:accept_tos()
+-- chat_eligible: boolean computed client-side from birthdate (never sent raw).
+function connection:accept_tos(chat_eligible)
 	if self.state ~= STATES.TOS_REQUIRED then
 		return
 	end
@@ -254,7 +266,7 @@ function connection:accept_tos()
 		set_state(self, STATES.AUTHENTICATING)
 		local token = self._pending_tos_token
 		self._pending_tos_token = nil
-		self.api:accept_tos_update(token, function(err, data)
+		self.api:accept_tos_update(token, chat_eligible, function(err, data)
 			if err then
 				set_state(self, STATES.DISCONNECTED, { error = 'ToS acceptance failed: ' .. tostring(err) })
 				return

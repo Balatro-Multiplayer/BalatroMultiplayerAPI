@@ -33,6 +33,25 @@ local create_UIBox_account_button = function()
 		account_button_config.shadow = true
 	end
 
+	local state = MPAPI.connection_state.state
+	local account_button_label
+	if state == 'tos_required' and not MPAPI.connection_state.tos_is_update then
+		account_button_label = { n = G.UIT.T, config = {
+			text = localize('b_sign_up'),
+			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
+		} }
+	elseif state == 'tos_required' or state == 'login_available' then
+		account_button_label = { n = G.UIT.T, config = {
+			text = localize('b_sign_in'),
+			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
+		} }
+	else
+		account_button_label = { n = G.UIT.T, config = {
+			ref_table = MPAPI.connection_state, ref_value = 'display_name',
+			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
+		} }
+	end
+
 	local account_button_node = {
 		n = G.UIT.R,
 		config = { align = 'cm' },
@@ -40,9 +59,7 @@ local create_UIBox_account_button = function()
 			{
 				n = G.UIT.C,
 				config = account_button_config,
-				nodes = {
-					{ n = G.UIT.T, config = { ref_table = MPAPI.connection_state, ref_value = 'display_name', scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
-				},
+				nodes = { account_button_label },
 			},
 		},
 	}
@@ -242,9 +259,4 @@ set_main_menu_UI = function()
 	end
 
 	attach_account_button()
-
-	-- Show any ToS overlay that was queued before the menu was ready
-	if MPAPI._internal.flush_tos_overlay then
-		MPAPI._internal.flush_tos_overlay()
-	end
 end
