@@ -223,7 +223,7 @@ function api_client:set_preferred_joker(jwt_token, preferred_joker, callback)
 	self.mqtt:http_post_auth(self.base_url .. '/api/auth/preferences/joker', body, jwt_token)
 end
 
-function api_client:accept_tos_update(pending_token, callback)
+function api_client:accept_tos_update(pending_token, chat_eligible, callback)
 	if not self.mqtt or not self.mqtt.tx_channel then
 		callback('MQTT thread not running', nil)
 		return
@@ -231,7 +231,8 @@ function api_client:accept_tos_update(pending_token, callback)
 
 	self:_setup_http_callback(callback)
 
-	self.mqtt:http_post_auth(self.base_url .. '/api/auth/accept-tos', '{}', pending_token)
+	local body = json_encode({ chatEligible = chat_eligible })
+	self.mqtt:http_post_auth(self.base_url .. '/api/auth/accept-tos', body, pending_token)
 end
 
 function api_client:create_lobby(token, mod_id, max_players, callback)
@@ -313,7 +314,7 @@ function api_client:set_lobby_metadata(token, code, metadata, callback)
 	self.mqtt:http_put_auth(self.base_url .. '/api/lobbies/' .. code .. '/metadata', body, token)
 end
 
-function api_client:enable_chat(jwt_token, birth_year, birth_month, birth_day, callback)
+function api_client:enable_chat(jwt_token, callback)
 	if not self.mqtt or not self.mqtt.tx_channel then
 		callback('MQTT thread not running', nil)
 		return
@@ -355,8 +356,7 @@ function api_client:enable_chat(jwt_token, birth_year, birth_month, birth_day, c
 		if cb then cb('HTTP request failed: ' .. tostring(msg), nil) end
 	end
 
-	local body = json_encode({ birthYear = birth_year, birthMonth = birth_month, birthDay = birth_day })
-	self.mqtt:http_post_auth(self.base_url .. '/api/auth/chat/enable', body, jwt_token)
+	self.mqtt:http_post_auth(self.base_url .. '/api/auth/chat/enable', '{}', jwt_token)
 end
 
 function api_client:send_chat_message(jwt_token, code, message, callback)
@@ -497,7 +497,10 @@ function api_client:get_matchmaking_rating(token, mod_id, game_mode, season, cal
 	end
 	self:_setup_json_callback(callback)
 	local url = self.base_url .. '/api/matchmaking/ratings?modId=' .. mod_id ..
-		'&gameMode=' .. game_mode .. '&season=' .. tostring(season)
+		'&gameMode=' .. game_mode
+	if season ~= nil then
+		url = url .. '&season=' .. tostring(season)
+	end
 	self.mqtt:http_get_auth(url, token)
 end
 
@@ -508,8 +511,11 @@ function api_client:get_matchmaking_leaderboard(token, mod_id, game_mode, season
 	end
 	self:_setup_json_callback(callback)
 	local url = self.base_url .. '/api/matchmaking/leaderboard?modId=' .. mod_id ..
-		'&gameMode=' .. game_mode .. '&season=' .. tostring(season) ..
-		'&limit=' .. tostring(limit or 100) .. '&offset=' .. tostring(offset or 0)
+		'&gameMode=' .. game_mode
+	if season ~= nil then
+		url = url .. '&season=' .. tostring(season)
+	end
+	url = url .. '&limit=' .. tostring(limit or 100) .. '&offset=' .. tostring(offset or 0)
 	self.mqtt:http_get_auth(url, token)
 end
 
