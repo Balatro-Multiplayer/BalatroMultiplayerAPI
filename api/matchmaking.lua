@@ -35,7 +35,10 @@ local function ensure_subscribed()
 
 	local topic = 'player/' .. conn.player_id .. '/matchmaking'
 
-	mqtt:subscribe(topic, 1, function(payload_str)
+	-- The mqtt client invokes handlers as (topic, payload); the payload is the
+	-- second argument. (Taking only the first dropped every matchmaking message --
+	-- e.g. match_found -- because the topic string is not valid JSON.)
+	mqtt:subscribe(topic, 1, function(_topic, payload_str)
 		local ok, msg = pcall(json_decode, payload_str)
 		if not ok or not msg then return end
 		dispatch_matchmaking_message(msg)
@@ -208,6 +211,23 @@ MPAPI.matchmaking._make_handle = function(mod_id, game_mode)
 		end
 
 		conn.api:report_match_result(conn.jwt_token, self.match_id, placements, callback)
+	end
+
+	-- Signal that the run has started (host only). The server stamps the start time once,
+	-- forming the basis for server-measured timing leaderboards (e.g. fastest completion).
+	function handle:mark_started(callback)
+		if not self.match_id then
+			if callback then callback('No active match', nil) end
+			return
+		end
+
+		local conn = MPAPI.get_connection()
+		if not conn then
+			if callback then callback('Not connected', nil) end
+			return
+		end
+
+		conn.api:mark_run_start(conn.jwt_token, self.match_id, callback)
 	end
 
 	return handle
