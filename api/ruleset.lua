@@ -16,6 +16,14 @@ function RulesetMeta:inject()
 	table.insert(G.P_CENTER_POOLS.Ruleset, self)
 end
 
+function RulesetMeta:is_disabled()
+	return false
+end
+
+function RulesetMeta:force_lobby_options()
+	return false
+end
+
 function MPAPI.Ruleset(init)
 	assert(type(init) == 'table' and init.key, 'MPAPI.Ruleset: key is required')
 	init = MPAPI.resolve_layers(init)
@@ -63,9 +71,10 @@ end
 -----------------------------
 
 local _array_field_set = {}
-for _, f in ipairs(MPAPI._LAYER_ARRAY_FIELDS) do
-	_array_field_set[f] = true
-end
+for _, f in ipairs(MPAPI._LAYER_ARRAY_FIELDS) do _array_field_set[f] = true end
+
+local _table_field_set = {}
+for _, f in ipairs(MPAPI._LAYER_TABLE_FIELDS) do _table_field_set[f] = true end
 
 local function resolve_field(field)
 	local ruleset_key = MPAPI.get_active_ruleset()
@@ -79,6 +88,21 @@ local function resolve_field(field)
 			local layer = MPAPI.Layers[mod_name]
 			if layer and layer[field] then
 				for _, v in ipairs(layer[field]) do merged[#merged + 1] = v end
+			end
+		end
+		return merged
+	end
+	if _table_field_set[field] then
+		-- Start from baked ruleset value (which already includes static layer contributions),
+		-- then overlay runtime modifier layers on top (modifier > baked).
+		local merged = {}
+		if ruleset and ruleset[field] then
+			for fk, fv in pairs(ruleset[field]) do merged[fk] = fv end
+		end
+		for _, mod_name in ipairs(MPAPI.MODIFIERS) do
+			local layer = MPAPI.Layers[mod_name]
+			if layer and layer[field] then
+				for fk, fv in pairs(layer[field]) do merged[fk] = fv end
 			end
 		end
 		return merged
@@ -126,6 +150,20 @@ function MPAPI.ApplyBans()
 	end
 	for _, v in ipairs(ruleset.banned_silent) do
 		G.GAME.banned_keys[v] = true
+	end
+
+	MPAPI.RunLayerHooks('on_apply_bans')
+
+	local game_modifiers = ruleset.game_modifiers
+	if game_modifiers then
+		G.GAME.modifiers = G.GAME.modifiers or {}
+		for k, v in pairs(game_modifiers) do G.GAME.modifiers[k] = v end
+	end
+
+	local starting_params = ruleset.starting_params
+	if starting_params then
+		G.GAME.starting_params = G.GAME.starting_params or {}
+		for k, v in pairs(starting_params) do G.GAME.starting_params[k] = v end
 	end
 end
 

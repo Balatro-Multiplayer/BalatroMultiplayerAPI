@@ -5,7 +5,13 @@
 -----------------------------
 
 function MPAPI.should_use_the_order()
-	return MPAPI.is_layer_active('the_order')
+	if MPAPI.is_layer_active('the_order') then return true end
+	-- MP compat: MP rulesets gate via MP.LOBBY.config.the_order rather than the MPAPI layer chain.
+	local mp = rawget(_G, 'MP')
+	if mp and mp.LOBBY and mp.LOBBY.config and mp.LOBBY.config.the_order then
+		return mp.LOBBY.code ~= nil or (mp.is_practice_mode and mp.is_practice_mode()) or false
+	end
+	return false
 end
 
 -----------------------------

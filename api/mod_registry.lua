@@ -25,7 +25,7 @@ local _original_set_main_menu_UI = set_main_menu_UI
 -- mod is published. Installed mods (the player has the folder) ignore this flag.
 local _official_mods = {
 	{ id = 'MultiplayerPvP', name = 'PvP', colour = G.C.RED, download_url = 'https://github.com/V-rtualized/MultiplayerPvP', coming_soon = true },
-	{ id = 'MultiplayerSpeedrunning', name = 'Speedrun', colour = G.C.GREEN, download_url = 'https://github.com/V-rtualized/MultiplayerSpeedrunning' },
+	{ id = 'MultiplayerSPDRN', name = 'Multiplayer Speedrunning', colour = G.C.GREEN, download_url = 'https://github.com/V-rtualized/MultiplayerSpeedrunning' },
 	{ id = 'MultiplayerCoop', name = 'Co-op', colour = G.C.BLUE, download_url = 'https://github.com/V-rtualized/MultiplayerCoop', coming_soon = true },
 }
 
