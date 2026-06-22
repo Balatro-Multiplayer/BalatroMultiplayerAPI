@@ -11,6 +11,10 @@ MPAPI.GameMode = SMODS.GameObject:extend({
 	has_ranked_mode = false,
 	min_players = 2,
 	max_players = 16,
+	-- Whether the in-run "Seed Change" control is offered for this mode. Modes can
+	-- set this false to hide the seed-change button entirely (e.g. best-of-N modes
+	-- where re-rolling the seed would undermine the format).
+	seed_change_allowed = true,
 	required_params = { 'key', 'start_run' },
 
 	inject = function(self)
@@ -45,6 +49,34 @@ MPAPI.GameMode = SMODS.GameObject:extend({
 			return self.max_players
 		end
 		return self.max_players[lobby_type]
+	end,
+
+	-- Elimination helper for last-player-standing modes. Records that `player_id`
+	-- has forfeited (tracked on self._forfeited) and, when exactly one player in the
+	-- current lobby is left un-forfeited, returns that survivor's id. Returns nil
+	-- otherwise. Host-authoritative: only the host gets a non-nil result, so callers
+	-- can broadcast their mode's "player won" action for the returned id without an
+	-- extra host check.
+	check_single_survivor = function(self, player_id)
+		self._forfeited = self._forfeited or {}
+		self._forfeited[player_id] = true
+
+		local lobby = MPAPI.get_current_lobby()
+		if not lobby or not lobby.is_host then
+			return nil
+		end
+
+		local remaining = {}
+		for _, p in ipairs(lobby:get_players()) do
+			if not self._forfeited[p.id] then
+				remaining[#remaining + 1] = p
+			end
+		end
+
+		if #remaining == 1 then
+			return remaining[1].id
+		end
+		return nil
 	end,
 
 	-- Creates a fresh per-run instance inheriting from this definition.
