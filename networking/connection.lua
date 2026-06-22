@@ -194,6 +194,22 @@ function connection:_try_dev_auth()
 	end)
 end
 
+-- Dev-only: authenticate as an existing player (real players row) instead of via
+-- Steam. target is a table with one of: playerId, steamId, discordId, steamName.
+-- Lets a second instance act as a different real account for matchmaking testing.
+function connection:_try_impersonate_auth(target)
+	set_state(self, STATES.AUTHENTICATING)
+	self.mqtt:start_thread()
+
+	self.api:authenticate_impersonate(target, function(err, data)
+		if err then
+			set_state(self, STATES.DISCONNECTED, { error = 'Impersonation auth failed: ' .. tostring(err) })
+			return
+		end
+		self:_handle_auth_success(data)
+	end)
+end
+
 -- Entry point called by the UI / game to initiate a connection.
 function connection:connect()
 	if self.state ~= STATES.DISCONNECTED then
@@ -359,7 +375,7 @@ function connection:_mqtt_connect_with_credentials()
 
 	local connect_msg = table.concat({
 		'connect',
-		cfg.mqtt_broker or 'localhost',
+		cfg.mqtt_broker or '127.0.0.1',
 		tostring(cfg.mqtt_port or 1883),
 		tostring(cfg.mqtt_secure or false),
 		self.player_id,
