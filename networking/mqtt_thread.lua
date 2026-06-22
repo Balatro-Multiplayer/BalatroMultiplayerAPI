@@ -84,136 +84,176 @@ local function setup_handlers(cl)
 	})
 end
 
--- Handle an HTTP POST request
+-- HTTPS via OpenSSL FFI: forces IPv4 DNS (avoids ENETUNREACH on IPv6-less networks)
+-- and wraps TCP with the same TLS layer used by MQTT.
+local function do_https_request(method, url, body, extra_headers)
+	local ossl = require('openssl_ffi')
+	if not ossl.available() then
+		return nil, 'OpenSSL not available'
+	end
+
+	local host, rest = url:match('^https://([^/]+)(.*)')
+	if not host then return nil, 'invalid https url' end
+	local path = (rest ~= '' and rest) or '/'
+	local port = 443
+	local h, p = host:match('^(.+):(%d+)$')
+	if h then host, port = h, tonumber(p) end
+
+	-- toip() calls gethostbyname — IPv4 only, avoids IPv6 ENETUNREACH
+	local ip, dns_err = socket.dns.toip(host)
+	if not ip then
+		return nil, 'DNS: ' .. tostring(dns_err)
+	end
+
+	local sock = socket.tcp()
+	sock:settimeout(15)
+	local ok, conn_err = sock:connect(ip, port)
+	if not ok then
+		sock:close()
+		return nil, 'connect: ' .. tostring(conn_err)
+	end
+
+	local fd = sock:getfd()
+	if fd < 0 then sock:close(); return nil, 'no socket fd' end
+
+	local ctx, ctx_err = ossl.new_context({ verify = false })
+	if not ctx then sock:close(); return nil, 'ssl ctx: ' .. tostring(ctx_err) end
+
+	local ssl, ssl_err = ossl.new_ssl(ctx, fd, host)
+	if not ssl then
+		ossl.free_context(ctx); sock:close()
+		return nil, 'ssl obj: ' .. tostring(ssl_err)
+	end
+
+	local hs_ok, hs_err = ossl.connect(ssl)
+	if not hs_ok then
+		for _ = 1, 50 do
+			if hs_err ~= 'wouldblock' then break end
+			socket.sleep(0.1)
+			hs_ok, hs_err = ossl.connect(ssl)
+		end
+	end
+	if not hs_ok then
+		ossl.free(ssl); ossl.free_context(ctx); sock:close()
+		return nil, 'tls: ' .. tostring(hs_err)
+	end
+
+	body = body or ''
+	local hdrs = { 'Host: ' .. host, 'Connection: close' }
+	if #body > 0 then
+		table.insert(hdrs, 'Content-Type: application/json')
+		table.insert(hdrs, 'Content-Length: ' .. #body)
+	end
+	if extra_headers then
+		for k, v in pairs(extra_headers) do
+			table.insert(hdrs, k .. ': ' .. v)
+		end
+	end
+	local request = method .. ' ' .. path .. ' HTTP/1.1\r\n' ..
+		table.concat(hdrs, '\r\n') .. '\r\n\r\n' .. body
+
+	local _, write_err = ossl.write(ssl, request)
+	if write_err then
+		ossl.shutdown(ssl); ossl.free(ssl); ossl.free_context(ctx); sock:close()
+		return nil, 'send: ' .. tostring(write_err)
+	end
+
+	local parts = {}
+	local deadline = socket.gettime() + 15
+	while socket.gettime() < deadline do
+		local pending = ossl.pending(ssl)
+		if pending > 0 then
+			local data = ossl.read(ssl, pending)
+			if data then table.insert(parts, data) end
+		else
+			local readable = socket.select({ sock }, nil, 0.5)
+			if readable and #readable > 0 then
+				local data = ossl.read(ssl, 8192)
+				if data then table.insert(parts, data) else break end
+			end
+		end
+		-- Stop early once Content-Length bytes are in hand
+		local acc = table.concat(parts)
+		local he = acc:find('\r\n\r\n', 1, true)
+		if he then
+			local cl = acc:match('[Cc]ontent%-[Ll]ength: (%d+)')
+			if cl and (#acc - he - 3) >= tonumber(cl) then break end
+		end
+	end
+
+	ossl.shutdown(ssl); ossl.free(ssl); ossl.free_context(ctx); sock:close()
+
+	local full = table.concat(parts)
+	local status_code = tonumber(full:match('^HTTP/%S+ (%d+)'))
+	if not status_code then return nil, 'bad http response' end
+	local he = full:find('\r\n\r\n', 1, true)
+	return status_code, he and full:sub(he + 4) or ''
+end
+
+-- Route HTTP or HTTPS, returning (status_code, body) or (nil, err_msg)
+local function do_request(method, url, body, extra_headers)
+	if url:sub(1, 8) == 'https://' then
+		return do_https_request(method, url, body, extra_headers)
+	end
+	local http = require('socket.http')
+	local ltn12 = require('ltn12')
+	local parts = {}
+	local hdrs = {}
+	if body and #body > 0 then
+		hdrs['Content-Type'] = 'application/json'
+		hdrs['Content-Length'] = tostring(#body)
+	end
+	if extra_headers then
+		for k, v in pairs(extra_headers) do hdrs[k] = v end
+	end
+	local result, status = http.request({
+		url = url,
+		method = method,
+		headers = hdrs,
+		source = (body and #body > 0) and ltn12.source.string(body) or nil,
+		sink = ltn12.sink.table(parts),
+	})
+	if result then
+		return tonumber(status) or 0, table.concat(parts)
+	else
+		return nil, tostring(status)
+	end
+end
+
 local function handle_http_post(url, body)
-	local http = require('socket.http')
-	local ltn12 = require('ltn12')
-	local response_body = {}
-	local result, status = http.request({
-		url = url,
-		method = 'POST',
-		headers = {
-			['Content-Type'] = 'application/json',
-			['Content-Length'] = tostring(#body),
-		},
-		source = ltn12.source.string(body),
-		sink = ltn12.sink.table(response_body),
-	})
-	if result then
-		push_event('http_response', tostring(status), table.concat(response_body))
-	else
-		push_event('http_error', tostring(status))
-	end
+	local status, resp = do_request('POST', url, body, nil)
+	if status then push_event('http_response', tostring(status), resp)
+	else push_event('http_error', tostring(resp)) end
 end
 
--- Handle an HTTP POST request with Authorization: Bearer header
 local function handle_http_post_auth(url, body, token)
-	local http = require('socket.http')
-	local ltn12 = require('ltn12')
-	local response_body = {}
-	local result, status = http.request({
-		url = url,
-		method = 'POST',
-		headers = {
-			['Content-Type'] = 'application/json',
-			['Content-Length'] = tostring(#body),
-			['Authorization'] = 'Bearer ' .. token,
-		},
-		source = ltn12.source.string(body),
-		sink = ltn12.sink.table(response_body),
-	})
-	if result then
-		push_event('http_response', tostring(status), table.concat(response_body))
-	else
-		push_event('http_error', tostring(status))
-	end
+	local status, resp = do_request('POST', url, body, { ['Authorization'] = 'Bearer ' .. token })
+	if status then push_event('http_response', tostring(status), resp)
+	else push_event('http_error', tostring(resp)) end
 end
 
--- Handle an HTTP PUT request with Authorization: Bearer header
 local function handle_http_put_auth(url, body, token)
-	local http = require('socket.http')
-	local ltn12 = require('ltn12')
-	local response_body = {}
-	local result, status = http.request({
-		url = url,
-		method = 'PUT',
-		headers = {
-			['Content-Type'] = 'application/json',
-			['Content-Length'] = tostring(#body),
-			['Authorization'] = 'Bearer ' .. token,
-		},
-		source = ltn12.source.string(body),
-		sink = ltn12.sink.table(response_body),
-	})
-	if result then
-		push_event('http_response', tostring(status), table.concat(response_body))
-	else
-		push_event('http_error', tostring(status))
-	end
+	local status, resp = do_request('PUT', url, body, { ['Authorization'] = 'Bearer ' .. token })
+	if status then push_event('http_response', tostring(status), resp)
+	else push_event('http_error', tostring(resp)) end
 end
 
--- Handle an HTTP GET request with Authorization: Bearer header
 local function handle_http_get_auth(url, token)
-	local http = require('socket.http')
-	local ltn12 = require('ltn12')
-	local response_body = {}
-	local result, status = http.request({
-		url = url,
-		method = 'GET',
-		headers = {
-			['Authorization'] = 'Bearer ' .. token,
-		},
-		sink = ltn12.sink.table(response_body),
-	})
-	if result then
-		push_event('http_response', tostring(status), table.concat(response_body))
-	else
-		push_event('http_error', tostring(status))
-	end
+	local status, resp = do_request('GET', url, nil, { ['Authorization'] = 'Bearer ' .. token })
+	if status then push_event('http_response', tostring(status), resp)
+	else push_event('http_error', tostring(resp)) end
 end
 
--- Handle an HTTP DELETE request with Authorization: Bearer header (no body)
 local function handle_http_delete_auth(url, token)
-	local http = require('socket.http')
-	local ltn12 = require('ltn12')
-	local response_body = {}
-	local result, status = http.request({
-		url = url,
-		method = 'DELETE',
-		headers = {
-			['Content-Length'] = '0',
-			['Authorization'] = 'Bearer ' .. token,
-		},
-		sink = ltn12.sink.table(response_body),
-	})
-	if result then
-		push_event('http_response', tostring(status), table.concat(response_body))
-	else
-		push_event('http_error', tostring(status))
-	end
+	local status, resp = do_request('DELETE', url, nil, { ['Authorization'] = 'Bearer ' .. token })
+	if status then push_event('http_response', tostring(status), resp)
+	else push_event('http_error', tostring(resp)) end
 end
 
--- Handle an HTTP DELETE request with body and Authorization: Bearer header
 local function handle_http_delete_with_body_auth(url, body, token)
-	local http = require('socket.http')
-	local ltn12 = require('ltn12')
-	local response_body = {}
-	local result, status = http.request({
-		url = url,
-		method = 'DELETE',
-		headers = {
-			['Content-Type'] = 'application/json',
-			['Content-Length'] = tostring(#body),
-			['Authorization'] = 'Bearer ' .. token,
-		},
-		source = ltn12.source.string(body),
-		sink = ltn12.sink.table(response_body),
-	})
-	if result then
-		push_event('http_response', tostring(status), table.concat(response_body))
-	else
-		push_event('http_error', tostring(status))
-	end
+	local status, resp = do_request('DELETE', url, body, { ['Authorization'] = 'Bearer ' .. token })
+	if status then push_event('http_response', tostring(status), resp)
+	else push_event('http_error', tostring(resp)) end
 end
 
 -- Handle a connect command
