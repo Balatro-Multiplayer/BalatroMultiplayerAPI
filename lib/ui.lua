@@ -27,6 +27,14 @@ function Game:update(dt)
 	c[3] = 0.64 - 0.08 * s
 end
 
+local _game_draw_ref = Game.draw
+function Game:draw()
+	_game_draw_ref(self)
+	if MPAPI.chat and MPAPI.chat.doRender then
+		MPAPI.chat.doRender()
+	end
+end
+
 -- Returns a Joker card using the user's preferred joker id
 -- Can be easily added to UI using { n = G.UIT.O, config = { object = card } }
 -- card_parameters get added to the underlying card values

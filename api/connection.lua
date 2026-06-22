@@ -13,6 +13,11 @@ local run_new_state_user_callbacks
 MPAPI.connection_state = {
 	state = 'disconnected',
 	status_text = localize('k_status_offline'),
+	-- When non-nil, takes precedence over the connection-derived status text so a
+	-- mod can surface a transient status (e.g. a matchmaking timer) in the
+	-- account panel. Keep overrides short — the panel is fixed-width and long
+	-- text forces the whole UIBox to scale down to fit.
+	status_override = nil,
 	player_id = '',
 	display_name = localize('b_retry_connection'),
 	steam_name = '',
@@ -21,6 +26,9 @@ MPAPI.connection_state = {
 	use_discord_name = false,
 	preferred_joker = 'j_joker',
 	privileges = {},
+	tos_is_update = false,
+	chat_enabled = false,
+	chat_blocked = false,
 }
 
 local _mqtt_instance = nil
@@ -30,9 +38,13 @@ local _ready_callbacks = {}
 local _last_opts = nil
 local _state_change_callbacks = {}
 
+-- Use 127.0.0.1 rather than 'localhost' on purpose: on Windows, 'localhost'
+-- resolves to IPv6 ::1 first, which does not reach servers running inside WSL2,
+-- so each connection eats a ~21s TCP SYN timeout before falling back to IPv4.
+-- Forcing 127.0.0.1 skips the dead IPv6 path entirely.
 local SERVER_DEFAULTS = {
-	api_url = 'http://localhost:8788',
-	mqtt_broker = 'localhost',
+	api_url = 'http://127.0.0.1:8788',
+	mqtt_broker = '127.0.0.1',
 	mqtt_port = 8883,
 	mqtt_secure = true,
 }
@@ -50,10 +62,25 @@ end
 -----------------------------
 
 MPAPI.on_loaded = function(fn)
-	if _ready then
-		return fn()
+	-- Capture the mod registering this callback. on_loaded callbacks run deferred
+	-- (after SMODS has finished loading), by which point SMODS.current_mod no longer
+	-- points at the caller. GameObjects created in the callback (e.g. a mod loading
+	-- its ActionTypes/GameModes here) would otherwise be tagged with the wrong mod,
+	-- which breaks per-lobby action routing (lobby._action_types filters by mod id).
+	local owner_mod = SMODS.current_mod
+	local wrapped = function()
+		local prev = SMODS.current_mod
+		SMODS.current_mod = owner_mod or prev
+		local ok, err = pcall(fn)
+		SMODS.current_mod = prev
+		if not ok then
+			MPAPI.sendWarnMessage('on_loaded callback error: ' .. tostring(err))
+		end
 	end
-	_ready_callbacks[#_ready_callbacks + 1] = fn
+	if _ready then
+		return wrapped()
+	end
+	_ready_callbacks[#_ready_callbacks + 1] = wrapped
 end
 
 MPAPI.on_connection_state_change = function(fn)
@@ -69,7 +96,7 @@ MPAPI.connect = function(opts)
 		return
 	end
 
-	if not MPAPI.modules.mqtt_client then
+	if not MPAPI.networking.mqtt_client then
 		MPAPI.sendWarnMessage('MQTT client module not available')
 		return
 	end
@@ -81,23 +108,26 @@ MPAPI.connect = function(opts)
 		mqtt_secure = opts.mqtt_secure
 	end
 
-	_mqtt_instance = MPAPI.modules.mqtt_client.new({
+	_mqtt_instance = MPAPI.networking.mqtt_client.new({
 		broker = mqtt_broker,
 		port = mqtt_port,
 		secure = mqtt_secure,
 	})
 
-	local api = MPAPI.modules.api_client.new(_mqtt_instance, opts.api_url or SERVER_DEFAULTS.api_url)
+	local api = MPAPI.networking.api_client.new(_mqtt_instance, opts.api_url or SERVER_DEFAULTS.api_url)
 
-	_connection = MPAPI.modules.connection.new({
+	_connection = MPAPI.networking.connection.new({
 		mqtt_client = _mqtt_instance,
 		api_client = api,
-		steam = MPAPI.modules.steam,
-		token_store = MPAPI.modules.token_store,
+		steam = MPAPI.networking.steam,
+		token_store = MPAPI.networking.token_store,
 		config = {
 			mqtt_broker = mqtt_broker,
 			mqtt_port = mqtt_port,
 			mqtt_secure = mqtt_secure,
+			force_login = opts.force_login or false,
+			dev_name = opts.dev_name or nil,
+			auto_login = MPAPI.config.auto_login ~= false,
 		},
 	})
 
@@ -247,17 +277,60 @@ MPAPI._internal.unlink_discord = function(callback)
 	conn.api:unlink_discord(conn.jwt_token, callback)
 end
 
+MPAPI._internal.enable_chat = function(callback)
+	local conn = _connection
+	if not conn or conn:get_state() ~= 'connected' then
+		callback('Not connected', nil)
+		return
+	end
+	if not conn.jwt_token then
+		callback('No JWT token', nil)
+		return
+	end
+
+	conn.api:enable_chat(conn.jwt_token, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+
+		if data.player then
+			conn.chat_enabled = data.player.chatEnabled or false
+			conn.chat_blocked = data.player.chatBlocked or false
+			MPAPI.connection_state.chat_enabled = conn.chat_enabled
+			MPAPI.connection_state.chat_blocked = conn.chat_blocked
+		end
+
+		callback(nil, data)
+	end)
+end
+
+MPAPI._internal.send_chat_message = function(code, message, callback)
+	local conn = _connection
+	if not conn or conn:get_state() ~= 'connected' then
+		callback('Not connected', nil)
+		return
+	end
+	if not conn.jwt_token then
+		callback('No JWT token', nil)
+		return
+	end
+
+	conn.api:send_chat_message(conn.jwt_token, code, message, callback)
+end
+
 -----------------------------
 -- HELPER FUNCTIONS
 -----------------------------
 
 update_display_name = function()
 	if MPAPI.connection_state.state ~= 'connected' then
-		MPAPI.connection_state.display_name = localize('b_retry_connection')
-		return
-	end
-
-	if _connection and _connection.display_name then
+		if MPAPI.connection_state.state == 'login_available' then
+			MPAPI.connection_state.display_name = localize('b_log_in')
+		else
+			MPAPI.connection_state.display_name = localize('b_retry_connection')
+		end
+	elseif _connection and _connection.display_name then
 		MPAPI.connection_state.display_name = MPAPI.truncate(_connection.display_name, 20)
 	elseif MPAPI.connection_state.steam_name ~= '' then
 		MPAPI.connection_state.display_name = MPAPI.connection_state.steam_name
@@ -285,10 +358,16 @@ connection_on_state_change = function(new_state, context)
 		MPAPI.connection_state.use_discord_name = _connection.use_discord_name or false
 		MPAPI.connection_state.preferred_joker = _connection.preferred_joker or 'j_joker'
 		MPAPI.connection_state.privileges = _connection.privileges
+		MPAPI.connection_state.chat_enabled = _connection.chat_enabled or false
+		MPAPI.connection_state.chat_blocked = _connection.chat_blocked or false
 	end
 	set_connection_state_status_text()
 
 	update_display_name()
+
+	if new_state == 'tos_required' then
+		MPAPI.connection_state.tos_is_update = context.tos_update or false
+	end
 
 	if new_state ~= context.old_state then
 		if new_state ~= 'connected' then
@@ -319,6 +398,14 @@ log_state_update = function(new_state, context)
 		MPAPI.sendDebugMessage('Connected! Player ID: ' .. tostring(_connection.player_id))
 	elseif new_state == 'disconnected' then
 		MPAPI.sendDebugMessage('Disconnected from server')
+	elseif new_state == 'tos_required' then
+		MPAPI.sendDebugMessage('ToS acceptance required for: ' .. tostring(context.steam_name))
+	elseif new_state == 'login_available' then
+		MPAPI.sendDebugMessage('Login available (auto-login off) for: ' .. tostring(context.steam_name))
+	elseif new_state == 'authenticating' then
+		MPAPI.sendDebugMessage('Authenticating...')
+	elseif new_state == 'connecting' then
+		MPAPI.sendDebugMessage('Connecting to MQTT broker...')
 	end
 end
 
@@ -330,9 +417,15 @@ reset_connection_state_variables = function()
 	MPAPI.connection_state.use_discord_name = false
 	MPAPI.connection_state.preferred_joker = 'j_joker'
 	MPAPI.connection_state.privileges = nil
+	MPAPI.connection_state.chat_enabled = false
+	MPAPI.connection_state.chat_blocked = false
 end
 
 set_connection_state_status_text = function()
+	if MPAPI.connection_state.status_override then
+		MPAPI.connection_state.status_text = MPAPI.connection_state.status_override
+		return
+	end
 	if MPAPI.connection_state.state == 'connected' then
 		MPAPI.connection_state.status_text = localize('k_status_connected')
 	elseif MPAPI.connection_state.state == 'authenticating' then
@@ -341,6 +434,28 @@ set_connection_state_status_text = function()
 		MPAPI.connection_state.status_text = localize('k_status_connecting')
 	else
 		MPAPI.connection_state.status_text = localize('k_status_offline')
+	end
+end
+
+-- Set (text) or clear (nil) the transient status override shown in the account
+-- panel. The status text element reads connection_state.status_text live, so the
+-- change takes effect on the next frame. Keep text short (see status_override).
+function MPAPI.set_connection_status(text)
+	-- Whether we are entering or leaving the override (Connected <-> Queueing).
+	-- This is the only point the status text width changes; steady timer ticks
+	-- keep the same width.
+	local shape_changed = (MPAPI.connection_state.status_override == nil) ~= (text == nil)
+
+	MPAPI.connection_state.status_override = text
+	set_connection_state_status_text()
+
+	-- On that transition, Balatro's text-fit shrinks the persistent panel and the
+	-- reduction accumulates across queue start/stop cycles. Rebuild the panel
+	-- fresh so it starts from base scale. The new build already carries the new
+	-- text, so the live ref_value never sees a width change to refit. Steady
+	-- ticks (same width) update live with no rebuild and no shrink.
+	if shape_changed and MPAPI.account_button then
+		MPAPI.account_button:update()
 	end
 end
 
