@@ -91,7 +91,9 @@ local create_UIBox_account_button = function()
 		},
 	}
 
-	local connection_state = { n = G.UIT.R, config = { align = 'cm' }, nodes = {
+	-- Reserve the full inner width so the status text stays centred and the panel
+	-- does not reflow as the text changes (e.g. a live matchmaking timer).
+	local connection_state = { n = G.UIT.R, config = { align = 'cm', minw = inner_width }, nodes = {
 		{ n = G.UIT.T, config = { ref_table = MPAPI.connection_state, ref_value = 'status_text', scale = 0.3, colour = status_colour, shadow = true } },
 	} }
 
@@ -138,7 +140,12 @@ build_mod_button = function(mod, inner_width, engaged_mod_id)
 	local is_disconnected = MPAPI.connection_state.state ~= 'connected'
 	local is_disabled = not is_installed or is_blocked or is_disconnected
 
-	local subtext = not is_installed and not is_blocked and not is_disconnected and localize('b_open_download_page') or nil
+	-- For an uninstalled, reachable official mod: show "Coming Soon" when the mod is
+	-- flagged as such, otherwise the download-page hint.
+	local subtext = nil
+	if not is_installed and not is_blocked and not is_disconnected then
+		subtext = mod.coming_soon and localize('b_coming_soon') or localize('b_open_download_page')
+	end
 	local button_ref = { mod_id = mod.id }
 
 	local button_nodes = {
