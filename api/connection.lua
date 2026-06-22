@@ -38,13 +38,14 @@ local _ready_callbacks = {}
 local _last_opts = nil
 local _state_change_callbacks = {}
 
--- Use 127.0.0.1 rather than 'localhost' on purpose: on Windows, 'localhost'
--- resolves to IPv6 ::1 first, which does not reach servers running inside WSL2,
--- so each connection eats a ~21s TCP SYN timeout before falling back to IPv4.
--- Forcing 127.0.0.1 skips the dead IPv6 path entirely.
+-- Production endpoints. For local development against a server running inside WSL2,
+-- override these via MPAPI.connect{ api_url = ..., mqtt_broker = ... }: prefer the
+-- literal 127.0.0.1 over 'localhost', since on Windows 'localhost' resolves to IPv6
+-- ::1 first, which does not reach WSL2 and eats a ~21s TCP SYN timeout per connection
+-- before falling back to IPv4.
 local SERVER_DEFAULTS = {
-	api_url = 'http://127.0.0.1:8788',
-	mqtt_broker = '127.0.0.1',
+	api_url = 'https://new.balatromp.com',
+	mqtt_broker = 'mqtt.balatromp.com',
 	mqtt_port = 8883,
 	mqtt_secure = true,
 }
