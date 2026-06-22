@@ -111,9 +111,19 @@ MPAPI._LAYER_ARRAY_FIELDS = {
 	'stickers',
 }
 
+-- Dict-table fields that get key-level merged (later source wins per key; ruleset wins over layers).
+MPAPI._LAYER_TABLE_FIELDS = {
+	'game_modifiers',
+	'starting_params',
+}
+
+local _table_field_set = {}
+for _, f in ipairs(MPAPI._LAYER_TABLE_FIELDS) do _table_field_set[f] = true end
+
 -- Resolve layers on the init table before construction validates required params.
 -- Scalars: last layer wins, but the ruleset's own value always beats any layer.
 -- Arrays: concatenated across all layers + ruleset.
+-- Dict-tables: key-level merge; later layers overwrite earlier; ruleset wins over layers.
 function MPAPI.resolve_layers(init)
 	if not init.layers then
 		for _, field in ipairs(MPAPI._LAYER_ARRAY_FIELDS) do
@@ -129,7 +139,16 @@ function MPAPI.resolve_layers(init)
 		local layer = MPAPI.Layers[layer_name]
 		if not layer then error('MPAPI.resolve_layers: unknown layer: ' .. tostring(layer_name)) end
 		for k, v in pairs(layer) do
-			if type(v) == 'table' then
+			if type(v) == 'table' and _table_field_set[k] then
+				if init[k] == nil then init[k] = {} end
+				if ruleset_owned[k] then
+					for fk, fv in pairs(v) do
+						if init[k][fk] == nil then init[k][fk] = fv end
+					end
+				else
+					for fk, fv in pairs(v) do init[k][fk] = fv end
+				end
+			elseif type(v) == 'table' then
 				if init[k] == nil then
 					local copy = {}
 					for i, item in ipairs(v) do copy[i] = item end

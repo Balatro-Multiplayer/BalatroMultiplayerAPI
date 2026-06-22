@@ -94,6 +94,32 @@ MPAPI.GameMode = SMODS.GameObject:extend({
 -- ease_ante hook
 -----------------------------
 
+-----------------------------
+-- reset_blinds hook
+-----------------------------
+
+local _orig_reset_blinds = reset_blinds
+reset_blinds = function(...)
+	local result = _orig_reset_blinds(...)
+	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
+	if not lobby then return result end
+	local gm = lobby:get_gamemode_instance()
+	if gm and gm.get_blinds_by_ante then
+		local ante = G.GAME and G.GAME.round_resets and G.GAME.round_resets.ante
+		if ante then
+			local small, big, boss = gm:get_blinds_by_ante(ante)
+			if small then G.GAME.round_resets.blind_choices.Small = small end
+			if big   then G.GAME.round_resets.blind_choices.Big   = big   end
+			if boss  then G.GAME.round_resets.blind_choices.Boss  = boss  end
+		end
+	end
+	return result
+end
+
+-----------------------------
+-- ease_ante hook
+-----------------------------
+
 local _orig_ease_ante = ease_ante
 ease_ante = function(amt, ...)
 	local result = _orig_ease_ante(amt, ...)
