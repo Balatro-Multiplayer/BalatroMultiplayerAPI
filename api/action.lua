@@ -34,6 +34,38 @@ local function validate_params(schema, params)
 end
 
 -----------------------------
+-- Local (offline) delivery
+-----------------------------
+
+-- Offline lobbies have no MQTT broker, so an action is delivered to the only
+-- participant -- ourselves -- synchronously, in-process. Mirrors the self/broadcast
+-- branch of handle_action below (validation already ran in send/broadcast).
+local function dispatch_local(instance, target_id)
+	local lobby = instance._lobby
+	local action_type = instance._action_type
+
+	-- Only the local player exists; anything addressed elsewhere has no recipient.
+	if target_id ~= '*' and target_id ~= lobby.player_id then
+		return
+	end
+
+	local ok, result = pcall(action_type.on_receive, action_type, lobby.player_id, instance.params)
+	if not ok then
+		MPAPI.sendWarnMessage('action on_receive error (local): ' .. tostring(result))
+		return
+	end
+
+	-- An on_receive that returns a table is a response; for a self-addressed
+	-- request/response, hand it straight back to this instance's callback.
+	if type(result) == 'table' and instance._callback then
+		local ok2, err2 = pcall(instance._callback, instance, result)
+		if not ok2 then
+			MPAPI.sendWarnMessage('action response callback error (local): ' .. tostring(err2))
+		end
+	end
+end
+
+-----------------------------
 -- Action instance
 -----------------------------
 
@@ -58,6 +90,12 @@ local function create_action_instance(lobby, action_type)
 		end
 
 		self.params = params
+
+		-- Offline lobby: deliver in-process instead of over the broker.
+		if self._lobby._local_mode then
+			dispatch_local(self, target_id)
+			return
+		end
 
 		local cid = MPAPI.generate_id()
 		local lobby = self._lobby
@@ -88,6 +126,12 @@ local function create_action_instance(lobby, action_type)
 		end
 
 		self.params = params
+
+		-- Offline lobby: deliver in-process instead of over the broker.
+		if self._lobby._local_mode then
+			dispatch_local(self, '*')
+			return
+		end
 
 		local lobby = self._lobby
 		local action_type = self._action_type
