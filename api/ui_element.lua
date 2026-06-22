@@ -58,13 +58,14 @@ MPAPI.ui_element = function(build_fn)
 		return { n = G.UIT.C, config = { id = id, align = 'cm', colour = G.C.CLEAR }, nodes = children }
 	end
 
-	-- Lazily build the inline node on first access
+	-- Build a fresh inline node on every access. No caching: the node table
+	-- is consumed by UIBox on render, so reusing a stale reference after the
+	-- enclosing UIBox has been destroyed (e.g. returning to game menu from a
+	-- lobby view and re-entering) would hand dead nodes to the new UIBox.
 	setmetatable(el, {
 		__index = function(t, k)
 			if k == 'node' then
-				local node = build_inline()
-				rawset(t, 'node', node)
-				return node
+				return build_inline()
 			end
 		end,
 	})
@@ -113,11 +114,15 @@ MPAPI.ui_element = function(build_fn)
 		-- Destroy and recreate with same config
 		if _mode == 'uibox' then
 			if _uibox then
-				pcall(function()
+				local ok, err = pcall(function()
 					_uibox:remove()
 				end)
+				if not ok then
+					MPAPI.sendWarnMessage('[ui_element:' .. id .. '] remove() failed: ' .. tostring(err) .. ' | UIBOX count: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?'))
+				end
 			end
 			_uibox = UIBox({ definition = build_fn(), config = _uibox_config })
+			MPAPI.sendDebugMessage('[ui_element:' .. id .. '] update() recreated UIBox | UIBOX count after: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?'))
 			if _uibox_on_create then
 				_uibox_on_create(_uibox)
 			end
@@ -129,6 +134,9 @@ MPAPI.ui_element = function(build_fn)
 	end
 
 	function el:as_uibox(config, on_create)
+		if _uibox then
+			pcall(function() _uibox:remove() end)
+		end
 		_mode = 'uibox'
 		_uibox_config = config
 		_uibox_on_create = on_create

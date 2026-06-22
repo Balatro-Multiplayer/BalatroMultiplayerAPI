@@ -23,6 +23,10 @@ MPAPI.json_decode = function(str)
 	return j.decode(str)
 end
 
+MPAPI.generate_id = function()
+	return string.format('%x%x', os.time(), math.random(0, 0xFFFFFF))
+end
+
 -- Merges two tables with unique values, preserves order
 MPAPI.merge_unique = function(a, b)
 	local seen = {}

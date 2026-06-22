@@ -39,7 +39,6 @@ function MPAPI.load_mpapi_dir(directory, recursive)
 
 	for _, item in ipairs(items) do
 		local path = directory .. '/' .. item.name
-		MPAPI.sendDebugMessage('Loading item: ' .. path)
 		if item.type ~= 'directory' then
 			MPAPI.load_mpapi_file(path)
 		elseif recursive then
@@ -49,22 +48,22 @@ function MPAPI.load_mpapi_dir(directory, recursive)
 end
 
 -----------------------------
--- MODULES
+-- NETWORKING
 -----------------------------
 
-MPAPI.modules = {}
+MPAPI.networking = {}
 
-MPAPI.modules.openssl_ffi = MPAPI.load_mpapi_file('networking/openssl_ffi.lua')
+MPAPI.load_mpapi_file('networking/openssl_ffi.lua')
 
-if MPAPI.modules.openssl_ffi then
+if MPAPI.networking.openssl_ffi then
 	MPAPI.sendDebugMessage('OpenSSL FFI module loaded')
 
-	local available = MPAPI.modules.openssl_ffi.available()
+	local available = MPAPI.networking.openssl_ffi.available()
 
 	if available then
-		local ctx, err = MPAPI.modules.openssl_ffi.new_context({ verify = false })
+		local ctx, err = MPAPI.networking.openssl_ffi.new_context({ verify = false })
 		if ctx then
-			MPAPI.modules.openssl_ffi.free_context(ctx)
+			MPAPI.networking.openssl_ffi.free_context(ctx)
 		else
 			MPAPI.sendWarnMessage('SSL context creation FAILED: ' .. tostring(err))
 		end
@@ -73,25 +72,25 @@ else
 	MPAPI.sendWarnMessage('OpenSSL FFI module failed to load')
 end
 
-MPAPI.modules.mqtt_client = MPAPI.load_mpapi_file('networking/mqtt_client.lua')
+MPAPI.load_mpapi_file('networking/mqtt_client.lua')
 
-if MPAPI.modules.mqtt_client then
+if MPAPI.networking.mqtt_client then
 	MPAPI.sendDebugMessage('MQTT client wrapper loaded')
 else
 	MPAPI.sendWarnMessage('MQTT client wrapper failed to load')
 end
 
-MPAPI.modules.steam = MPAPI.load_mpapi_file('networking/steam.lua')
+MPAPI.load_mpapi_file('networking/steam.lua')
 
-if MPAPI.modules.steam then
+if MPAPI.networking.steam then
 	MPAPI.sendDebugMessage('Steam module loaded (G.STEAM available after love.load)')
 else
 	MPAPI.sendWarnMessage('Steam module failed to load')
 end
 
-MPAPI.modules.token_store = MPAPI.load_mpapi_file('networking/token_store.lua')
-MPAPI.modules.api_client = MPAPI.load_mpapi_file('networking/api_client.lua')
-MPAPI.modules.connection = MPAPI.load_mpapi_file('networking/connection.lua')
+MPAPI.load_mpapi_file('networking/token_store.lua')
+MPAPI.load_mpapi_file('networking/api_client.lua')
+MPAPI.load_mpapi_file('networking/connection.lua')
 
 -----------------------------
 -- FILE LOADING & STARTUP
@@ -109,9 +108,6 @@ MPAPI.load_mpapi_dir('ui')
 
 -- Load dev overrides if the dev/ directory exists (stripped in release builds)
 local dev_init = MPAPI.load_mpapi_file('dev/init.lua')
-if dev_init then
-	MPAPI.sendDebugMessage('Dev overrides loaded')
-end
 
 G.E_MANAGER:add_event(Event({
 	blockable = false,
@@ -132,6 +128,12 @@ G.E_MANAGER:add_event(Event({
 		MPAPI._internal.set_ready(true)
 		MPAPI.connect()
 		MPAPI._internal.run_ready_callbacks()
+		if next(SMODS.find_mod('Integration')) then
+			local chunk = SMODS.load_file('testing/init.lua', MPAPI.id)
+			if chunk then
+				pcall(chunk)
+			end
+		end
 		return true
 	end,
 }))

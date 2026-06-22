@@ -33,12 +33,16 @@ end
 -- Check if FFI is available
 local ffi_ok, ffi = pcall(require, 'ffi')
 if not ffi_ok then
-	print('[OpenSSL] FFI not available')
-	return {
+	ssl_warn('[OpenSSL] FFI not available')
+	local stub = {
 		available = function()
 			return false
 		end,
 	}
+	if MPAPI then
+		MPAPI.networking.openssl_ffi = stub
+	end
+	return stub
 end
 
 local bit = require('bit')
@@ -452,4 +456,7 @@ function M.available()
 	return ok
 end
 
+if MPAPI then
+	MPAPI.networking.openssl_ffi = M
+end
 return M

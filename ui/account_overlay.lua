@@ -4,8 +4,10 @@ local joker_preview
 local account_info_row
 local account_info_rows
 local display_name_option_cycle
+local auto_login_toggle
 local discord_linking_buttons
 local settings_row
+local chat_section
 
 -----------------------------
 -- UI FUNCTIONS
@@ -42,6 +44,7 @@ local create_UIBox_account_overlay = function()
 							nodes = {
 								account_info_rows(steam_name, name_colour, discord_linked),
 								settings_row(discord_linked),
+								chat_section(),
 							},
 						},
 					},
@@ -181,6 +184,22 @@ display_name_option_cycle = function(discord_linked)
 	}
 end
 
+auto_login_toggle = function()
+	return {
+		n = G.UIT.C,
+		config = { align = 'cm', padding = 0.1 },
+		nodes = {
+			MPAPI.disableable_toggle({
+				label = localize('k_auto_login'),
+				ref_table = MPAPI.config,
+				ref_value = 'auto_login',
+				callback = G.FUNCS.mpapi_change_auto_login,
+				enabled = true,
+			}).node,
+		},
+	}
+end
+
 discord_linking_buttons = function(discord_linked)
 	local button = UIBox_button({ label = { localize('k_link_discord') }, button = 'mpapi_link_discord', minh = 0.7, scale = 0.4, colour = G.C.BLUE, focus_args = { nav = 'wide' } })
 
@@ -203,7 +222,66 @@ settings_row = function(discord_linked)
 		config = { align = 'cm', padding = 0.1 },
 		nodes = {
 			display_name_option_cycle(discord_linked),
+			auto_login_toggle(),
 			discord_linking_buttons(discord_linked),
+		},
+	}
+end
+
+chat_section = function()
+	local server_enabled = MPAPI.connection_state.chat_enabled
+	local chat_blocked   = MPAPI.connection_state.chat_blocked
+
+	local nodes = {
+		{
+			n = G.UIT.R,
+			config = { align = 'cm', padding = 0.06 },
+			nodes = {
+				{ n = G.UIT.T, config = {
+					text = localize('k_chat_section_title'),
+					scale = 0.38, colour = G.C.UI.TEXT_LIGHT, shadow = true,
+				} },
+			},
+		},
+	}
+
+	if server_enabled and not chat_blocked then
+		-- Client-side toggle only — chat eligibility is set at account creation and never changes
+		nodes[#nodes + 1] = {
+			n = G.UIT.R,
+			config = { align = 'cm', padding = 0.04 },
+			nodes = {
+				MPAPI.disableable_toggle({
+					label = localize('k_chat_section_title'),
+					ref_table = MPAPI.config,
+					ref_value = 'chat_enabled',
+					callback = G.FUNCS.mpapi_chat_toggle,
+					enabled = true,
+				}).node,
+			},
+		}
+	else
+		nodes[#nodes + 1] = {
+			n = G.UIT.R,
+			config = { align = 'cm', padding = 0.04 },
+			nodes = {
+				{ n = G.UIT.T, config = {
+					text = localize('k_chat_status_blocked'),
+					scale = 0.35, colour = G.C.RED,
+				} },
+			},
+		}
+	end
+
+	return {
+		n = G.UIT.R,
+		config = { align = 'cm', padding = 0.1 },
+		nodes = {
+			{
+				n = G.UIT.C,
+				config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05 },
+				nodes = nodes,
+			},
 		},
 	}
 end
@@ -223,6 +301,10 @@ G.FUNCS.mpapi_change_use_discord_name = function(args)
 	end)
 end
 
+G.FUNCS.mpapi_change_auto_login = function(new_value)
+	MPAPI._internal.config_set('auto_login', new_value)
+end
+
 G.FUNCS.mpapi_unlink_discord = function(e)
 	MPAPI._internal.unlink_discord(function(err, data)
 		if err then
@@ -231,6 +313,11 @@ G.FUNCS.mpapi_unlink_discord = function(e)
 		end
 		MPAPI.sendDebugMessage('Discord unlinked successfully')
 	end)
+end
+
+G.FUNCS.mpapi_chat_toggle = function(new_value)
+	MPAPI._internal.config_set('chat_enabled', new_value)
+	MPAPI.chat.on_config_changed(new_value)
 end
 
 G.FUNCS.mpapi_link_discord = function(e)
