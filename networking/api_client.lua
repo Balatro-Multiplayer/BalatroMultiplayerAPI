@@ -94,6 +94,21 @@ function api_client:authenticate_dev(steam_name, callback)
 	self.mqtt:http_post(self.base_url .. '/api/auth/dev', body)
 end
 
+-- Dev-only: log in as an existing player (a real players row). target is a table
+-- with one of: playerId, steamId, discordId, steamName. The server returns the same
+-- auth payload as Steam auth, so the impersonated player can queue/appear ranked.
+function api_client:authenticate_impersonate(target, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+
+	self:_setup_http_callback(callback)
+
+	local body = json_encode(target or {})
+	self.mqtt:http_post(self.base_url .. '/api/auth/dev/impersonate', body)
+end
+
 function api_client:authenticate_refresh(refresh_token, steam_name, callback)
 	if not self.mqtt or not self.mqtt.tx_channel then
 		callback('MQTT thread not running', nil)
@@ -488,6 +503,17 @@ function api_client:report_match_result(token, match_id, placements, callback)
 	self:_setup_json_callback(callback)
 	local body = json_encode({ placements = placements })
 	self.mqtt:http_post_auth(self.base_url .. '/api/matchmaking/matches/' .. match_id .. '/result', body, token)
+end
+
+-- Signal that the run has begun, so the server can stamp the start time for
+-- server-measured timing leaderboards. Host only; idempotent server-side.
+function api_client:mark_run_start(token, match_id, callback)
+	if not self.mqtt or not self.mqtt.tx_channel then
+		callback('MQTT thread not running', nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	self.mqtt:http_post_auth(self.base_url .. '/api/matchmaking/matches/' .. match_id .. '/start', '{}', token)
 end
 
 function api_client:get_matchmaking_rating(token, mod_id, game_mode, season, callback)

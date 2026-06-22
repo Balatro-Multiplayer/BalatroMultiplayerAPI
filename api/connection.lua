@@ -13,6 +13,11 @@ local run_new_state_user_callbacks
 MPAPI.connection_state = {
 	state = 'disconnected',
 	status_text = localize('k_status_offline'),
+	-- When non-nil, takes precedence over the connection-derived status text so a
+	-- mod can surface a transient status (e.g. a matchmaking timer) in the
+	-- account panel. Keep overrides short — the panel is fixed-width and long
+	-- text forces the whole UIBox to scale down to fit.
+	status_override = nil,
 	player_id = '',
 	display_name = localize('b_retry_connection'),
 	steam_name = '',
@@ -33,9 +38,13 @@ local _ready_callbacks = {}
 local _last_opts = nil
 local _state_change_callbacks = {}
 
+-- Use 127.0.0.1 rather than 'localhost' on purpose: on Windows, 'localhost'
+-- resolves to IPv6 ::1 first, which does not reach servers running inside WSL2,
+-- so each connection eats a ~21s TCP SYN timeout before falling back to IPv4.
+-- Forcing 127.0.0.1 skips the dead IPv6 path entirely.
 local SERVER_DEFAULTS = {
-	api_url = 'http://localhost:8788',
-	mqtt_broker = 'localhost',
+	api_url = 'http://127.0.0.1:8788',
+	mqtt_broker = '127.0.0.1',
 	mqtt_port = 8883,
 	mqtt_secure = true,
 }
@@ -53,10 +62,25 @@ end
 -----------------------------
 
 MPAPI.on_loaded = function(fn)
-	if _ready then
-		return fn()
+	-- Capture the mod registering this callback. on_loaded callbacks run deferred
+	-- (after SMODS has finished loading), by which point SMODS.current_mod no longer
+	-- points at the caller. GameObjects created in the callback (e.g. a mod loading
+	-- its ActionTypes/GameModes here) would otherwise be tagged with the wrong mod,
+	-- which breaks per-lobby action routing (lobby._action_types filters by mod id).
+	local owner_mod = SMODS.current_mod
+	local wrapped = function()
+		local prev = SMODS.current_mod
+		SMODS.current_mod = owner_mod or prev
+		local ok, err = pcall(fn)
+		SMODS.current_mod = prev
+		if not ok then
+			MPAPI.sendWarnMessage('on_loaded callback error: ' .. tostring(err))
+		end
 	end
-	_ready_callbacks[#_ready_callbacks + 1] = fn
+	if _ready then
+		return wrapped()
+	end
+	_ready_callbacks[#_ready_callbacks + 1] = wrapped
 end
 
 MPAPI.on_connection_state_change = function(fn)
@@ -398,6 +422,10 @@ reset_connection_state_variables = function()
 end
 
 set_connection_state_status_text = function()
+	if MPAPI.connection_state.status_override then
+		MPAPI.connection_state.status_text = MPAPI.connection_state.status_override
+		return
+	end
 	if MPAPI.connection_state.state == 'connected' then
 		MPAPI.connection_state.status_text = localize('k_status_connected')
 	elseif MPAPI.connection_state.state == 'authenticating' then
@@ -406,6 +434,28 @@ set_connection_state_status_text = function()
 		MPAPI.connection_state.status_text = localize('k_status_connecting')
 	else
 		MPAPI.connection_state.status_text = localize('k_status_offline')
+	end
+end
+
+-- Set (text) or clear (nil) the transient status override shown in the account
+-- panel. The status text element reads connection_state.status_text live, so the
+-- change takes effect on the next frame. Keep text short (see status_override).
+function MPAPI.set_connection_status(text)
+	-- Whether we are entering or leaving the override (Connected <-> Queueing).
+	-- This is the only point the status text width changes; steady timer ticks
+	-- keep the same width.
+	local shape_changed = (MPAPI.connection_state.status_override == nil) ~= (text == nil)
+
+	MPAPI.connection_state.status_override = text
+	set_connection_state_status_text()
+
+	-- On that transition, Balatro's text-fit shrinks the persistent panel and the
+	-- reduction accumulates across queue start/stop cycles. Rebuild the panel
+	-- fresh so it starts from base scale. The new build already carries the new
+	-- text, so the live ref_value never sees a width change to refit. Steady
+	-- ticks (same width) update live with no rebuild and no shrink.
+	if shape_changed and MPAPI.account_button then
+		MPAPI.account_button:update()
 	end
 end
 
