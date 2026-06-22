@@ -49,6 +49,55 @@ MPAPI.create_lobby = function(mod_id, opts)
 	return lobby
 end
 
+-- Create a lobby that exists only on this client: no server lobby is ever
+-- allocated and no MQTT topics are subscribed. It satisfies the same interface as
+-- a networked lobby (metadata, players, actions, gamemode instance, leave) but
+-- everything is handled in-process. Use this for solo flows (e.g. practice) so
+-- there is no server-side lobby that can be orphaned if the client never leaves.
+MPAPI.create_local_lobby = function(mod_id, opts)
+	opts = opts or {}
+	local conn = MPAPI.get_connection()
+	local player_id = (conn and conn.player_id) or 'local_player'
+
+	local lobby = create_lobby_object({
+		mod_id = mod_id,
+		player_id = player_id,
+		mqtt = MPAPI.get_mqtt and MPAPI.get_mqtt() or nil,
+		api = conn and conn.api or nil,
+		connection = conn,
+		is_host = true,
+		max_players = opts.max_players or 1,
+		metadata = opts.metadata or {},
+		local_mode = true,
+	})
+
+	-- Register ourselves as the only player.
+	lobby._players[player_id] = {
+		id = player_id,
+		displayName = (conn and conn.display_name) or 'You',
+		is_away = false,
+	}
+
+	_current_lobby = lobby
+
+	-- Mirror the async create/join callbacks: fire 'connected' on the next event
+	-- tick so the caller can attach handlers (setup_lobby_events, on('connected'))
+	-- before they run.
+	G.E_MANAGER:add_event(Event({
+		func = function()
+			if _current_lobby == lobby and not lobby._destroyed then
+				lobby:_fire('connected')
+				if MPAPI._internal.on_lobby_connected then
+					MPAPI._internal.on_lobby_connected(lobby)
+				end
+			end
+			return true
+		end,
+	}))
+
+	return lobby
+end
+
 MPAPI.join_lobby = function(mod_id, code, opts)
 	opts = opts or {}
 	local conn = MPAPI.get_connection()
@@ -178,6 +227,9 @@ create_lobby_object = function(opts)
 		_event_handlers = {},
 		_destroyed = false,
 		_gamemode_instance = nil,
+		-- Offline lobbies have no server/MQTT backing: metadata, player state, leave
+		-- and actions are all handled in-process. See MPAPI.create_local_lobby.
+		_local_mode = opts.local_mode or false,
 	}
 
 	function lobby:on(event_name, handler)
@@ -209,6 +261,14 @@ create_lobby_object = function(opts)
 			self:_fire('error', 'Only the host can set metadata')
 			return
 		end
+		-- Offline lobby: no server round-trip; merge locally and notify listeners.
+		if self._local_mode then
+			for k, v in pairs(tbl) do
+				self._metadata[k] = v
+			end
+			self:_fire('metadata_changed', self._metadata)
+			return
+		end
 		self._api:set_lobby_metadata(self._connection.jwt_token, self.code, tbl, function(err, data)
 			if err then
 				self:_fire('error', err)
@@ -232,6 +292,10 @@ create_lobby_object = function(opts)
 		if self._destroyed then
 			return
 		end
+		if self._local_mode then
+			self._player_state = tbl
+			return
+		end
 		local topic = self._mqtt:lobby_topic(self.code, 'players/' .. self.player_id .. '/state')
 		self._mqtt:publish(topic, MPAPI.json_encode(tbl), 1, true)
 		self._player_state = tbl
@@ -251,6 +315,15 @@ create_lobby_object = function(opts)
 
 	function lobby:leave()
 		if self._destroyed then
+			return
+		end
+		-- Offline lobby: nothing to tell the server; tear down locally.
+		if self._local_mode then
+			cleanup_lobby(self)
+			self:_fire('disconnected')
+			if MPAPI._internal.on_lobby_disconnected then
+				MPAPI._internal.on_lobby_disconnected()
+			end
 			return
 		end
 		self._api:leave_lobby(self._connection.jwt_token, self.code, function(err, data)
