@@ -19,10 +19,14 @@ local _pending_cleanup = nil -- cleanup fn stored from the last replace_main_men
 local _default_server_config = nil
 local _original_set_main_menu_UI = set_main_menu_UI
 
+-- Official (first-party) mods. `coming_soon = true` makes an *uninstalled* official
+-- mod display "Coming Soon" in the menu instead of a download-page link, and stops
+-- its button from opening the download URL. Flip it to false (or remove it) once the
+-- mod is published. Installed mods (the player has the folder) ignore this flag.
 local _official_mods = {
-	{ id = 'MultiplayerPvP', name = 'PvP', colour = G.C.RED, download_url = 'https://github.com/V-rtualized/MultiplayerPvP' },
+	{ id = 'MultiplayerPvP', name = 'PvP', colour = G.C.RED, download_url = 'https://github.com/V-rtualized/MultiplayerPvP', coming_soon = true },
 	{ id = 'MultiplayerSpeedrunning', name = 'Speedrun', colour = G.C.GREEN, download_url = 'https://github.com/V-rtualized/MultiplayerSpeedrunning' },
-	{ id = 'MultiplayerCoop', name = 'Co-op', colour = G.C.BLUE, download_url = 'https://github.com/V-rtualized/MultiplayerCoop' },
+	{ id = 'MultiplayerCoop', name = 'Co-op', colour = G.C.BLUE, download_url = 'https://github.com/V-rtualized/MultiplayerCoop', coming_soon = true },
 }
 
 for _, official in ipairs(_official_mods) do
@@ -31,6 +35,7 @@ for _, official in ipairs(_official_mods) do
 		name = official.name,
 		colour = official.colour,
 		download_url = official.download_url,
+		coming_soon = official.coming_soon or false,
 		server_config = nil,
 		main_menu_ui = nil,
 		lobby_ui = nil,
@@ -129,7 +134,8 @@ MPAPI._internal.activate_mod = function(id)
 	end
 
 	if not mod.main_menu_ui then
-		if mod.download_url then
+		-- Coming-soon mods are not yet downloadable: do nothing on activate.
+		if not mod.coming_soon and mod.download_url then
 			love.system.openURL(mod.download_url)
 		end
 		return
@@ -173,6 +179,13 @@ end
 -- Called by lobby.lua after a lobby fires its 'connected' event.
 MPAPI._internal.on_lobby_connected = function(lobby)
 	_engaged_mod = lobby.mod_id
+
+	-- A lobby can opt out of the lobby-menu view (e.g. SPDRN practice, which drops
+	-- the player straight into a run). Mark it engaged but skip the UI transition.
+	if lobby.suppress_lobby_view then
+		update_account_button()
+		return
+	end
 
 	-- Only transition to the lobby view if this mod is currently focused.
 	if _focused_mod == lobby.mod_id then
