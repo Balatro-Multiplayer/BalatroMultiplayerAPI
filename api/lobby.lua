@@ -103,13 +103,15 @@ MPAPI.join_lobby = function(mod_id, code, opts)
 	local conn = MPAPI.get_connection()
 	local mqtt = MPAPI.get_mqtt()
 
+	MPAPI.sendDebugMessage('[mmdbg] join_lobby mod=' .. tostring(mod_id) .. ' code=' .. tostring(code))
+
 	if not conn or conn:get_state() ~= 'connected' then
-		MPAPI.sendWarnMessage('join_lobby: not connected')
+		MPAPI.sendWarnMessage('[mmdbg] join_lobby: not connected (state=' .. tostring(conn and conn:get_state()) .. ')')
 		return nil
 	end
 
 	if not mqtt then
-		MPAPI.sendWarnMessage('join_lobby: MQTT not available')
+		MPAPI.sendWarnMessage('[mmdbg] join_lobby: MQTT not available')
 		return nil
 	end
 
@@ -171,6 +173,7 @@ end
 
 join_lobby_callback = function(err, data)
 	if err then
+		MPAPI.sendWarnMessage('[mmdbg] join_lobby_callback ERROR: ' .. tostring(err))
 		_current_lobby:_fire('error', err)
 		return
 	end
@@ -182,8 +185,10 @@ join_lobby_callback = function(err, data)
 	_current_lobby.max_players = data.lobby.maxPlayers or 16
 	_current_lobby._metadata = data.lobby.metadata or {}
 
+	MPAPI.sendDebugMessage('[mmdbg] join_lobby_callback OK code=' .. tostring(_current_lobby.code) .. ' is_host=' .. tostring(_current_lobby.is_host) .. ' players=' .. tostring(data.lobby.players and #data.lobby.players))
 	populate_initial_players(_current_lobby, data.lobby.players)
 	subscribe_all(_current_lobby)
+	MPAPI.sendDebugMessage('[mmdbg] join_lobby_callback subscribed, firing connected')
 	_current_lobby:_fire('connected')
 	if MPAPI._internal.on_lobby_connected then
 		MPAPI._internal.on_lobby_connected(_current_lobby)

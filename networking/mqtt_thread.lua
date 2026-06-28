@@ -223,23 +223,29 @@ end
 -- Retry transport-level failures only (do_request returned nil = no HTTP status
 -- received, so the request almost certainly never completed server-side -> safe to
 -- resend). A real HTTP status, even 5xx, means the server answered: do NOT retry.
--- Runs on the worker thread and blocks it, so keep attempts few and backoff short
--- to avoid stalling MQTT keepalive/pings.
-local HTTP_MAX_ATTEMPTS = 3
-local HTTP_BACKOFF = { 0.25, 0.6 }
+-- Runs on the worker thread and blocks it, so the backoff window is bounded to keep
+-- MQTT keepalive/pings from stalling. Logging goes over rx_channel (push_event 'log')
+-- rather than print(), because worker-thread print() does not surface in the game log.
+local HTTP_MAX_ATTEMPTS = 4
+local HTTP_BACKOFF = { 0.3, 0.8, 1.5 }
 
 local function request_with_retry(method, url, body, extra_headers)
 	local status, resp
 	for attempt = 1, HTTP_MAX_ATTEMPTS do
 		status, resp = do_request(method, url, body, extra_headers)
-		if status then return status, resp end
+		if status then
+			if attempt > 1 then
+				push_event('log', '[http-retry] ' .. method .. ' ' .. url .. ' succeeded on attempt ' .. attempt)
+			end
+			return status, resp
+		end
 		if attempt < HTTP_MAX_ATTEMPTS then
 			local delay = HTTP_BACKOFF[attempt] or HTTP_BACKOFF[#HTTP_BACKOFF]
-			print('[http-retry] ' .. method .. ' ' .. url .. ' attempt ' .. attempt ..
+			push_event('log', '[http-retry] ' .. method .. ' ' .. url .. ' attempt ' .. attempt ..
 				'/' .. HTTP_MAX_ATTEMPTS .. ' failed (' .. tostring(resp) .. '), retrying in ' .. delay .. 's')
 			socket.sleep(delay)
 		else
-			print('[http-retry] ' .. method .. ' ' .. url .. ' giving up after ' ..
+			push_event('log', '[http-retry] ' .. method .. ' ' .. url .. ' giving up after ' ..
 				HTTP_MAX_ATTEMPTS .. ' attempts (' .. tostring(resp) .. ')')
 		end
 	end
