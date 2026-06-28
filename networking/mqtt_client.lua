@@ -371,6 +371,8 @@ function mqtt_client:update()
 			if self.on_http_error then
 				self.on_http_error(msg)
 			end
+		elseif event == 'log' then
+			MPAPI.sendDebugMessage(parts[2] or '')
 		end
 	end
 

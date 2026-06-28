@@ -35,12 +35,18 @@ local function ensure_subscribed()
 
 	local topic = 'player/' .. conn.player_id .. '/matchmaking'
 
+	MPAPI.sendDebugMessage('[mmdbg] ensure_subscribed: subscribing to ' .. tostring(topic) .. ' (player_id=' .. tostring(conn.player_id) .. ')')
+
 	-- The mqtt client invokes handlers as (topic, payload); the payload is the
 	-- second argument. (Taking only the first dropped every matchmaking message --
 	-- e.g. match_found -- because the topic string is not valid JSON.)
 	mqtt:subscribe(topic, 1, function(_topic, payload_str)
+		MPAPI.sendDebugMessage('[mmdbg] matchmaking MQTT message on ' .. tostring(_topic) .. ' raw=' .. tostring(payload_str))
 		local ok, msg = pcall(json_decode, payload_str)
-		if not ok or not msg then return end
+		if not ok or not msg then
+			MPAPI.sendDebugMessage('[mmdbg] matchmaking message decode FAILED ok=' .. tostring(ok))
+			return
+		end
 		dispatch_matchmaking_message(msg)
 	end)
 
@@ -95,8 +101,17 @@ end
 dispatch_matchmaking_message = function(msg)
 	local msg_type = msg.type
 
+	MPAPI.sendDebugMessage('[mmdbg] dispatch type=' .. tostring(msg_type) .. ' modId=' .. tostring(msg.modId) .. ' gameMode=' .. tostring(msg.gameMode) .. ' matchId=' .. tostring(msg.matchId) .. ' lobbyCode=' .. tostring(msg.lobbyCode))
+
 	if msg_type == 'match_found' then
 		local handle = find_handle_by_mode(msg.modId, msg.gameMode)
+		if not handle then
+			local available = {}
+			for _, h in ipairs(_handles) do
+				available[#available + 1] = tostring(h.mod_id) .. '/' .. tostring(h.game_mode)
+			end
+			MPAPI.sendWarnMessage('[mmdbg] match_found DROPPED: no handle for ' .. tostring(msg.modId) .. '/' .. tostring(msg.gameMode) .. ' | active handles=[' .. table.concat(available, ', ') .. ']')
+		end
 		if handle then
 			handle.match_id = msg.matchId
 			-- Leave all other handles client-side (server already dequeued them)
@@ -113,11 +128,21 @@ dispatch_matchmaking_message = function(msg)
 			matched:_fire('match_found', msg)
 
 			-- Auto-join the matchmade lobby
+			MPAPI.sendDebugMessage('[mmdbg] match_found OK, auto-joining lobby code=' .. tostring(msg.lobbyCode))
 			local lobby = MPAPI.join_lobby(msg.modId, msg.lobbyCode)
 			if lobby then
+				MPAPI.sendDebugMessage('[mmdbg] join_lobby returned a lobby object, waiting for connected...')
 				lobby:on('connected', function()
+					MPAPI.sendDebugMessage('[mmdbg] lobby connected fired, firing lobby_ready (code=' .. tostring(lobby.code) .. ' is_host=' .. tostring(lobby.is_host) .. ')')
 					matched:_fire('lobby_ready', lobby)
 				end)
+				lobby:on('error', function(err)
+					MPAPI.sendWarnMessage('[mmdbg] auto-join lobby ERROR for code=' .. tostring(msg.lobbyCode) .. ': ' .. tostring(err) .. ' -- propagating to handle')
+					matched:_fire('error', 'lobby join failed: ' .. tostring(err))
+				end)
+			else
+				MPAPI.sendWarnMessage('[mmdbg] join_lobby returned NIL for code=' .. tostring(msg.lobbyCode) .. ' -- lobby_ready will never fire')
+				matched:_fire('error', 'join_lobby returned nil for code ' .. tostring(msg.lobbyCode))
 			end
 		end
 
@@ -241,9 +266,11 @@ end
 MPAPI.matchmaking.queue = function(opts)
 	local conn = MPAPI.get_connection()
 	if not conn or conn:get_state() ~= 'connected' then
-		MPAPI.sendWarnMessage('matchmaking.queue: not connected')
+		MPAPI.sendWarnMessage('[mmdbg] matchmaking.queue: not connected (conn=' .. tostring(conn ~= nil) .. ' state=' .. tostring(conn and conn:get_state()) .. ')')
 		return nil
 	end
+
+	MPAPI.sendDebugMessage('[mmdbg] matchmaking.queue mod=' .. tostring(opts.mod_id) .. ' gameMode=' .. tostring(opts.game_mode) .. ' min=' .. tostring(opts.min_players) .. ' max=' .. tostring(opts.max_players))
 
 	ensure_subscribed()
 
@@ -257,10 +284,12 @@ MPAPI.matchmaking.queue = function(opts)
 		maxPlayers = opts.max_players,
 	}, function(err, data)
 		if err then
+			MPAPI.sendWarnMessage('[mmdbg] queue_matchmaking API error: ' .. tostring(err))
 			remove_handle(handle)
 			handle:_fire('error', err)
 			return
 		end
+		MPAPI.sendDebugMessage('[mmdbg] queue_matchmaking OK position=' .. tostring(data and data.position))
 		handle:_fire('queued', data and data.position)
 	end)
 
