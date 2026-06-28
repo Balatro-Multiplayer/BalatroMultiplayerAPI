@@ -220,38 +220,64 @@ local function do_request(method, url, body, extra_headers)
 	end
 end
 
+-- Retry transport-level failures only (do_request returned nil = no HTTP status
+-- received, so the request almost certainly never completed server-side -> safe to
+-- resend). A real HTTP status, even 5xx, means the server answered: do NOT retry.
+-- Runs on the worker thread and blocks it, so keep attempts few and backoff short
+-- to avoid stalling MQTT keepalive/pings.
+local HTTP_MAX_ATTEMPTS = 3
+local HTTP_BACKOFF = { 0.25, 0.6 }
+
+local function request_with_retry(method, url, body, extra_headers)
+	local status, resp
+	for attempt = 1, HTTP_MAX_ATTEMPTS do
+		status, resp = do_request(method, url, body, extra_headers)
+		if status then return status, resp end
+		if attempt < HTTP_MAX_ATTEMPTS then
+			local delay = HTTP_BACKOFF[attempt] or HTTP_BACKOFF[#HTTP_BACKOFF]
+			print('[http-retry] ' .. method .. ' ' .. url .. ' attempt ' .. attempt ..
+				'/' .. HTTP_MAX_ATTEMPTS .. ' failed (' .. tostring(resp) .. '), retrying in ' .. delay .. 's')
+			socket.sleep(delay)
+		else
+			print('[http-retry] ' .. method .. ' ' .. url .. ' giving up after ' ..
+				HTTP_MAX_ATTEMPTS .. ' attempts (' .. tostring(resp) .. ')')
+		end
+	end
+	return status, resp
+end
+
 local function handle_http_post(url, body)
-	local status, resp = do_request('POST', url, body, nil)
+	local status, resp = request_with_retry('POST', url, body, nil)
 	if status then push_event('http_response', tostring(status), resp)
 	else push_event('http_error', tostring(resp)) end
 end
 
 local function handle_http_post_auth(url, body, token)
-	local status, resp = do_request('POST', url, body, { ['Authorization'] = 'Bearer ' .. token })
+	local status, resp = request_with_retry('POST', url, body, { ['Authorization'] = 'Bearer ' .. token })
 	if status then push_event('http_response', tostring(status), resp)
 	else push_event('http_error', tostring(resp)) end
 end
 
 local function handle_http_put_auth(url, body, token)
-	local status, resp = do_request('PUT', url, body, { ['Authorization'] = 'Bearer ' .. token })
+	local status, resp = request_with_retry('PUT', url, body, { ['Authorization'] = 'Bearer ' .. token })
 	if status then push_event('http_response', tostring(status), resp)
 	else push_event('http_error', tostring(resp)) end
 end
 
 local function handle_http_get_auth(url, token)
-	local status, resp = do_request('GET', url, nil, { ['Authorization'] = 'Bearer ' .. token })
+	local status, resp = request_with_retry('GET', url, nil, { ['Authorization'] = 'Bearer ' .. token })
 	if status then push_event('http_response', tostring(status), resp)
 	else push_event('http_error', tostring(resp)) end
 end
 
 local function handle_http_delete_auth(url, token)
-	local status, resp = do_request('DELETE', url, nil, { ['Authorization'] = 'Bearer ' .. token })
+	local status, resp = request_with_retry('DELETE', url, nil, { ['Authorization'] = 'Bearer ' .. token })
 	if status then push_event('http_response', tostring(status), resp)
 	else push_event('http_error', tostring(resp)) end
 end
 
 local function handle_http_delete_with_body_auth(url, body, token)
-	local status, resp = do_request('DELETE', url, body, { ['Authorization'] = 'Bearer ' .. token })
+	local status, resp = request_with_retry('DELETE', url, body, { ['Authorization'] = 'Bearer ' .. token })
 	if status then push_event('http_response', tostring(status), resp)
 	else push_event('http_error', tostring(resp)) end
 end
