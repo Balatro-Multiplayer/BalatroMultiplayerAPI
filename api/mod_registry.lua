@@ -106,6 +106,17 @@ MPAPI.get_current_view = function()
 	return _current_view
 end
 
+-- Rebuilds the currently displayed mod/lobby menu in place (no animation). Mods call
+-- this when lobby state that the view reads at build time changes (deck, host) and the
+-- view must re-render structurally. Guarded to the main menu so it never rebuilds the
+-- menu over an active run (_current_view stays 'lobby_menu' during a run).
+MPAPI.refresh_current_view = function()
+	if G.STAGE ~= G.STAGES.MAIN_MENU then
+		return false
+	end
+	return MPAPI._internal.rebuild_current_menu()
+end
+
 MPAPI.get_active_mod_data = function()
 	if not _engaged_mod then return end
 	return _registered_mods[_engaged_mod]
@@ -181,8 +192,20 @@ MPAPI._internal.on_lobby_connected = function(lobby)
 	_engaged_mod = lobby.mod_id
 
 	-- A lobby can opt out of the lobby-menu view (e.g. SPDRN practice, which drops
-	-- the player straight into a run). Mark it engaged but skip the UI transition.
+	-- the player straight into a run). Mark it engaged and tear down the lingering main
+	-- menu (the normal lobby path removes it via replace_main_menu) so it does not show
+	-- behind the run. _current_view is cleared so the post-run set_main_menu_UI rebuild
+	-- does not try to restore a lobby view that was never shown.
 	if lobby.suppress_lobby_view then
+		if G.MAIN_MENU_UI then
+			G.MAIN_MENU_UI:remove()
+		end
+		if G.PROFILE_BUTTON then
+			G.PROFILE_BUTTON:remove()
+			G.PROFILE_BUTTON = nil
+		end
+		_current_view = nil
+		_pending_cleanup = nil
 		update_account_button()
 		return
 	end

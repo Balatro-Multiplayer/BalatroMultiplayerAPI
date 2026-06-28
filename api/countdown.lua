@@ -13,6 +13,8 @@
 -- opts (all optional):
 --   duration  seconds to count down from (default 5)
 --   label     function(n) -> string for the countdown text (default "Starting in N")
+--   contents  list of extra UI node rows rendered below the countdown text (e.g. the
+--             selected deck backs)
 --
 -- Shorthand: MPAPI.show_countdown(on_complete) uses the defaults.
 MPAPI.show_countdown = function(opts, on_complete)
@@ -25,15 +27,20 @@ MPAPI.show_countdown = function(opts, on_complete)
 		return 'Starting in ' .. n
 	end
 
+	local contents = {
+		{ n = G.UIT.R, config = { align = 'cm', padding = 0.3 }, nodes = {
+			{ n = G.UIT.T, config = { id = 'mpapi_countdown_text', text = label(count), scale = 0.9, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+		} },
+	}
+	for _, row in ipairs(opts.contents or {}) do
+		contents[#contents + 1] = row
+	end
+
 	G.FUNCS.overlay_menu({
 		definition = create_UIBox_generic_options({
 			no_back = true,
 			no_esc = true,
-			contents = {
-				{ n = G.UIT.R, config = { align = 'cm', padding = 0.3 }, nodes = {
-					{ n = G.UIT.T, config = { id = 'mpapi_countdown_text', text = label(count), scale = 0.9, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
-				} },
-			},
+			contents = contents,
 		}),
 		config = { no_esc = true },
 	})
