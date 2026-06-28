@@ -27,6 +27,8 @@ local BP = MPAPI.BanPick
 local _config = nil
 local _on_complete = nil
 local _overlay = nil
+-- Set when a consumer renders the draft inline (config.on_refresh); mutually exclusive with _overlay.
+local _render = nil
 local _fired = false
 
 -----------------------------
@@ -182,6 +184,18 @@ local function build_banpick_uibox()
 	})
 end
 
+-- The draft's UI rows for the current lobby, for a consumer rendering it inline.
+BP.build_contents = build_banpick_contents
+
+-- True while a draft is in progress (started, not yet completed) for the current lobby.
+function BP.is_active()
+	if _fired or not _config then
+		return false
+	end
+	local lobby = MPAPI.get_current_lobby()
+	return lobby ~= nil and lobby._ban_pick ~= nil
+end
+
 -----------------------------
 -- Networking
 -----------------------------
@@ -250,6 +264,8 @@ function BP.request_ban(deck_key)
 			BP.broadcast_state(lobby)
 			if _overlay then
 				_overlay:update()
+			elseif _render then
+				_render()
 			end
 		end
 	else
@@ -271,16 +287,21 @@ function BP.on_state(lobby, state)
 
 	if _overlay then
 		_overlay:update()
+	elseif _render then
+		_render()
 	end
 
 	if state.complete and not _fired then
 		_fired = true
 		local cb = _on_complete
 		_on_complete = nil
-		_overlay = nil
-		if G.OVERLAY_MENU and G.OVERLAY_MENU ~= true then
-			G.FUNCS.exit_overlay_menu()
+		if _overlay then
+			_overlay = nil
+			if G.OVERLAY_MENU and G.OVERLAY_MENU ~= true then
+				G.FUNCS.exit_overlay_menu()
+			end
 		end
+		_render = nil
 		if cb then
 			cb(state.survivors or {})
 		end
@@ -316,11 +337,16 @@ function BP.start(lobby, config, on_complete)
 		end
 	end
 
-	_overlay = MPAPI.ui_element(build_banpick_uibox)
-	-- no_esc so the mandatory, turn-based draft cannot be closed mid-flight (which would
-	-- strand every client in the lobby with the start already broadcast). The generic-
-	-- options no_esc only hides the back button; ESC blocking comes from the overlay config.
-	_overlay:as_overlay({ no_esc = true })
+	-- Render inline when the consumer supplies a refresh callback, else use the self-managed
+	-- overlay. no_esc so the mandatory turn-based draft cannot be closed mid-flight.
+	_render = config.on_refresh
+	_overlay = nil
+	if _render then
+		_render()
+	else
+		_overlay = MPAPI.ui_element(build_banpick_uibox)
+		_overlay:as_overlay({ no_esc = true })
+	end
 
 	if lobby.is_host then
 		-- The loopback delivery of this broadcast drives on_state (UI refresh, and the
