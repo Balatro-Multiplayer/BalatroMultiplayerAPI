@@ -225,17 +225,26 @@ Mod authors don't need to handle this manually. As long as game state is kept in
 
 ## Configuration
 
-MultiplayerAPI is configured via SMODS mod config (`config.lua`):
+MultiplayerAPI is configured via SMODS mod config (`config.lua`), editable in-game from the mod's **Config** tab in the Mods menu or by editing the file directly:
 
 ```lua
 return {
-    ["custom_server"] = false,    -- false = use official server
-                              -- or { host = "localhost", port = 8788 }
-    ["chat_enabled"] = true,      -- enable/disable built-in lobby chat
+    ["chat_enabled"] = false,           -- enable/disable built-in lobby chat
+    ["auto_login"] = true,              -- auto sign-in on launch
+
+    -- Self-hosted / local server (development). When use_custom_server is true, lobbies connect
+    -- to custom_server_url instead of the official server. Use 127.0.0.1 (not "localhost") on
+    -- Windows. custom_server_secure picks the scheme and ports automatically:
+    --   secure -> API https on 8788, MQTT TLS on 8883
+    --   plain  -> API http  on 8788, MQTT     on 1883
+    -- The dev docker-compose API is plain HTTP, so use secure = false until the API serves TLS.
+    ["use_custom_server"] = false,
+    ["custom_server_url"] = "127.0.0.1",
+    ["custom_server_secure"] = true,
 }
 ```
 
-These values are accessible at `SMODS.current_mod.config.custom_server` and `SMODS.current_mod.config.chat_enabled`. Players can change them through the Steamodded mod configuration UI.
+The **Config** tab exposes "Use local / self-hosted server" and "Secure (TLS)" toggles plus an **Apply & Reconnect** button, so you can switch servers at runtime without a restart. Values are accessible at `SMODS.current_mod.config.*`. Explicit `MPAPI.connect{ api_url = ..., mqtt_broker = ..., mqtt_port = ..., mqtt_secure = ... }` opts still take precedence over the config.
 
 Chat is handled entirely by MultiplayerAPI
 

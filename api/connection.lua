@@ -50,6 +50,35 @@ local SERVER_DEFAULTS = {
 	mqtt_secure = true,
 }
 
+-- Resolve a self-hosted/local server from SMODS mod config (for development). Returns the
+-- effective endpoints when MPAPI.config.use_custom_server is on, or nil to fall through to the
+-- official SERVER_DEFAULTS. The host is shared by the API and MQTT broker; the API URL is built
+-- from it. Explicit MPAPI.connect{...} opts still take precedence over this (see connect()).
+-- Dev-server ports are fixed by convention, so the config carries only a host and a single
+-- secure flag; the scheme and ports are derived from it (secure -> https + MQTT 8883/TLS;
+-- plain -> http + MQTT 1883).
+local CUSTOM_API_PORT = 8788
+local CUSTOM_MQTT_TLS_PORT = 8883
+local CUSTOM_MQTT_PLAIN_PORT = 1883
+
+local function config_server()
+	local c = MPAPI.config or {}
+	if not c.use_custom_server then
+		return nil
+	end
+	local host = c.custom_server_url or '127.0.0.1'
+	local secure = c.custom_server_secure
+	if secure == nil then
+		secure = true
+	end
+	return {
+		api_url = (secure and 'https://' or 'http://') .. host .. ':' .. CUSTOM_API_PORT,
+		mqtt_broker = host,
+		mqtt_port = secure and CUSTOM_MQTT_TLS_PORT or CUSTOM_MQTT_PLAIN_PORT,
+		mqtt_secure = secure,
+	}
+end
+
 local MPAPI_update_ref = MPAPI.update
 MPAPI.update = function()
 	if _mqtt_instance then
@@ -102,11 +131,16 @@ MPAPI.connect = function(opts)
 		return
 	end
 
-	local mqtt_broker = opts.mqtt_broker or SERVER_DEFAULTS.mqtt_broker
-	local mqtt_port = opts.mqtt_port or SERVER_DEFAULTS.mqtt_port
+	-- Precedence: explicit connect{...} opts > SMODS-config custom server > official defaults.
+	local custom = config_server()
+
+	local mqtt_broker = opts.mqtt_broker or (custom and custom.mqtt_broker) or SERVER_DEFAULTS.mqtt_broker
+	local mqtt_port = opts.mqtt_port or (custom and custom.mqtt_port) or SERVER_DEFAULTS.mqtt_port
 	local mqtt_secure = SERVER_DEFAULTS.mqtt_secure
 	if opts.mqtt_secure ~= nil then
 		mqtt_secure = opts.mqtt_secure
+	elseif custom and custom.mqtt_secure ~= nil then
+		mqtt_secure = custom.mqtt_secure
 	end
 
 	_mqtt_instance = MPAPI.networking.mqtt_client.new({
@@ -115,7 +149,7 @@ MPAPI.connect = function(opts)
 		secure = mqtt_secure,
 	})
 
-	local api = MPAPI.networking.api_client.new(_mqtt_instance, opts.api_url or SERVER_DEFAULTS.api_url)
+	local api = MPAPI.networking.api_client.new(_mqtt_instance, opts.api_url or (custom and custom.api_url) or SERVER_DEFAULTS.api_url)
 
 	_connection = MPAPI.networking.connection.new({
 		mqtt_client = _mqtt_instance,
@@ -149,6 +183,14 @@ MPAPI.disconnect = function()
 	MPAPI.connection_state.state = 'disconnected'
 	reset_connection_state_variables()
 	set_connection_state_status_text()
+end
+
+-- Tear down the current connection and reconnect with the same opts. Used to apply a server
+-- change (e.g. toggling the local dev server in the config) without a game restart.
+MPAPI.reconnect = function()
+	local opts = _last_opts or {}
+	MPAPI.disconnect()
+	MPAPI.connect(opts)
 end
 
 MPAPI.is_connected = function()

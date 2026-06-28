@@ -25,7 +25,7 @@ local _original_set_main_menu_UI = set_main_menu_UI
 -- mod is published. Installed mods (the player has the folder) ignore this flag.
 local _official_mods = {
 	{ id = 'MultiplayerPvP', name = 'PvP', colour = G.C.RED, download_url = 'https://github.com/V-rtualized/MultiplayerPvP', coming_soon = true },
-	{ id = 'MultiplayerSPDRN', name = 'Multiplayer Speedrunning', colour = G.C.GREEN, download_url = 'https://github.com/V-rtualized/MultiplayerSpeedrunning' },
+	{ id = 'MultiplayerSPDRN', name = 'Speedrun', colour = G.C.GREEN, download_url = 'https://github.com/V-rtualized/MultiplayerSpeedrunning' },
 	{ id = 'MultiplayerCoop', name = 'Co-op', colour = G.C.BLUE, download_url = 'https://github.com/V-rtualized/MultiplayerCoop', coming_soon = true },
 }
 
@@ -64,6 +64,7 @@ MPAPI.register_mod = function(opts)
 		existing.server_config = opts.server_config
 		existing.prevent_pause = opts.prevent_pause or false
 		existing.options_builder = opts.options_builder or nil
+		existing.title = opts.title or nil
 		if opts.name then existing.name = opts.name end
 		if opts.colour then existing.colour = opts.colour end
 	else
@@ -77,6 +78,7 @@ MPAPI.register_mod = function(opts)
 			download_url = opts.download_url,
 			prevent_pause = opts.prevent_pause or false,
 			options_builder = opts.options_builder or nil,
+			title = opts.title or nil,
 			is_official = false,
 		}
 		_mod_order[#_mod_order + 1] = opts.id
@@ -99,6 +101,13 @@ end
 -- Returns the focused mod id (whose menu is currently shown).
 MPAPI.get_focused_mod = function()
 	return _focused_mod
+end
+
+-- Returns the focused mod's custom title config ({ base, extra }), or nil. Drives the
+-- title-logo swap in api/title.lua.
+MPAPI._internal.get_active_title = function()
+	local mod = _focused_mod and _registered_mods[_focused_mod]
+	return mod and mod.title or nil
 end
 
 -- Returns 'mod_menu', 'lobby_menu', or nil (game main menu).
@@ -191,31 +200,27 @@ end
 MPAPI._internal.on_lobby_connected = function(lobby)
 	_engaged_mod = lobby.mod_id
 
-	-- A lobby can opt out of the lobby-menu view (e.g. SPDRN practice, which drops
-	-- the player straight into a run). Mark it engaged and tear down the lingering main
-	-- menu (the normal lobby path removes it via replace_main_menu) so it does not show
-	-- behind the run. _current_view is cleared so the post-run set_main_menu_UI rebuild
-	-- does not try to restore a lobby view that was never shown.
+	-- A lobby can opt out of the lobby-menu view (e.g. SPDRN practice drops straight into a run).
+	-- Tear the whole menu down so nothing shows behind the run; _current_view is cleared so the
+	-- post-run rebuild does not restore a lobby view that was never shown.
 	if lobby.suppress_lobby_view then
-		if G.MAIN_MENU_UI then
-			G.MAIN_MENU_UI:remove()
-		end
-		if G.PROFILE_BUTTON then
-			G.PROFILE_BUTTON:remove()
-			G.PROFILE_BUTTON = nil
-		end
+		MPAPI.teardown_menu()
 		_current_view = nil
-		_pending_cleanup = nil
 		update_account_button()
 		return
 	end
 
-	-- Only transition to the lobby view if this mod is currently focused.
 	if _focused_mod == lobby.mod_id then
 		local mod = _registered_mods[_engaged_mod]
 		if mod and mod.lobby_ui then
 			_current_view = 'lobby_menu'
-			replace_main_menu(mod.lobby_ui)
+			-- A match formed while we were in a run (queued, then practiced): leave the run; the
+			-- post-go_to_menu rebuild shows this lobby view.
+			if G.STAGE == G.STAGES.RUN then
+				MPAPI.exit_to_menu()
+			else
+				replace_main_menu(mod.lobby_ui)
+			end
 		end
 	end
 
@@ -398,5 +403,43 @@ MPAPI.set_logo_offset = function(y, immediate)
 		if immediate then
 			G.SPLASH_LOGO.VT.y = G.SPLASH_LOGO.T.y
 		end
+	end
+end
+
+-- Remove the menu UI the base game's delete_run drops when a run starts (it does so via
+-- remove_all on the main-menu stage objects, but that also kills G.ROOM_ATTACH, which is only
+-- safe because delete_run is immediately followed by prep_stage -- so target the elements here).
+-- Game:main_menu recreates them on the next menu entry.
+MPAPI.teardown_menu = function()
+	for _, key in ipairs({ 'MAIN_MENU_UI', 'PROFILE_BUTTON', 'title_top', 'SPLASH_LOGO' }) do
+		if G[key] then
+			pcall(function() G[key]:remove() end)
+			G[key] = nil
+		end
+	end
+	-- The version display is an anonymous top-right ('tri') UIBox among the menu's stage objects.
+	local menu_objects = G.STAGE_OBJECTS and G.STAGES and G.STAGE_OBJECTS[G.STAGES.MAIN_MENU]
+	for i = menu_objects and #menu_objects or 0, 1, -1 do
+		local o = menu_objects[i]
+		if o and o.config and o.config.align == 'tri' then
+			pcall(function() o:remove() end)
+		end
+	end
+	_pending_cleanup = nil
+end
+
+-- Leave a run back to the menu (go_to_menu rebuilds it via Game:main_menu -> set_main_menu_UI).
+MPAPI.exit_to_menu = function()
+	if G.STAGE == G.STAGES.RUN and G.FUNCS.go_to_menu then
+		G.FUNCS.go_to_menu()
+	end
+end
+
+-- Tear down whichever context is active: the run if in a run, otherwise the menu.
+MPAPI.cleanup = function()
+	if G.STAGE == G.STAGES.RUN then
+		MPAPI.exit_to_menu()
+	else
+		MPAPI.teardown_menu()
 	end
 end
