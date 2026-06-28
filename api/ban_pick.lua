@@ -317,7 +317,10 @@ function BP.start(lobby, config, on_complete)
 	end
 
 	_overlay = MPAPI.ui_element(build_banpick_uibox)
-	_overlay:as_overlay()
+	-- no_esc so the mandatory, turn-based draft cannot be closed mid-flight (which would
+	-- strand every client in the lobby with the start already broadcast). The generic-
+	-- options no_esc only hides the back button; ESC blocking comes from the overlay config.
+	_overlay:as_overlay({ no_esc = true })
 
 	if lobby.is_host then
 		-- The loopback delivery of this broadcast drives on_state (UI refresh, and the

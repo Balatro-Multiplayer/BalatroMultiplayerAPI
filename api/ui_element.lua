@@ -39,7 +39,8 @@ local _id_counter = 0
 -- Methods:
 --   el:update()                    -- Rebuild the element in its current mode
 --   el:as_uibox(config, on_create) -- Switch to UIBox mode and create it
---   el:as_overlay()                -- Open as overlay menu
+--   el:as_overlay(overlay_config)  -- Open as overlay menu (overlay_config is
+--                                     forwarded to overlay_menu, e.g. { no_esc = true })
 --   el:get_uibox()                -- Returns the current UIBox (uibox mode only)
 --   el:get_id()                   -- Returns the stable ID string
 MPAPI.ui_element = function(build_fn)
@@ -147,7 +148,7 @@ MPAPI.ui_element = function(build_fn)
 		return _uibox
 	end
 
-	function el:as_overlay()
+	function el:as_overlay(overlay_config)
 		_mode = 'overlay'
 		local def = build_fn()
 		-- Wrap ROOT children with our stable ID so update() can swap in-place
@@ -156,7 +157,7 @@ MPAPI.ui_element = function(build_fn)
 				{ n = G.UIT.C, config = { id = id, align = 'cm', colour = G.C.CLEAR }, nodes = def.nodes },
 			} }
 		end
-		G.FUNCS.overlay_menu({ definition = def })
+		G.FUNCS.overlay_menu({ definition = def, config = overlay_config })
 	end
 
 	function el:get_uibox()
