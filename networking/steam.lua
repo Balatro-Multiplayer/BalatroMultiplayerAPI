@@ -60,8 +60,18 @@ if ffi_ok then
 		return ok
 	end
 
-	safe_cdef('void* GetModuleHandleA(const char* lpModuleName);')
-	safe_cdef('void* GetProcAddress(void* hModule, const char* lpProcName);')
+	local IS_WINDOWS = (ffi.os == 'Windows')
+
+	if IS_WINDOWS then
+		-- Win32: resolve symbols from the already-loaded steam_api64.dll
+		safe_cdef('void* GetModuleHandleA(const char* lpModuleName);')
+		safe_cdef('void* GetProcAddress(void* hModule, const char* lpProcName);')
+	else
+		-- POSIX (macOS/Linux): dlopen/dlsym live in libc / libSystem, which is
+		-- always loaded, so they are reachable through the default ffi.C namespace.
+		safe_cdef('void* dlopen(const char* filename, int flag);')
+		safe_cdef('void* dlsym(void* handle, const char* symbol);')
+	end
 
 	safe_cdef('typedef struct ISteamUser ISteamUser;')
 	safe_cdef('typedef uint32_t HAuthTicket;')
@@ -82,26 +92,72 @@ if ffi_ok then
 	local _get_auth_ticket_fn = nil
 	local _cancel_auth_ticket_fn = nil
 
+	-- Candidate names for the loaded Steam library, per platform. The leaf name
+	-- is enough: the game/luasteam has already pulled it into the process, so
+	-- dlopen/GetModuleHandleA resolve to the existing image without reloading.
+	local steam_module_names
+	if IS_WINDOWS then
+		steam_module_names = { 'steam_api64.dll', 'steam_api64', 'steam_api.dll', 'steam_api' }
+	elseif ffi.os == 'OSX' then
+		steam_module_names = { 'libsteam_api.dylib', 'steam_api', 'libsteam_api' }
+	else
+		steam_module_names = { 'libsteam_api.so', 'steam_api', 'libsteam_api' }
+	end
+
+	-- RTLD_LAZY is 0x1 on both macOS and Linux. RTLD_DEFAULT (search all loaded
+	-- images) is the last-resort fallback if dlopen-by-leaf-name fails.
+	local RTLD_LAZY = 0x1
+	local RTLD_DEFAULT = (ffi.os == 'OSX') and ffi.cast('void*', -2) or ffi.cast('void*', 0)
+
+	-- Returns (handle, name) for the loaded Steam library, or nil on failure.
+	-- `name` doubles as the success flag so we never test a possibly-NULL handle
+	-- pointer for truthiness (RTLD_DEFAULT is NULL on Linux).
+	local function get_steam_module()
+		for _, name in ipairs(steam_module_names) do
+			local ok, h
+			if IS_WINDOWS then
+				ok, h = pcall(function()
+					return ffi.C.GetModuleHandleA(name)
+				end)
+			else
+				ok, h = pcall(function()
+					return ffi.C.dlopen(name, RTLD_LAZY)
+				end)
+			end
+			if ok and h ~= nil then
+				return h, name
+			end
+		end
+		if not IS_WINDOWS then
+			-- Symbols are already in the process even if dlopen couldn't find the
+			-- file on disk; let dlsym search every loaded image.
+			return RTLD_DEFAULT, 'RTLD_DEFAULT'
+		end
+		return nil
+	end
+
+	-- Resolve a named symbol from a module handle, cross-platform. The symbol
+	-- name is the plain C name on both sides (dlsym prepends the Mach-O '_').
+	local function get_proc(handle, name)
+		if IS_WINDOWS then
+			return ffi.C.GetProcAddress(handle, name)
+		else
+			return ffi.C.dlsym(handle, name)
+		end
+	end
+
 	local function resolve_game_steam()
 		if _steam_user_ptr then
 			return true
 		end
 
-		-- Get the game's loaded steam_api64.dll handle
-		local ok, hModule = pcall(function()
-			return ffi.C.GetModuleHandleA('steam_api64.dll')
-		end)
-		if not ok or not hModule or hModule == nil then
-			-- Try without extension
-			ok, hModule = pcall(function()
-				return ffi.C.GetModuleHandleA('steam_api64')
-			end)
-		end
-		if not ok or not hModule or hModule == nil or not hModule then
-			warn('GetModuleHandleA failed — steam_api64.dll not loaded in process')
+		-- Get a handle to the game's already-loaded Steam library.
+		local hModule, modName = get_steam_module()
+		if not modName then
+			warn('Could not locate loaded Steam library (steam_api64.dll / libsteam_api.dylib) in process')
 			return false
 		end
-		log("Got game's steam_api64.dll module handle")
+		log("Got game's Steam library handle via " .. modName)
 
 		-- Resolve the ISteamUser accessor (try version strings)
 		local accessor_names = {
@@ -114,10 +170,10 @@ if ffi_ok then
 		local user_ptr = nil
 		for _, name in ipairs(accessor_names) do
 			local proc_ok, proc = pcall(function()
-				return ffi.C.GetProcAddress(hModule, name)
+				return get_proc(hModule, name)
 			end)
 			if proc_ok and proc ~= nil and proc then
-				log('Resolved accessor via GetProcAddress: ' .. name)
+				log('Resolved Steam accessor: ' .. name)
 				local accessor = ffi.cast('SteamUserAccessor_t', proc)
 				local call_ok, ptr = pcall(accessor)
 				if call_ok and ptr ~= nil and ptr then
@@ -131,7 +187,7 @@ if ffi_ok then
 		end
 
 		if not user_ptr then
-			warn("Could not get ISteamUser from game's DLL")
+			warn("Could not get ISteamUser from the game's Steam library")
 			return false
 		end
 
@@ -139,7 +195,7 @@ if ffi_ok then
 
 		-- Resolve GetAuthSessionTicket
 		local gat_ok, gat_proc = pcall(function()
-			return ffi.C.GetProcAddress(hModule, 'SteamAPI_ISteamUser_GetAuthSessionTicket')
+			return get_proc(hModule, 'SteamAPI_ISteamUser_GetAuthSessionTicket')
 		end)
 		if gat_ok and gat_proc ~= nil and gat_proc then
 			_get_auth_ticket_fn = ffi.cast('GetAuthSessionTicket_t', gat_proc)
@@ -148,7 +204,7 @@ if ffi_ok then
 
 		-- Resolve CancelAuthTicket
 		local cat_ok, cat_proc = pcall(function()
-			return ffi.C.GetProcAddress(hModule, 'SteamAPI_ISteamUser_CancelAuthTicket')
+			return get_proc(hModule, 'SteamAPI_ISteamUser_CancelAuthTicket')
 		end)
 		if cat_ok and cat_proc ~= nil and cat_proc then
 			_cancel_auth_ticket_fn = ffi.cast('CancelAuthTicket_t', cat_proc)
@@ -162,7 +218,7 @@ if ffi_ok then
 	--- Get a Steam auth session ticket as a hex string.
 	function steam.get_auth_ticket()
 		if not resolve_game_steam() then
-			return nil, 'Could not resolve Steam auth functions from game DLL'
+			return nil, 'Could not resolve Steam auth functions from the game Steam library'
 		end
 
 		local max_ticket = 1024

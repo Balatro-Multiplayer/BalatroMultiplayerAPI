@@ -130,112 +130,168 @@ local function load_openssl()
 	end
 
 	local ok, err = pcall(function()
-		-- Build list of names to try: short names first, then absolute paths
-		local ssl_names = {
-			'libssl.dll',
-			'libssl-3-x64.dll',
-			'libssl-3.dll',
-			'libssl-1_1-x64.dll',
-			'libssl-1_1.dll',
-			'ssl.dll',
-			'ssl-3-x64.dll',
-			'ssl-3.dll',
-			'libssl-3-x64',
-			'libssl-3',
-			'libssl',
-			'libssl-1_1-x64',
-			'libssl-1_1',
-			'ssl-3-x64',
-			'ssl-3',
-			'ssl',
-		}
-		local crypto_names = {
-			'libcrypto.dll',
-			'libcrypto-3-x64.dll',
-			'libcrypto-3.dll',
-			'libcrypto-1_1-x64.dll',
-			'libcrypto-1_1.dll',
-			'crypto.dll',
-			'crypto-3-x64.dll',
-			'crypto-3.dll',
-			'libcrypto-3-x64',
-			'libcrypto-3',
-			'libcrypto',
-			'libcrypto-1_1-x64',
-			'libcrypto-1_1',
-			'crypto-3-x64',
-			'crypto-3',
-			'crypto',
-		}
-
-		-- Discover base paths to search for DLLs
-		local search_dirs = { '' } -- empty string = default search path
-
-		-- love.filesystem.getSource() may return the exe path (e.g.
-		-- "Z:\...\Balatro\Balatro.exe"); strip the filename to get the dir.
-		if love and love.filesystem then
-			local src = love.filesystem.getSource()
-			if src then
-				-- Strip trailing filename if it looks like an exe/file
-				local dir = src:match('^(.+)[/\\][^/\\]+%.[^/\\]+$') or src
-				search_dirs[#search_dirs + 1] = dir .. '/'
-				-- Also try with backslash (Wine paths)
-				search_dirs[#search_dirs + 1] = dir .. '\\'
-			end
-			local save = love.filesystem.getSaveDirectory()
-			if save then
-				search_dirs[#search_dirs + 1] = save .. '/'
-			end
+		-- Build list of names to try, per-platform. ffi.os is one of
+		-- 'Windows', 'OSX', 'Linux', 'BSD', etc. The library *names* differ by
+		-- OS (.dll / .dylib / .so) but every binding below is identical.
+		local ssl_names, crypto_names
+		if ffi.os == 'OSX' then
+			-- macOS: we ship OpenSSL 3 as versioned .dylib files in the mod and
+			-- load them by absolute path (see the search-dir block below). Apple's
+			-- own /usr/lib/libssl.dylib is LibreSSL (deprecated, missing symbols),
+			-- so we never load by bare name.
+			ssl_names = { 'libssl.3.dylib' }
+			crypto_names = { 'libcrypto.3.dylib' }
+		elseif ffi.os == 'Windows' then
+			ssl_names = {
+				'libssl.dll',
+				'libssl-3-x64.dll',
+				'libssl-3.dll',
+				'libssl-1_1-x64.dll',
+				'libssl-1_1.dll',
+				'ssl.dll',
+				'ssl-3-x64.dll',
+				'ssl-3.dll',
+				'libssl-3-x64',
+				'libssl-3',
+				'libssl',
+				'libssl-1_1-x64',
+				'libssl-1_1',
+				'ssl-3-x64',
+				'ssl-3',
+				'ssl',
+			}
+			crypto_names = {
+				'libcrypto.dll',
+				'libcrypto-3-x64.dll',
+				'libcrypto-3.dll',
+				'libcrypto-1_1-x64.dll',
+				'libcrypto-1_1.dll',
+				'crypto.dll',
+				'crypto-3-x64.dll',
+				'crypto-3.dll',
+				'libcrypto-3-x64',
+				'libcrypto-3',
+				'libcrypto',
+				'libcrypto-1_1-x64',
+				'libcrypto-1_1',
+				'crypto-3-x64',
+				'crypto-3',
+				'crypto',
+			}
+		else
+			-- Linux / BSD: shared objects with .so soname suffixes.
+			ssl_names = {
+				'libssl.so',
+				'libssl.so.3',
+				'libssl.so.1.1',
+				'ssl',
+			}
+			crypto_names = {
+				'libcrypto.so',
+				'libcrypto.so.3',
+				'libcrypto.so.1.1',
+				'crypto',
+			}
 		end
 
-		-- Also try CWD-relative
-		search_dirs[#search_dirs + 1] = './'
+		-- Discover base paths to search for the libraries.
+		local search_dirs = {}
 
-		ssl_log('Search directories:')
-		for i, dir in ipairs(search_dirs) do
-			ssl_log('  [' .. i .. '] ' .. (dir == '' and '(default ffi.load path)' or dir))
-		end
-
-		-- Load crypto FIRST (libssl depends on libcrypto)
-		for _, dir in ipairs(search_dirs) do
-			for _, name in ipairs(crypto_names) do
-				local path = dir .. name
-				local ok2, lib = pcall(ffi.load, path)
-				if ok2 then
-					crypto_lib = lib
-					ssl_log('Loaded crypto library: ' .. path)
+		if ffi.os == 'OSX' then
+			-- We ship libssl.3.dylib + libcrypto.3.dylib in the mod's networking/
+			-- folder and load them by ABSOLUTE path. A bare name is not an option
+			-- on macOS: it resolves to Apple's /usr/lib LibreSSL and aborts the
+			-- process with "loading libcrypto in an unsafe way" (Abort trap: 6).
+			--
+			-- We can't read the mod path from MPAPI here (the MQTT worker runs in
+			-- its own Lua state with no MPAPI), but we don't need to: core.lua
+			-- adds "<mod>/networking/?.lua" to package.path, and that string is
+			-- forwarded to the worker's setup, so the absolute networking/ dir is
+			-- already available wherever this runs. Pull it back out of there.
+			local dir
+			for entry in (package.path or ''):gmatch('[^;]+') do
+				dir = entry:match('^(.-[/\\]networking[/\\])%?')
+				if dir then
 					break
-				else
-					ssl_log('  tried crypto: ' .. path .. ' -> ' .. tostring(lib))
 				end
 			end
-			if crypto_lib then
-				break
+			-- Fallback to MPAPI.path on the main thread if the entry isn't present.
+			if not dir and MPAPI and MPAPI.path then
+				dir = (MPAPI.path:gsub('/*$', '')) .. '/networking/'
+			end
+			if dir then
+				search_dirs[#search_dirs + 1] = dir
+			end
+		elseif ffi.os == 'Windows' then
+			search_dirs[#search_dirs + 1] = '' -- default DLL search path
+		else
+			-- Linux/BSD: the system OpenSSL is real OpenSSL (not LibreSSL), so the
+			-- default search path and standard lib dirs are safe to use.
+			search_dirs[#search_dirs + 1] = '' -- default ffi.load search path
+			local nix_dirs = {
+				'/usr/lib/',
+				'/usr/lib/x86_64-linux-gnu/',
+				'/usr/lib64/',
+				'/usr/local/lib/',
+				'/lib/',
+			}
+			for _, d in ipairs(nix_dirs) do
+				search_dirs[#search_dirs + 1] = d
 			end
 		end
 
+		-- Search game-relative locations discovered via love.filesystem. This is
+		-- really for Windows, where OpenSSL DLLs are dropped next to the game and
+		-- getSource() returns that folder. On Linux it's just a harmless extra
+		-- fallback (the real libs come from the system path / nix_dirs above).
+		-- macOS is skipped entirely: its libs are bundled in the mod folder
+		-- (found via package.path above), so getSource()/save/'./' only point at
+		-- the wrong places here -- and a bare './name' could even reach the
+		-- system LibreSSL and abort the process.
+		if ffi.os ~= 'OSX' then
+			-- love.filesystem.getSource() may return the exe path (e.g.
+			-- "Z:\...\Balatro\Balatro.exe"); strip the filename to get the dir.
+			if love and love.filesystem then
+				local src = love.filesystem.getSource()
+				if src then
+					-- Strip trailing filename if it looks like an exe/file
+					local dir = src:match('^(.+)[/\\][^/\\]+%.[^/\\]+$') or src
+					search_dirs[#search_dirs + 1] = dir .. '/'
+					-- Also try with backslash (Wine paths)
+					search_dirs[#search_dirs + 1] = dir .. '\\'
+				end
+				local save = love.filesystem.getSaveDirectory()
+				if save then
+					search_dirs[#search_dirs + 1] = save .. '/'
+				end
+			end
+
+			-- Also try CWD-relative
+			search_dirs[#search_dirs + 1] = './'
+		end
+
+		-- Try every (dir, name) combination; return the first lib that loads.
+		local function try_load(names, label)
+			for _, dir in ipairs(search_dirs) do
+				for _, name in ipairs(names) do
+					local path = dir .. name
+					local ok2, lib = pcall(ffi.load, path)
+					if ok2 then
+						ssl_log('Loaded ' .. label .. ' library: ' .. path)
+						return lib
+					end
+					ssl_log('  tried ' .. label .. ': ' .. path .. ' -> ' .. tostring(lib))
+				end
+			end
+		end
+
+		-- crypto first: libssl depends on libcrypto already being loaded.
+		crypto_lib = try_load(crypto_names, 'crypto')
 		if not crypto_lib then
 			ssl_warn('Could not load crypto library (ssl may still work if system-provided)')
 		end
 
-		-- Now try loading SSL library (depends on crypto being loaded)
-		for _, dir in ipairs(search_dirs) do
-			for _, name in ipairs(ssl_names) do
-				local path = dir .. name
-				local ok2, lib = pcall(ffi.load, path)
-				if ok2 then
-					ssl_lib = lib
-					ssl_log('Loaded SSL library: ' .. path)
-					break
-				else
-					ssl_log('  tried ssl: ' .. path .. ' -> ' .. tostring(lib))
-				end
-			end
-			if ssl_lib then
-				break
-			end
-		end
-
+		ssl_lib = try_load(ssl_names, 'ssl')
 		if not ssl_lib then
 			error('Could not load OpenSSL SSL library')
 		end
