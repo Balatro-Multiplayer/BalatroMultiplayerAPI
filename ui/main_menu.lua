@@ -9,9 +9,9 @@ local attach_account_button
 
 local create_UIBox_account_button = function()
 	local status_colour = G.C.RED
-	if MPAPI.connection_state.state == 'connected' then
+	if MPAPI.connection_state.state == MPAPI.ConnectionState.CONNECTED then
 		status_colour = G.C.WHITE
-	elseif MPAPI.connection_state.state == 'authenticating' or MPAPI.connection_state.state == 'connecting' then
+	elseif MPAPI.connection_state.state == MPAPI.ConnectionState.AUTHENTICATING or MPAPI.connection_state.state == MPAPI.ConnectionState.CONNECTING then
 		status_colour = G.C.GOLD
 	end
 
@@ -22,7 +22,7 @@ local create_UIBox_account_button = function()
 		{ n = G.UIT.T, config = { text = localize('k_multiplayer'), scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 	} }
 
-	local is_busy = MPAPI.connection_state.state == 'connecting' or MPAPI.connection_state.state == 'authenticating'
+	local is_busy = MPAPI.connection_state.state == MPAPI.ConnectionState.CONNECTING or MPAPI.connection_state.state == MPAPI.ConnectionState.AUTHENTICATING
 	local account_button_config = {
 		align = 'cm', padding = 0.1, minw = inner_width, minh = 0.8, maxw = inner_width, r = 0.1,
 		colour = is_busy and G.C.UI.BACKGROUND_INACTIVE or mix_colours(G.C.WHITE, G.C.GREY, 0.2),
@@ -35,12 +35,12 @@ local create_UIBox_account_button = function()
 
 	local state = MPAPI.connection_state.state
 	local account_button_label
-	if state == 'tos_required' and not MPAPI.connection_state.tos_is_update then
+	if state == MPAPI.ConnectionState.TOS_REQUIRED and not MPAPI.connection_state.tos_is_update then
 		account_button_label = { n = G.UIT.T, config = {
 			text = localize('b_sign_up'),
 			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
 		} }
-	elseif state == 'tos_required' or state == 'login_available' then
+	elseif state == MPAPI.ConnectionState.TOS_REQUIRED or state == MPAPI.ConnectionState.LOGIN_AVAILABLE then
 		account_button_label = { n = G.UIT.T, config = {
 			text = localize('b_sign_in'),
 			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
@@ -137,7 +137,7 @@ build_mod_button = function(mod, inner_width, engaged_mod_id)
 	local is_installed = mod.main_menu_ui ~= nil
 	local is_engaged = engaged_mod_id ~= nil and mod.id == engaged_mod_id
 	local is_blocked = engaged_mod_id ~= nil and not is_engaged
-	local is_disconnected = MPAPI.connection_state.state ~= 'connected'
+	local is_disconnected = MPAPI.connection_state.state ~= MPAPI.ConnectionState.CONNECTED
 	local is_disabled = not is_installed or is_blocked or is_disconnected
 
 	-- For an uninstalled, reachable official mod: show "Coming Soon" when the mod is
@@ -215,19 +215,19 @@ end
 
 G.FUNCS.mpapi_account_button = function(e)
 	local state = MPAPI.connection_state.state
-	if state == 'connected' then
+	if state == MPAPI.ConnectionState.CONNECTED then
 		MPAPI.account_overlay:as_overlay()
-	elseif state == 'disconnected' then
+	elseif state == MPAPI.ConnectionState.DISCONNECTED then
 		MPAPI.sendDebugMessage('[main_menu] retry pressed | UIBOX: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?') .. ' | ROOM_ATTACH scale: ' .. tostring(G.ROOM_ATTACH and G.ROOM_ATTACH.VT and G.ROOM_ATTACH.VT.scale or '?'))
 		MPAPI.disconnect()
 		local last_opts = MPAPI.shallow_copy(MPAPI.get_last_opts() or {})
 		last_opts.force_login = true
 		MPAPI.connect(last_opts)
-	elseif state == 'tos_required' then
+	elseif state == MPAPI.ConnectionState.TOS_REQUIRED then
 		if MPAPI._internal.show_tos_overlay then
 			MPAPI._internal.show_tos_overlay(MPAPI.connection_state.tos_is_update)
 		end
-	elseif state == 'login_available' then
+	elseif state == MPAPI.ConnectionState.LOGIN_AVAILABLE then
 		local conn = MPAPI.get_connection()
 		if conn then
 			conn:login()

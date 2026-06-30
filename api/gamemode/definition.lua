@@ -1,7 +1,3 @@
------------------------------
--- GameMode registration
------------------------------
-
 MPAPI.GameModes = {}
 
 MPAPI.GameMode = SMODS.GameObject:extend({
@@ -36,7 +32,7 @@ MPAPI.GameMode = SMODS.GameObject:extend({
 	end,
 
 	get_min_players = function(self, lobby_type)
-		lobby_type = lobby_type or 'private'
+		lobby_type = lobby_type or MPAPI.LobbyType.PRIVATE
 		if type(self.min_players) == 'number' then
 			return self.min_players
 		end
@@ -44,7 +40,7 @@ MPAPI.GameMode = SMODS.GameObject:extend({
 	end,
 
 	get_max_players = function(self, lobby_type)
-		lobby_type = lobby_type or 'private'
+		lobby_type = lobby_type or MPAPI.LobbyType.PRIVATE
 		if type(self.max_players) == 'number' then
 			return self.max_players
 		end
@@ -89,51 +85,3 @@ MPAPI.GameMode = SMODS.GameObject:extend({
 		return instance
 	end,
 })
-
------------------------------
--- ease_ante hook
------------------------------
-
------------------------------
--- reset_blinds hook
------------------------------
-
-local _orig_reset_blinds = reset_blinds
-reset_blinds = function(...)
-	local result = _orig_reset_blinds(...)
-	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
-	if not lobby then return result end
-	local gm = lobby:get_gamemode_instance()
-	if gm and gm.get_blinds_by_ante then
-		local ante = G.GAME and G.GAME.round_resets and G.GAME.round_resets.ante
-		if ante then
-			local small, big, boss = gm:get_blinds_by_ante(ante)
-			if small then G.GAME.round_resets.blind_choices.Small = small end
-			if big   then G.GAME.round_resets.blind_choices.Big   = big   end
-			if boss  then G.GAME.round_resets.blind_choices.Boss  = boss  end
-		end
-	end
-	return result
-end
-
------------------------------
--- ease_ante hook
------------------------------
-
-local _orig_ease_ante = ease_ante
-ease_ante = function(amt, ...)
-	local result = _orig_ease_ante(amt, ...)
-	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
-	if not lobby then
-		return result
-	end
-	local gm = lobby:get_gamemode_instance()
-	if gm and gm.on_ante_change then
-		local ante = G.GAME and G.GAME.round_resets and G.GAME.round_resets.ante
-		MPAPI.sendDebugMessage('ease_ante: amt=' .. tostring(amt) .. ' round_resets.ante=' .. tostring(ante) .. ' => firing with ' .. tostring(ante and (ante + amt)))
-		if ante then
-			gm:on_ante_change(ante + amt)
-		end
-	end
-	return result
-end
