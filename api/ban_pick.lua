@@ -92,40 +92,154 @@ end
 -- UI
 -----------------------------
 
-local PER_ROW = 5
+local PER_ROW = 9
+local ROW_SCALE = 1 / 1.75
 
--- One deck tile: a coloured name box, plus (when it's your turn) a Ban button, or a
--- BANNED marker once removed. Mirrors the leaderboard's value_box / entry_row styling.
-local function deck_tile(key, banned, my_turn)
-	local center = G.P_CENTERS[key]
-	local name = (center and center.name) or key
-	local box_colour = banned and G.C.UI.BACKGROUND_INACTIVE or darken(G.C.JOKER_GREY, 0.1)
-
-	local nodes = {
-		{ n = G.UIT.R, config = { align = 'cm', minw = 1.9, minh = 0.55, padding = 0.05, r = 0.07, colour = box_colour, emboss = 0.04 }, nodes = {
-			{ n = G.UIT.T, config = { text = name, scale = 0.34, colour = banned and G.C.UI.TEXT_INACTIVE or G.C.UI.TEXT_LIGHT, shadow = true } },
-		} },
-	}
-
+local function deck_action_buttons(card, key, banned, my_turn)
+	local text, colour, button
 	if banned then
-		nodes[#nodes + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.04 }, nodes = {
-			{ n = G.UIT.T, config = { text = localize('k_banpick_banned'), scale = 0.3, colour = G.C.RED, shadow = true } },
-		} }
+		colour = G.C.UI.BACKGROUND_INACTIVE
+		text = localize("k_banpick_banned")
 	elseif my_turn then
-		-- Built as a raw button node (config.ref_table + button) rather than via
-		-- UIBox_button so the deck key reliably reaches the handler -- the proven
-		-- pattern for passing per-card context to a button click in this codebase.
-		nodes[#nodes + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.04 }, nodes = {
-			{ n = G.UIT.C, config = { ref_table = { deck_key = key }, align = 'cm', minw = 1.9, minh = 0.42, padding = 0.06, r = 0.08, colour = G.C.RED, hover = true, shadow = true, one_press = true, button = 'mpapi_ban_pick_ban' }, nodes = {
-				{ n = G.UIT.T, config = { text = localize('k_banpick_ban'), scale = 0.32, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
-			} },
-		} }
+		colour = G.C.MULT
+		text = localize("k_banpick_ban")
+		button = "mpapi_ban_pick_ban"
 	else
-		-- Reserve the button's height so tiles stay the same size on either turn.
-		nodes[#nodes + 1] = { n = G.UIT.R, config = { align = 'cm', minh = 0.5 }, nodes = {} }
+		colour = G.C.UI.BACKGROUND_INACTIVE
+		text = localize("k_banpick_ban")
+	end
+	return {
+		n = G.UIT.ROOT,
+		config = { padding = 0, colour = G.C.CLEAR },
+		nodes = {
+			{
+				n = G.UIT.R,
+				config = {
+					ref_table = { deck_key = key },
+					r = 0.08,
+					padding = 0.1,
+					align = "bm",
+					minw = 0.5 * card.T.w - 0.15,
+					maxw = 0.9 * card.T.w - 0.15,
+					minh = 1 * card.T.h, hover = true, shadow = true, colour = colour, one_press = true, button = button,
+				},
+				nodes = {
+					{ n = G.UIT.T, config = { text = text, colour = G.C.UI.TEXT_LIGHT, scale = 0.45, shadow = true } },
+				},
+			},
+		},
+	}
+end
+
+-- One deck tile: a card with deck's center
+-- BANNED marked as debuffed
+local function deck_tile(key, banned, my_turn, area)
+	local center = G.P_CENTERS[key]
+	local card = Card(
+		area.T.x + area.T.w / 2,
+		area.T.y,
+		G.CARD_W * ROW_SCALE,
+		G.CARD_H * ROW_SCALE,
+		nil,
+		center,
+		{ bypass_discovery_center = true }
+	)
+	area:emplace(card)
+	if banned then
+		card.debuff = true
 	end
 
-	return { n = G.UIT.C, config = { align = 'cm', padding = 0.06 }, nodes = nodes }
+	function card:highlight(is_higlighted)
+		if is_higlighted then
+			for _, _area in ipairs(self.area.mp_ban_areas) do
+				if _area ~= area then
+					_area:unhighlight_all()
+				end
+			end
+		end
+		self.highlighted = is_higlighted
+		if self.highlighted and self.area then
+            if self.children.use_button then self.children.use_button:remove() end
+			self.children.use_button = UIBox({
+				definition = deck_action_buttons(self, key, banned, my_turn),
+				config = {
+					align = "bmi",
+					offset = { x = 0, y = 0.55 },
+					parent = self,
+				},
+			})
+		elseif self.children.use_button then
+			self.children.use_button:remove()
+			self.children.use_button = nil
+		end
+	end
+
+	function card:hover()
+		local back = Back(self.config.center)
+
+		local badges = { n = G.UIT.C, config = { colour = G.C.CLEAR, align = "cm" }, nodes = {} }
+		SMODS.create_mod_badges(self.config.center, badges.nodes)
+		if badges.nodes.mod_set then
+			badges.nodes.mod_set = nil
+		end
+
+		self.config.h_popup = { n = G.UIT.C, config = { align = "cm", padding = 0.1 }, nodes = {} }
+
+		table.insert(self.config.h_popup.nodes, (self.T.x > G.ROOM.T.w * 0.4) and 2 or 1, {
+			n = G.UIT.C,
+			config = { align = "cm", padding = 0.1 },
+			nodes = {
+				{
+					n = G.UIT.C,
+					config = { align = "cm", r = 0.1, colour = G.C.L_BLACK, padding = 0.1, outline = 1 },
+					nodes = {
+						{
+							n = G.UIT.R,
+							config = { align = "cm", r = 0.1, minw = 3, maxw = 4, minh = 0.4 },
+							nodes = {
+								{
+									n = G.UIT.O,
+									config = {
+										object = DynaText({
+											string = back:get_name(),
+											maxw = 4,
+											colours = { G.C.WHITE }, shadow = true, bump = true, scale = 0.5, pop_in = 0, silent = true,
+										}),
+									},
+								},
+							},
+						},
+						{
+							n = G.UIT.R,
+							config = {
+								align = "cm",
+								colour = G.C.WHITE, minh = 0.5, maxh = 3, minw = 3, maxw = 4, r = 0.1,
+							},
+							nodes = {
+								{
+									n = G.UIT.O,
+									config = {
+										object = UIBox({
+											definition = back:generate_UI(),
+											config = { offset = { x = 0, y = 0 } },
+										}),
+									},
+								},
+							},
+						},
+						badges.nodes[1] and {
+							n = G.UIT.R,
+							config = { align = "cm", r = 0.1, minw = 3, maxw = 4, minh = 0.4 },
+							nodes = { badges },
+						},
+					},
+				},
+			},
+		})
+
+		self.config.h_popup_config = self:align_h_popup()
+		Node.hover(self)
+	end
 end
 
 local function build_banpick_contents()
@@ -159,19 +273,43 @@ local function build_banpick_contents()
 	rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
 		{ n = G.UIT.T, config = { text = status_text, scale = 0.42, colour = status_colour, shadow = true } },
 	} }
-	rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+	rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
 		{ n = G.UIT.T, config = { text = localize('k_banpick_bans_left') .. ' ' .. tostring(state.bans_remaining) .. '   ' .. localize('k_banpick_decks_left') .. ' ' .. tostring(survivors_left) .. ' / ' .. tostring(state.keep), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
 	} }
 
+    local areas = {}
+    local areas_container = {}
 	-- Deck grid, PER_ROW tiles per row.
-	local cur_row = nil
+	local cur_area = nil
 	for i, key in ipairs(state.pool) do
 		if (i - 1) % PER_ROW == 0 then
-			cur_row = { n = G.UIT.R, config = { align = 'cm' }, nodes = {} }
-			rows[#rows + 1] = cur_row
+            -- Create area for decks
+            cur_area = CardArea(0, 0, G.CARD_W * ROW_SCALE * PER_ROW, G.CARD_H * ROW_SCALE, {
+                type = "joker",
+                highlight_limit = 1,
+                card_limit = PER_ROW,
+            })
+            -- Hide cards/limit display
+            cur_area.ARGS.invisible_area_types = { joker = 1 }
+            areas[#areas + 1] = cur_area
+            -- Store all areas so when one card is selected, all others are deselected
+            cur_area.mp_ban_areas = areas
+            areas_container[#areas_container + 1] = {
+                n = G.UIT.R,
+                config = { align = "cm" },
+                nodes = {
+                    { n = G.UIT.O, config = { object = cur_area } },
+                },
+            }
 		end
-		cur_row.nodes[#cur_row.nodes + 1] = deck_tile(key, state.banned[key], my_turn)
+		deck_tile(key, state.banned[key], my_turn, cur_area)
 	end
+    rows[#rows + 1] = { n = G.UIT.R, config = { minh = 0.25 } }
+    rows[#rows + 1] = {
+        n = G.UIT.R,
+        config = { align = "cm", padding = 0.25, r = 0.25, colour = { 0, 0, 0, 0.1 } },
+        nodes = areas_container,
+    }
 
 	return rows
 end
