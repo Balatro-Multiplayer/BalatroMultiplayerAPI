@@ -1,13 +1,9 @@
 local connection = {}
 
-local STATES = {
-	DISCONNECTED = 'disconnected',
-	TOS_REQUIRED = 'tos_required',
-	LOGIN_AVAILABLE = 'login_available',
-	AUTHENTICATING = 'authenticating',
-	CONNECTING = 'connecting',
-	CONNECTED = 'connected',
-}
+-- Single source of truth for connection states lives in domain/connection_state.lua
+-- (loaded before networking), referenced here so the state machine and the api/
+-- layer agree on the values.
+local STATES = MPAPI.ConnectionState
 
 function connection.new(opts)
 	local self = {

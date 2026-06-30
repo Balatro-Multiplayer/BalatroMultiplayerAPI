@@ -14,7 +14,7 @@ local chat_section
 -----------------------------
 
 local create_UIBox_account_overlay = function()
-	if MPAPI.connection_state.state ~= 'connected' then
+	if MPAPI.connection_state.state ~= MPAPI.ConnectionState.CONNECTED then
 		return G.FUNCS.exit_overlay_menu()
 	end
 

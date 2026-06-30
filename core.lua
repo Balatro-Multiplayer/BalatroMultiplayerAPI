@@ -1,8 +1,18 @@
 MPAPI = SMODS.current_mod
 
--- Add mod root and networking/ to package.path so the MQTT thread can
--- require("mqtt") (luamqtt at mqtt/init.lua) and require("openssl_ffi")
-package.path = MPAPI.path .. '/?.lua;' .. MPAPI.path .. '/?/init.lua;' .. MPAPI.path .. '/networking/?.lua;' .. package.path
+-- Add mod root, lib/ and networking/ to package.path so the MQTT thread can
+-- require("mqtt") (vendored luamqtt at lib/mqtt/init.lua) and require("openssl_ffi")
+package.path = MPAPI.path
+	.. '/?.lua;'
+	.. MPAPI.path
+	.. '/?/init.lua;'
+	.. MPAPI.path
+	.. '/lib/?.lua;'
+	.. MPAPI.path
+	.. '/lib/?/init.lua;'
+	.. MPAPI.path
+	.. '/networking/?.lua;'
+	.. package.path
 
 -----------------------------
 -- CORE FUNCTIONS
@@ -46,6 +56,15 @@ function MPAPI.load_mpapi_dir(directory, recursive)
 		end
 	end
 end
+
+-----------------------------
+-- DOMAIN & CONTRACTS
+-----------------------------
+
+-- Load enums and contracts first: networking and api modules reference them at
+-- load time (e.g. networking/connection.lua uses MPAPI.ConnectionState).
+MPAPI.load_mpapi_dir('domain', true)
+MPAPI.load_mpapi_dir('contracts', true)
 
 -----------------------------
 -- NETWORKING
@@ -103,8 +122,8 @@ end
 MPAPI._internal = {}
 
 MPAPI.load_mpapi_dir('lib')
-MPAPI.load_mpapi_dir('api')
-MPAPI.load_mpapi_dir('ui')
+MPAPI.load_mpapi_dir('api', true)
+MPAPI.load_mpapi_dir('ui', true)
 
 -- Load dev overrides if the dev/ directory exists (stripped in release builds)
 local dev_init = MPAPI.load_mpapi_file('dev/init.lua')

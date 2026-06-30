@@ -224,7 +224,7 @@ MPAPI.create_lobby_ui = function(lobby)
 
 	local el = MPAPI.ui_element(build_fn)
 
-	lobby:on('player_info', function(player_id, player_data)
+	lobby:on(MPAPI.LobbyEvent.PLAYER_INFO, function(player_id, player_data)
 		if not _card_rows or #_card_rows == 0 then
 			return
 		end
@@ -272,7 +272,7 @@ MPAPI.create_lobby_ui = function(lobby)
 		}))
 	end)
 
-	lobby:on('player_left', function(player_id)
+	lobby:on(MPAPI.LobbyEvent.PLAYER_LEFT, function(player_id)
 		local idx = find_card_for_player(player_id)
 		if not idx or not _cards[idx] then
 			_player_card_map[player_id] = nil
