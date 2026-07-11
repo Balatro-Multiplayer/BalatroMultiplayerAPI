@@ -149,6 +149,16 @@ local _start_run_ref = Game.start_run
 function Game:start_run(args)
 	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
 	local ruleset_key = lobby and lobby:get_metadata().ruleset or nil
-	MPAPI.LoadReworks(ruleset_key)
+	-- Only drive the API's rework engine when the active ruleset is one the API
+	-- actually owns (an MPAPI.Ruleset), or when there is no ruleset at all (vanilla
+	-- reset for base-game / non-lobby play). Consumer mods that keep their own
+	-- rework system (e.g. MultiplayerPvP, whose centers are baked into the SAME
+	-- mp_reworks/mp_vanilla_* namespace) select non-API ruleset keys; running
+	-- LoadReworks for those would reset their reworked centers back to vanilla and
+	-- clobber their content. In that case we leave the centers alone and let the
+	-- consumer mod's own LoadReworks own them.
+	if ruleset_key == nil or (MPAPI.Rulesets and MPAPI.Rulesets[ruleset_key]) then
+		MPAPI.LoadReworks(ruleset_key)
+	end
 	return _start_run_ref(self, args)
 end

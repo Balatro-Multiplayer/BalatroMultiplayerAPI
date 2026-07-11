@@ -29,6 +29,9 @@ MPAPI.matchmaking.queue = function(opts)
 			return
 		end
 		MPAPI.sendDebugMessage('[mmdbg] queue_matchmaking OK position=' .. tostring(data and data.position))
+		-- Start the shared queue-time display (idempotent; self-terminates when no
+		-- handle is still searching). Every consumer mod gets it for free.
+		if mm.queue_timer then mm.queue_timer.start() end
 		handle:_fire(MPAPI.MatchmakingEvent.QUEUED, data and data.position)
 	end)
 

@@ -7,11 +7,23 @@
 function MPAPI.should_use_the_order()
 	if MPAPI.is_layer_active('the_order') then return true end
 	-- MP compat: MP rulesets gate via MP.LOBBY.config.the_order rather than the MPAPI layer chain.
+	-- Mirrors MP's own (former) MP.should_use_the_order exactly: practice mode always uses
+	-- the order; otherwise a lobby with the_order enabled does.
 	local mp = rawget(_G, 'MP')
-	if mp and mp.LOBBY and mp.LOBBY.config and mp.LOBBY.config.the_order then
-		return mp.LOBBY.code ~= nil or (mp.is_practice_mode and mp.is_practice_mode()) or false
+	if mp then
+		if mp.is_practice_mode and mp.is_practice_mode() then return true end
+		if mp.LOBBY and mp.LOBBY.config and mp.LOBBY.config.the_order and mp.LOBBY.code ~= nil then
+			return true
+		end
 	end
 	return false
+end
+
+-- MP compat: some MP rulesets (major league) want the culled/stable voucher queue below
+-- without the full Order treatment, so the voucher hooks additionally gate on this.
+local function mp_major_league()
+	local mp = rawget(_G, 'MP')
+	return (mp and mp.is_major_league_ruleset and mp.is_major_league_ruleset()) or false
 end
 
 -----------------------------
@@ -308,7 +320,7 @@ end
 
 local _nextvouchers = SMODS.get_next_vouchers
 function SMODS.get_next_vouchers(vouchers)
-	if MPAPI.should_use_the_order() then
+	if MPAPI.should_use_the_order() or mp_major_league() then
 		vouchers = vouchers or { spawn = {} }
 		local _pool = get_current_pool('Voucher')
 		local culled = get_culled(_pool)
@@ -335,7 +347,7 @@ end
 
 local _nextvoucherkey = get_next_voucher_key
 function get_next_voucher_key(_from_tag)
-	if MPAPI.should_use_the_order() then
+	if MPAPI.should_use_the_order() or mp_major_league() then
 		local _pool = get_current_pool('Voucher')
 		local culled = get_culled(_pool)
 		local center = pseudorandom_element(culled, pseudoseed('Voucher0'))
