@@ -107,9 +107,10 @@ local create_UIBox_account_button = function()
 		account_button_nodes[#account_button_nodes + 1] = back_button_node
 	else
 		-- On the game main menu: list all registered mods.
-		-- If a lobby is active (_engaged_mod set), other mods are greyed out.
+		-- If the player is busy in a mod (in its lobby OR in its matchmaking queue),
+		-- every other mod is greyed out; only the busy mod stays clickable (to re-enter).
 		local mods = MPAPI.get_registered_mods()
-		local engaged = MPAPI.get_active_mod()
+		local engaged = MPAPI.get_busy_mod()
 		for _, mod in ipairs(mods) do
 			account_button_nodes[#account_button_nodes + 1] = build_mod_button(mod, inner_width, engaged)
 		end
@@ -130,9 +131,9 @@ local create_UIBox_account_button = function()
 	}
 end
 
--- engaged_mod_id: the id of the mod that currently has an active lobby, or nil.
--- When set, every other mod button is disabled so the player cannot switch mods
--- mid-lobby. Clicking the engaged mod re-enters the lobby view.
+-- engaged_mod_id: the id of the mod the player is currently busy in (active lobby OR
+-- matchmaking queue), or nil. When set, every other mod button is disabled so the player
+-- cannot switch mods while committed. Clicking the busy mod re-enters it.
 build_mod_button = function(mod, inner_width, engaged_mod_id)
 	local is_installed = mod.main_menu_ui ~= nil
 	local is_engaged = engaged_mod_id ~= nil and mod.id == engaged_mod_id

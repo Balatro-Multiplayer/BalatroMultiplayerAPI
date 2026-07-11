@@ -11,7 +11,7 @@ state.mod_order = state.mod_order or {}
 -- its button from opening the download URL. Flip it to false (or remove it) once the
 -- mod is published. Installed mods (the player has the folder) ignore this flag.
 state.official_mods = state.official_mods or {
-	{ id = 'MultiplayerPvP', name = 'PvP', colour = G.C.RED, download_url = 'https://github.com/V-rtualized/MultiplayerPvP', coming_soon = true },
+	{ id = 'MultiplayerPvP', name = 'PvP', colour = G.C.RED, download_url = 'https://github.com/V-rtualized/MultiplayerPvP' },
 	{ id = 'MultiplayerSPDRN', name = 'Speedrun', colour = G.C.GREEN, download_url = 'https://github.com/V-rtualized/MultiplayerSpeedrunning' },
 	{ id = 'MultiplayerCoop', name = 'Co-op', colour = G.C.BLUE, download_url = 'https://github.com/V-rtualized/MultiplayerCoop', coming_soon = true },
 }
@@ -79,6 +79,30 @@ end
 -- Convenience check for mods hooking game functions.
 MPAPI.is_active = function(mod_id)
 	return state.engaged_mod == mod_id
+end
+
+-- Returns the mod the player is currently committed to and must not be able to leave by
+-- simply switching menus: an active lobby (engaged_mod) or, failing that, an active
+-- matchmaking queue. nil when idle. Used to gate access to other mods' menus (a queued
+-- or in-lobby player can only re-enter their own mod; every other mod is disabled).
+--
+-- Only a still-SEARCHING handle counts here (no match_id yet). Once a handle matches, the
+-- lobby it joined is the busy signal (engaged_mod above); the matched handle lingers in
+-- mm.handles until the server's MATCH_RESOLVED, so counting it would keep the player
+-- "busy" even after they have left the matchmade lobby.
+MPAPI.get_busy_mod = function()
+	if state.engaged_mod then
+		return state.engaged_mod
+	end
+	local mm = MPAPI._internal.mm
+	if mm and mm.handles then
+		for _, h in ipairs(mm.handles) do
+			if not h._left and not h.match_id then
+				return h.mod_id
+			end
+		end
+	end
+	return nil
 end
 
 -- Returns the focused mod id (whose menu is currently shown).

@@ -2,32 +2,33 @@
 -- Ban-Pick engine
 -----------------------------
 --
--- A generic, host-authoritative, turn-based ban draft over a list of P_CENTER keys
--- (here: deck "Back" centers, but nothing below is deck-specific). The host owns the
--- canonical state: it generates the random candidate pool and the turn order, validates
--- every ban, and broadcasts the full state after each change. Guests only render the
--- broadcast state and request bans; they never mutate state locally.
+-- A generic, host-authoritative, turn-based deck draft. The host owns the canonical
+-- state: it builds the candidate pool + turn order, validates every action, and
+-- broadcasts the full state after each change. Guests only render the broadcast state
+-- and request actions; they never mutate state locally.
+--
+-- Two draft shapes are supported through one engine:
+--   * Legacy: `config = { pool_size, keep }` -> alternating single bans down to `keep`
+--     (this is what the Speedrun mod uses; unchanged behaviour aside from random first).
+--   * Scheduled: `config.schedule = { { actor=1|2, action='ban'|'pick', count=N }, ... }`
+--     -> arbitrary per-turn ban counts and a final 'pick' (the picked item wins).
+--
+-- Pool items may be plain center KEYS ('b_red') or tables `{ key='b_red', ... }` carrying
+-- metadata (e.g. a stake); `config.decorate_tile(card, item)` lets the consumer decorate
+-- each tile (e.g. stamp a stake sticker). The FIRST actor is always randomized.
 --
 -- The two networked actions live in the *consuming* mod (a lobby only routes ActionTypes
--- whose mod.id matches the lobby's mod -- see api/lobby.lua). The caller passes their keys
--- in via config.state_action / config.ban_action; the on_receive handlers there delegate
--- straight back to MPAPI.BanPick.on_state / MPAPI.BanPick.apply_ban.
---
--- Flow (every client runs BanPick.start from the same synced trigger):
---   host  : build pool + order -> store state -> open overlay -> broadcast state
---   guest : open overlay (renders once the host's state arrives) and wait
---   ...players alternate banning; each ban -> host applies -> host broadcasts new state...
---   done  : state.complete = true, state.survivors set -> overlay closes -> on_complete(survivors)
+-- whose mod.id matches -- see api/lobby.lua). The caller passes their keys via
+-- config.state_action / config.ban_action; the on_receive handlers delegate straight to
+-- MPAPI.BanPick.on_state / MPAPI.BanPick.apply_ban. The same ban_action message drives
+-- both bans and the final pick (the host routes by the current step's action).
 
 MPAPI.BanPick = MPAPI.BanPick or {}
 local BP = MPAPI.BanPick
 
--- Only one draft is active at a time (one lobby, one run start), so the session-scoped
--- handles live as module locals rather than on the lobby.
 local _config = nil
 local _on_complete = nil
 local _overlay = nil
--- Set when a consumer renders the draft inline (config.on_refresh); mutually exclusive with _overlay.
 local _render = nil
 local _fired = false
 
@@ -35,14 +36,20 @@ local _fired = false
 -- Helpers
 -----------------------------
 
--- Default candidate pool: a random sample of deck Back centers. The profile system
--- guarantees no locked decks are present in a lobby, so no filtering is needed.
+-- Pool items are either a plain key string or a { key = ..., <meta> } table.
+local function item_key(item)
+	if type(item) == "table" then
+		return item.key
+	end
+	return item
+end
+
+-- Default candidate pool: a random sample of deck Back center KEYS.
 local function default_build_pool(size)
 	local keys = {}
 	for _, center in ipairs(G.P_CENTER_POOLS.Back or {}) do
 		keys[#keys + 1] = center.key
 	end
-	-- Fisher-Yates shuffle, then take the first `size`.
 	for i = #keys, 2, -1 do
 		local j = math.random(i)
 		keys[i], keys[j] = keys[j], keys[i]
@@ -54,8 +61,19 @@ local function default_build_pool(size)
 	return pool
 end
 
--- Turn order: host first, then the other players by sorted id (deterministic; only the
--- host builds this, but a stable order keeps it predictable across re-reads).
+-- Legacy schedule: `pool_size - keep` alternating single bans, no pick.
+local function derive_schedule(pool_size, keep)
+	local bans = math.max(0, (pool_size or 0) - (keep or 1))
+	local sched = {}
+	for i = 1, bans do
+		sched[i] = { actor = ((i - 1) % 2) + 1, action = "ban", count = 1 }
+	end
+	return sched
+end
+
+-- Turn order: host first (order[1] == host, so guest ban routing via send(order[1],...)
+-- is stable), then others by sorted id. `state.first` (1|2) picks which order slot is the
+-- logical actor 1, so the *acting* first player is randomized independently of routing.
 local function build_order(lobby)
 	local order = { lobby.player_id }
 	local others = {}
@@ -71,21 +89,52 @@ local function build_order(lobby)
 	return order
 end
 
--- Survivors = pool minus banned, in pool order, as center KEYS (e.g. 'b_red'). The deck
--- is applied at run start via G.GAME.viewed_back = G.P_CENTERS[key] (the proven pattern;
--- the consumer resolves these keys).
-local function compute_survivors(state)
-	local keys = {}
-	for _, key in ipairs(state.pool) do
-		if not state.banned[key] then
-			keys[#keys + 1] = key
+local function resolve_actor(state, actor)
+	local slot = (actor == 1) and (state.first or 1) or (3 - (state.first or 1))
+	return state.order[slot]
+end
+
+local function current_step(state)
+	return state.schedule and state.schedule[state.sched_index]
+end
+
+local function current_actor_id(state)
+	local step = current_step(state)
+	return step and resolve_actor(state, step.actor)
+end
+
+local function item_for_key(state, key)
+	for _, item in ipairs(state.pool) do
+		if item_key(item) == key then
+			return item
 		end
 	end
-	return keys
+	return nil
+end
+
+-- Survivors = pool minus banned, in pool order, as ITEMS (keys or {key,meta} tables).
+local function compute_survivors(state)
+	local out = {}
+	for _, item in ipairs(state.pool) do
+		if not state.banned[item_key(item)] then
+			out[#out + 1] = item
+		end
+	end
+	return out
 end
 
 local function is_my_turn(lobby, state)
-	return state and not state.complete and state.order[state.turn_index] == lobby.player_id
+	return state and not state.complete and current_actor_id(state) == lobby.player_id
+end
+
+local function survivors_left(state)
+	local n = 0
+	for _, item in ipairs(state.pool) do
+		if not state.banned[item_key(item)] then
+			n = n + 1
+		end
+	end
+	return n
 end
 
 -----------------------------
@@ -95,18 +144,19 @@ end
 local PER_ROW = 9
 local ROW_SCALE = 1 / 1.75
 
-local function deck_action_buttons(card, key, banned, my_turn)
+local function deck_action_buttons(card, key, banned, my_turn, action)
 	local text, colour, button
+	local is_pick = action == "pick"
 	if banned then
 		colour = G.C.UI.BACKGROUND_INACTIVE
 		text = localize("k_banpick_banned")
 	elseif my_turn then
-		colour = G.C.MULT
-		text = localize("k_banpick_ban")
+		colour = is_pick and G.C.GREEN or G.C.MULT
+		text = is_pick and localize("k_banpick_pick") or localize("k_banpick_ban")
 		button = "mpapi_ban_pick_ban"
 	else
 		colour = G.C.UI.BACKGROUND_INACTIVE
-		text = localize("k_banpick_ban")
+		text = is_pick and localize("k_banpick_pick") or localize("k_banpick_ban")
 	end
 	return {
 		n = G.UIT.ROOT,
@@ -131,9 +181,11 @@ local function deck_action_buttons(card, key, banned, my_turn)
 	}
 end
 
--- One deck tile: a card with deck's center
--- BANNED marked as debuffed
-local function deck_tile(key, banned, my_turn, area)
+-- One deck tile: a card showing the deck's Back center. `item` may carry metadata; the
+-- consumer's decorate_tile(card, item) is called after emplace (e.g. to stamp a stake
+-- sticker via card.sticker). BANNED tiles are debuffed.
+local function deck_tile(item, banned, my_turn, area, decorate, action)
+	local key = item_key(item)
 	local center = G.P_CENTERS[key]
 	local card = Card(
 		area.T.x + area.T.w / 2,
@@ -145,6 +197,9 @@ local function deck_tile(key, banned, my_turn, area)
 		{ bypass_discovery_center = true }
 	)
 	area:emplace(card)
+	if decorate then
+		decorate(card, item)
+	end
 	if banned then
 		card.debuff = true
 	end
@@ -159,9 +214,9 @@ local function deck_tile(key, banned, my_turn, area)
 		end
 		self.highlighted = is_higlighted
 		if self.highlighted and self.area then
-            if self.children.use_button then self.children.use_button:remove() end
+			if self.children.use_button then self.children.use_button:remove() end
 			self.children.use_button = UIBox({
-				definition = deck_action_buttons(self, key, banned, my_turn),
+				definition = deck_action_buttons(self, key, banned, my_turn, action),
 				config = {
 					align = "bmi",
 					offset = { x = 0, y = 0.55 },
@@ -255,10 +310,9 @@ local function build_banpick_contents()
 	end
 
 	local my_turn = is_my_turn(lobby, state)
-	local survivors_left = #state.pool
-	for _ in pairs(state.banned) do
-		survivors_left = survivors_left - 1
-	end
+	local step = current_step(state)
+	local is_pick = step and step.action == "pick"
+	local left = survivors_left(state)
 
 	local rows = {}
 
@@ -267,49 +321,57 @@ local function build_banpick_contents()
 		{ n = G.UIT.T, config = { text = localize('k_banpick_title'), scale = 0.6, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 	} }
 
-	-- Status: whose turn + how many bans / decks remain.
-	local status_text = my_turn and localize('k_banpick_your_turn') or localize('k_banpick_their_turn')
+	-- Status: whose turn (ban vs pick) + how many actions/decks remain.
+	local status_text
+	if not my_turn then
+		status_text = localize('k_banpick_their_turn')
+	elseif is_pick then
+		status_text = localize('k_banpick_pick_turn')
+	else
+		status_text = localize('k_banpick_your_turn')
+	end
 	local status_colour = my_turn and G.C.GREEN or G.C.UI.TEXT_INACTIVE
 	rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
 		{ n = G.UIT.T, config = { text = status_text, scale = 0.42, colour = status_colour, shadow = true } },
 	} }
+	local detail = is_pick
+		and (localize('k_banpick_decks_left') .. ' ' .. tostring(left))
+		or (localize('k_banpick_bans_left') .. ' ' .. tostring(state.sched_remaining or 0) .. '   ' .. localize('k_banpick_decks_left') .. ' ' .. tostring(left))
 	rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
-		{ n = G.UIT.T, config = { text = localize('k_banpick_bans_left') .. ' ' .. tostring(state.bans_remaining) .. '   ' .. localize('k_banpick_decks_left') .. ' ' .. tostring(survivors_left) .. ' / ' .. tostring(state.keep), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
+		{ n = G.UIT.T, config = { text = detail, scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
 	} }
 
-    local areas = {}
-    local areas_container = {}
-	-- Deck grid, PER_ROW tiles per row.
+	local action = step and step.action or "ban"
+	local decorate = _config and _config.decorate_tile
+	local areas = {}
+	local areas_container = {}
 	local cur_area = nil
-	for i, key in ipairs(state.pool) do
+	for i, item in ipairs(state.pool) do
 		if (i - 1) % PER_ROW == 0 then
-            -- Create area for decks
-            cur_area = CardArea(0, 0, G.CARD_W * ROW_SCALE * PER_ROW, G.CARD_H * ROW_SCALE, {
-                type = "joker",
-                highlight_limit = 1,
-                card_limit = PER_ROW,
-            })
-            -- Hide cards/limit display
-            cur_area.ARGS.invisible_area_types = { joker = 1 }
-            areas[#areas + 1] = cur_area
-            -- Store all areas so when one card is selected, all others are deselected
-            cur_area.mp_ban_areas = areas
-            areas_container[#areas_container + 1] = {
-                n = G.UIT.R,
-                config = { align = "cm" },
-                nodes = {
-                    { n = G.UIT.O, config = { object = cur_area } },
-                },
-            }
+			cur_area = CardArea(0, 0, G.CARD_W * ROW_SCALE * PER_ROW, G.CARD_H * ROW_SCALE, {
+				type = "joker",
+				highlight_limit = 1,
+				card_limit = PER_ROW,
+			})
+			cur_area.ARGS.invisible_area_types = { joker = 1 }
+			areas[#areas + 1] = cur_area
+			cur_area.mp_ban_areas = areas
+			areas_container[#areas_container + 1] = {
+				n = G.UIT.R,
+				config = { align = "cm" },
+				nodes = {
+					{ n = G.UIT.O, config = { object = cur_area } },
+				},
+			}
 		end
-		deck_tile(key, state.banned[key], my_turn, cur_area)
+		deck_tile(item, state.banned[item_key(item)], my_turn, cur_area, decorate, action)
 	end
-    rows[#rows + 1] = { n = G.UIT.R, config = { minh = 0.25 } }
-    rows[#rows + 1] = {
-        n = G.UIT.R,
-        config = { align = "cm", padding = 0.25, r = 0.25, colour = { 0, 0, 0, 0.1 } },
-        nodes = areas_container,
-    }
+	rows[#rows + 1] = { n = G.UIT.R, config = { minh = 0.25 } }
+	rows[#rows + 1] = {
+		n = G.UIT.R,
+		config = { align = "cm", padding = 0.25, r = 0.25, colour = { 0, 0, 0, 0.1 } },
+		nodes = areas_container,
+	}
 
 	return rows
 end
@@ -322,10 +384,8 @@ local function build_banpick_uibox()
 	})
 end
 
--- The draft's UI rows for the current lobby, for a consumer rendering it inline.
 BP.build_contents = build_banpick_contents
 
--- True while a draft is in progress (started, not yet completed) for the current lobby.
 function BP.is_active()
 	if _fired or not _config then
 		return false
@@ -338,8 +398,6 @@ end
 -- Networking
 -----------------------------
 
--- Host: publish the full canonical state to everyone (the host's own copy arrives back via
--- the broadcast loopback, so the same on_state render path runs on every client).
 function BP.broadcast_state(lobby)
 	if not _config then
 		return
@@ -351,42 +409,48 @@ function BP.broadcast_state(lobby)
 	lobby:action(action_type):broadcast({ state = lobby._ban_pick })
 end
 
--- Host authority: apply `from_player_id`'s ban of `deck_key`. Returns true if it was a
--- legal ban that changed state (so the caller knows to broadcast).
-function BP.apply_ban(lobby, from_player_id, deck_key)
+-- Host authority: apply `from_player_id`'s action (ban or pick, per the current schedule
+-- step) on `deck_key`. Returns true if it was legal and changed state (caller broadcasts).
+-- Exported as apply_ban for backward compatibility with existing consumer ActionTypes.
+local function apply_action(lobby, from_player_id, deck_key)
 	local s = lobby._ban_pick
 	if not s or s.complete then
 		return false
 	end
-	-- Must be this player's turn.
-	if s.order[s.turn_index] ~= from_player_id then
+	if current_actor_id(s) ~= from_player_id then
 		return false
 	end
-	-- Deck must be in the pool and not already banned.
-	local in_pool = false
-	for _, k in ipairs(s.pool) do
-		if k == deck_key then
-			in_pool = true
-			break
-		end
-	end
-	if not in_pool or s.banned[deck_key] then
+	if not item_for_key(s, deck_key) or s.banned[deck_key] then
 		return false
 	end
 
-	s.banned[deck_key] = true
-	s.bans_remaining = s.bans_remaining - 1
-	if s.bans_remaining <= 0 then
+	local step = current_step(s)
+	if step and step.action == "pick" then
+		-- The picked item wins; everything else is discarded.
+		s.survivors = { item_for_key(s, deck_key) }
 		s.complete = true
-		s.survivors = compute_survivors(s)
-	else
-		-- Advance to the next player in the rotation.
-		s.turn_index = (s.turn_index % #s.order) + 1
+		return true
+	end
+
+	-- Ban.
+	s.banned[deck_key] = true
+	s.sched_remaining = (s.sched_remaining or 1) - 1
+	if s.sched_remaining <= 0 then
+		s.sched_index = s.sched_index + 1
+		local nxt = s.schedule[s.sched_index]
+		if not nxt then
+			s.complete = true
+			s.survivors = compute_survivors(s)
+		else
+			s.sched_remaining = nxt.count
+		end
 	end
 	return true
 end
 
--- Called by the Ban button (any client). Host applies directly; guest asks the host.
+BP.apply_ban = apply_action
+
+-- Called by the action button (any client). Host applies directly; guest asks the host.
 function BP.request_ban(deck_key)
 	local lobby = MPAPI.get_current_lobby()
 	if not lobby then
@@ -398,7 +462,7 @@ function BP.request_ban(deck_key)
 	end
 
 	if lobby.is_host then
-		if BP.apply_ban(lobby, lobby.player_id, deck_key) then
+		if apply_action(lobby, lobby.player_id, deck_key) then
 			BP.broadcast_state(lobby)
 			if _overlay then
 				_overlay:update()
@@ -415,8 +479,6 @@ function BP.request_ban(deck_key)
 	end
 end
 
--- Every client: adopt the host's broadcast state, refresh the overlay, and on completion
--- close it and fire on_complete(survivors) exactly once.
 function BP.on_state(lobby, state)
 	if not state then
 		return
@@ -450,8 +512,13 @@ end
 -- Entry point
 -----------------------------
 
--- Begin a draft. config = { pool_size, keep, state_action, ban_action, build_pool? }.
--- on_complete(survivors) receives the surviving deck names, in pool order.
+-- Begin a draft. config = {
+--   pool_size, keep,                -- legacy alternating-ban shape (if no schedule)
+--   schedule,                        -- { { actor=1|2, action='ban'|'pick', count=N }, ... }
+--   build_pool, decorate_tile,       -- item pool + per-tile decoration hooks
+--   state_action, ban_action,        -- consumer ActionType keys
+--   on_refresh,                      -- inline render callback (else self-managed overlay)
+-- }. on_complete(survivors) receives the surviving items (keys or {key,meta} tables).
 function BP.start(lobby, config, on_complete)
 	_config = config
 	_on_complete = on_complete
@@ -459,24 +526,24 @@ function BP.start(lobby, config, on_complete)
 
 	if lobby.is_host then
 		local pool = (config.build_pool and config.build_pool()) or default_build_pool(config.pool_size)
+		local schedule = config.schedule or derive_schedule(config.pool_size or #pool, config.keep or 1)
 		lobby._ban_pick = {
 			pool = pool,
 			banned = {},
 			order = build_order(lobby),
-			turn_index = 1,
-			bans_remaining = math.max(0, #pool - config.keep),
-			keep = config.keep,
+			first = math.random(2),
+			schedule = schedule,
+			sched_index = 1,
+			sched_remaining = schedule[1] and schedule[1].count or 0,
 			complete = false,
 		}
-		-- Degenerate config (nothing to ban): finish immediately.
-		if lobby._ban_pick.bans_remaining <= 0 then
+		-- Degenerate schedule (nothing to do): finish immediately.
+		if not schedule[1] then
 			lobby._ban_pick.complete = true
 			lobby._ban_pick.survivors = compute_survivors(lobby._ban_pick)
 		end
 	end
 
-	-- Render inline when the consumer supplies a refresh callback, else use the self-managed
-	-- overlay. no_esc so the mandatory turn-based draft cannot be closed mid-flight.
 	_render = config.on_refresh
 	_overlay = nil
 	if _render then
@@ -487,8 +554,6 @@ function BP.start(lobby, config, on_complete)
 	end
 
 	if lobby.is_host then
-		-- The loopback delivery of this broadcast drives on_state (UI refresh, and the
-		-- completion path if the draft is already done).
 		BP.broadcast_state(lobby)
 	end
 end

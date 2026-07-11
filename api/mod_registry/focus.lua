@@ -28,6 +28,15 @@ MPAPI._internal.activate_mod = function(id)
 		return
 	end
 
+	-- Refuse to switch to a DIFFERENT mod while committed to one (in its lobby or a
+	-- matchmaking queue). The mod-list buttons are already disabled for this case; this
+	-- guards the programmatic path too. Re-entering the busy mod itself is allowed.
+	local busy = MPAPI.get_busy_mod and MPAPI.get_busy_mod()
+	if busy and busy ~= id then
+		MPAPI.sendDebugMessage('activate_mod: blocked switch to ' .. tostring(id) .. ' while busy in ' .. tostring(busy))
+		return
+	end
+
 	if not mod.main_menu_ui then
 		-- Coming-soon mods are not yet downloadable: do nothing on activate.
 		if not mod.coming_soon and mod.download_url then
