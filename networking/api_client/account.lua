@@ -6,45 +6,27 @@ function api_client:get_discord_link_url(jwt_token, callback)
 		return
 	end
 
-	self.pending_callback = callback
-
-	self.mqtt.on_http_response = function(status, body)
-		self.mqtt.on_http_response = nil
-		self.mqtt.on_http_error = nil
-		local cb = self.pending_callback
-		self.pending_callback = nil
-		if not cb then
-			return
-		end
-
+	self:_enqueue(function(status, body)
 		if status ~= 200 then
-			cb(MPAPI.make_error(MPAPI.ErrorKind.SERVER, 'Server returned status ' .. tostring(status) .. ': ' .. body), nil)
+			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, 'Server returned status ' .. tostring(status) .. ': ' .. body), nil)
 			return
 		end
 
 		local ok, data = pcall(api_client.json_decode, body)
 		if not ok or not data then
-			cb(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'Failed to parse server response'), nil)
+			callback(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'Failed to parse server response'), nil)
 			return
 		end
 
 		if not data.url then
-			cb(MPAPI.make_error(MPAPI.ErrorKind.SERVER, data.error or 'Server response missing URL'), nil)
+			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, data.error or 'Server response missing URL'), nil)
 			return
 		end
 
-		cb(nil, data)
-	end
-
-	self.mqtt.on_http_error = function(msg)
-		self.mqtt.on_http_response = nil
-		self.mqtt.on_http_error = nil
-		local cb = self.pending_callback
-		self.pending_callback = nil
-		if cb then
-			cb(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'HTTP request failed: ' .. tostring(msg)), nil)
-		end
-	end
+		callback(nil, data)
+	end, function(msg)
+		callback(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'HTTP request failed: ' .. tostring(msg)), nil)
+	end)
 
 	self.mqtt:http_post_auth(self.base_url .. '/api/auth/link/discord', '{}', jwt_token)
 end
@@ -55,40 +37,7 @@ function api_client:unlink_discord(jwt_token, callback)
 		return
 	end
 
-	self.pending_callback = callback
-
-	self.mqtt.on_http_response = function(status, body)
-		self.mqtt.on_http_response = nil
-		self.mqtt.on_http_error = nil
-		local cb = self.pending_callback
-		self.pending_callback = nil
-		if not cb then
-			return
-		end
-
-		if status ~= 200 then
-			cb(MPAPI.make_error(MPAPI.ErrorKind.SERVER, 'Server returned status ' .. tostring(status) .. ': ' .. body), nil)
-			return
-		end
-
-		local ok, data = pcall(api_client.json_decode, body)
-		if not ok or not data then
-			cb(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'Failed to parse server response'), nil)
-			return
-		end
-
-		cb(nil, data)
-	end
-
-	self.mqtt.on_http_error = function(msg)
-		self.mqtt.on_http_response = nil
-		self.mqtt.on_http_error = nil
-		local cb = self.pending_callback
-		self.pending_callback = nil
-		if cb then
-			cb(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'HTTP request failed: ' .. tostring(msg)), nil)
-		end
-	end
+	self:_setup_json_callback(callback)
 
 	self.mqtt:http_post_auth(self.base_url .. '/api/auth/unlink/discord', '{}', jwt_token)
 end
