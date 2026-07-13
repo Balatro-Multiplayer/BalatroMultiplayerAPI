@@ -1,12 +1,13 @@
--- Overlay shown when the player tries to start any run (New Run, Continue,
--- Challenge, restart) while a matchmaking search is active. The gate itself
--- lives in api/matchmaking/run_guard.lua, which opens this in place of letting
--- G.FUNCS.start_run proceed.
+-- Overlay shown when the player tries to do something that conflicts with an
+-- active matchmaking search -- start a run (New Run, Continue, Challenge,
+-- restart) or create/join a lobby. The gate lives in
+-- api/matchmaking/queue_guard.lua (guard_queued), which opens this in place of
+-- letting the blocked action proceed.
 --
 -- Three ways out, all always available (never soft-locks, even if the search
 -- ends while this is open -- no dismiss branch reads search state):
---   Leave Queue & Play -- leaves every active handle, then replays the blocked
---                         run-start (re-checked by the gate on the way through).
+--   Leave Queue & Continue -- leaves every active handle, then replays the
+--                         blocked action (re-checked by the gate on the way through).
 --   Leave Queue        -- leaves every active handle, then dismisses back to
 --                         the menu.
 --   Stay Queued        -- the overlay's own back button (and Esc); dismisses.
@@ -99,18 +100,18 @@ G.FUNCS.mpapi_queue_guard_leave = function(e)
 	G.FUNCS.exit_overlay_menu()
 end
 
--- Leave the queue and immediately replay the run-start that was blocked.
--- The replay goes through the wrapped G.FUNCS.start_run, so the gate is
--- re-checked -- if anything is still searching it re-blocks rather than
--- starting a run while queued.
+-- Leave the queue and immediately replay whatever was blocked (a run-start, a
+-- lobby create, or a lobby join -- stashed as a closure by guard_queued). The
+-- replay re-enters the same guarded entry point, so the gate is re-checked --
+-- if anything is still searching it re-blocks rather than proceeding.
 G.FUNCS.mpapi_queue_guard_leave_play = function(e)
 	leave_all_handles()
 	G.FUNCS.exit_overlay_menu()
 	local mm = MPAPI._internal.mm
-	local pending = mm.pending_run
-	mm.pending_run = nil
-	if pending then
-		G.FUNCS.start_run(pending.e, pending.args)
+	local action = mm.pending_action
+	mm.pending_action = nil
+	if action then
+		action()
 	end
 end
 
