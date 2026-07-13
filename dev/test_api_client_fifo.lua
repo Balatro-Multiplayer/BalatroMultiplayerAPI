@@ -14,10 +14,12 @@
 -- Run: luajit dev/test_api_client_fifo.lua
 
 -- ── Stubs to load the real client + method files ────────────────────────────
+local warns = {}
 MPAPI = {
 	networking = {},
 	make_error = function(kind, message) return { kind = kind, message = message } end,
 	ErrorKind = { SERVER = 'SERVER', TRANSPORT = 'TRANSPORT', AUTH_FAILED = 'AUTH_FAILED', NOT_CONNECTED = 'NOT_CONNECTED' },
+	sendWarnMessage = function(msg) warns[#warns + 1] = msg end,
 }
 
 local LEAVE_BODY = 'LEAVE_RESPONSE'
@@ -122,6 +124,21 @@ if old.mqtt.on_http_response then old.mqtt.on_http_response(200, JOIN_BODY) end 
 check(old_leave == nil, 'control: leave callback NEVER fired (its handler was overwritten)')
 check(old_join ~= nil and old_join.err and old_join.err.kind == 'AUTH_FAILED',
 	'control: join callback got LEAVE body (no token) -> spurious error (reproduces the bug)')
+
+-- ── Tripwire: a response with an empty queue warns (desync canary) ──────────
+-- Should be impossible given the serial worker + no-in-place-swap invariants, so
+-- if it ever happens the router warns instead of silently misrouting.
+print()
+print('-- tripwire: response with no pending request warns --')
+local client3 = AC.new(make_fake_mqtt(), 'http://x')
+warns = {}
+client3:leave_matchmaking_queue('tok', {}, function() end)
+client3.mqtt.on_http_response(200, LEAVE_BODY) -- normal: pops the one entry
+check(#warns == 0, 'no warn while a request was pending')
+client3.mqtt.on_http_response(200, LEAVE_BODY) -- extra response, queue now empty
+check(#warns == 1, 'warned on the response that had nothing pending')
+client3.mqtt.on_http_error('late') -- error with empty queue also warns
+check(#warns == 2, 'warned on an error with nothing pending too')
 
 -- ── Summary ─────────────────────────────────────────────────────────────────
 print()

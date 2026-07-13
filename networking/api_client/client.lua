@@ -41,17 +41,37 @@ function api_client:_transport_ready()
 	return self.mqtt and self.mqtt.tx_channel
 end
 
--- Install the persistent response router on the current mqtt transport. Idempotent
--- and re-applied on every enqueue so a reconnect that swaps self.mqtt still routes.
--- Each inbound event pops the oldest pending handler (FIFO) and dispatches to it.
+-- Install the persistent response router on the current mqtt transport. Each
+-- inbound event pops the oldest pending handler (FIFO) and dispatches to it.
+--
+-- Positional FIFO matching is correct because of three invariants, all true today:
+--   * ordering -- the worker (mqtt_thread.lua) runs requests serially and blocks on
+--     each, so responses come back in send order; the front entry is the answer.
+--   * one-event-per-request -- every handle_http_* pushes exactly one response OR
+--     error (request_with_retry is bounded), so each request pops exactly one entry.
+--   * no in-place transport swap -- self.mqtt is set once in new(); MPAPI.reconnect
+--     rebuilds a fresh api_client with a new empty _queue rather than re-pointing an
+--     existing client's transport, so the queue never outlives its transport.
+-- If any of those is ever broken (an in-place reconnect, a concurrent/pipelined
+-- worker, a send that skips _enqueue), the queue desyncs and every later response
+-- misroutes. The empty-queue branch below is a tripwire: a response with nothing
+-- pending should be impossible, so warn loudly instead of failing silently.
 function api_client:_install_router()
 	self.mqtt.on_http_response = function(status, body)
 		local entry = table.remove(self._queue, 1)
-		if entry then entry.on_response(status, body) end
+		if entry then
+			entry.on_response(status, body)
+		else
+			MPAPI.sendWarnMessage('api_client: http_response with no pending request -- response-queue desync')
+		end
 	end
 	self.mqtt.on_http_error = function(msg)
 		local entry = table.remove(self._queue, 1)
-		if entry then entry.on_error(msg) end
+		if entry then
+			entry.on_error(msg)
+		else
+			MPAPI.sendWarnMessage('api_client: http_error with no pending request -- response-queue desync')
+		end
 	end
 end
 
