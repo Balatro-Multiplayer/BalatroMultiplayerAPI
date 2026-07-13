@@ -68,8 +68,8 @@ return {
 			b_chat_submit_age = 'Confirm',
 			-- Queue guard overlay (blocks starting a run while queued)
 			k_queue_guard_title = 'Matchmaking In Progress',
-			k_queue_guard_desc = "You can't start a run while searching for a match.",
-			b_queue_guard_leave_play = 'Leave Queue & Play',
+			k_queue_guard_desc = "You can't start a run or join a lobby while searching for a match.",
+			b_queue_guard_leave_play = 'Leave Queue & Continue',
 			b_queue_guard_leave = 'Leave Queue',
 			b_queue_guard_stay = 'Stay Queued',
 			-- In-game chat feedback
