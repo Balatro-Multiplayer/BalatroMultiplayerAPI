@@ -119,8 +119,10 @@ end
 -- post-match screen.)
 function MPAPI.chat.mute_player(player_id, name)
 	_muted[player_id] = true
-	if _current_lobby then
-		-- Best-effort aggregate signal; the local mute above stands regardless.
+	-- Best-effort aggregate signal; the local mute above stands regardless.
+	-- Bridge-guarded: the intake bridge (and its relay endpoint) ships in v2,
+	-- so on the forward-only v1 relay this is a clean local-only mute.
+	if _current_lobby and MPAPI._internal.mute_signal then
 		MPAPI._internal.mute_signal(_current_lobby.code, player_id, function() end)
 	end
 	MPAPI.chat.addMessage(localize('k_chat_muted') .. ' ' .. name, COLOUR_SYSTEM)
