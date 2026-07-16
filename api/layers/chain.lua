@@ -1,5 +1,5 @@
 -- Queries over the active layer chain: the deduped ordered list of layers in
--- effect, plus membership tests and hook dispatch built on top of it.
+-- effect, plus membership tests built on top of it.
 
 -- Returns the deduped ordered list of active layer names: the target ruleset's
 -- _layer_order, then its own key, then modifiers (only when the target is the
@@ -27,13 +27,6 @@ function MPAPI.active_layer_chain(target_key)
 		for _, name in ipairs(MPAPI.MODIFIERS) do add(name) end
 	end
 	return result
-end
-
-function MPAPI.RunLayerHooks(hook_name)
-	for _, name in ipairs(MPAPI.active_layer_chain()) do
-		local layer = MPAPI.Layers[name]
-		if layer and layer[hook_name] then layer[hook_name]() end
-	end
 end
 
 function MPAPI.is_layer_active(layer_name)
