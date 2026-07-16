@@ -2,7 +2,18 @@
 -- live run. Pure collection of the key/value sets is separated from the
 -- G.GAME mutation at the boundary.
 
--- Pure: gather every banned content key from the resolved ruleset and gamemode.
+-- Extension point for ban keys that don't come from a ruleset/gamemode's own
+-- banned_* fields -- e.g. a compatibility shim banning content on behalf of
+-- another mod. Each source is called with no arguments and may return an
+-- array of keys, a set-shaped { [key] = true } table, or nil/nothing.
+MPAPI.ban_sources = MPAPI.ban_sources or {}
+
+function MPAPI.register_ban_source(fn)
+	MPAPI.ban_sources[#MPAPI.ban_sources + 1] = fn
+end
+
+-- Pure: gather every banned content key from the resolved ruleset, gamemode,
+-- and any registered ban sources.
 local function collect_banned_keys(ruleset, gamemode)
 	local keys = {}
 	local function ban(key) keys[key] = true end
@@ -14,6 +25,16 @@ local function collect_banned_keys(ruleset, gamemode)
 		end
 	end
 	for _, v in ipairs(ruleset.banned_silent) do ban(v) end
+
+	for _, source in ipairs(MPAPI.ban_sources) do
+		local result = source()
+		if result then
+			for k, v in pairs(result) do
+				ban(type(k) == 'number' and v or k)
+			end
+		end
+	end
+
 	return keys
 end
 
