@@ -18,6 +18,7 @@ local function index_keys(keys, index_table, layer_name)
 end
 
 function MPAPI.Layer(name, definition)
+	assert(not MPAPI.Layers[name], 'MPAPI.Layer: duplicate layer name: ' .. tostring(name))
 	MPAPI.Layers[name] = definition
 	index_keys(definition.reworked_jokers, MPAPI._JOKER_LAYERS, name)
 	index_keys(definition.reworked_consumables, MPAPI._CONSUMABLE_LAYERS, name)
