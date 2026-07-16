@@ -1,7 +1,14 @@
 -- Synced GameObject core: the sync mixin (methods spread onto MPAPI.Blind/Joker/Consumable)
 -- and the per-mod "sync bus" — one ActionType per consumer mod that all synced objects share,
--- demuxed by object key. Authors only ever touch self:sync / on_sync / sync_request; everything
--- below (ActionType creation, ownership, per-lobby routing, self-echo) is hidden.
+-- demuxed by object key. Mirrors SMODS's calculate(self, card, context) pattern fully, not just
+-- its dispatch shape: objects never call side-effecting network APIs themselves. Outbound intent
+-- is declared via a `send` key in a return table (from the object's own calculate, wrapped in
+-- objects.lua, or from `receive`'s own return -- a reply is just another send); this file is the
+-- only place that actually broadcasts anything. `send(self, card, value)` is an optional per-
+-- object transform (defaults to identity) between "what calculate/receive declared" and "what
+-- goes on the wire". Request/response is not a transport primitve -- it's just two broadcasts,
+-- with any request/response distinction left entirely to the payload's own shape, handled by the
+-- same `receive` on both ends.
 
 MPAPI._internal = MPAPI._internal or {}
 MPAPI._internal.sync_bus = MPAPI._internal.sync_bus or {}
@@ -16,24 +23,44 @@ local function resolve(obj_key)
 	return (G.P_BLINDS and G.P_BLINDS[obj_key]) or (G.P_CENTERS and G.P_CENTERS[obj_key])
 end
 
+-- Broadcast a raw bus frame from an object (shared by perform_send and the phantom wiring).
+local function broadcast_raw(obj, kind, data)
+	local lobby = MPAPI.get_current_lobby()
+	local bus = MPAPI._internal.sync_bus[obj.mod and obj.mod.id]
+	if not (lobby and bus) then return end
+	lobby:action(bus):broadcast({ obj = obj.key, kind = kind, data = data })
+end
+MPAPI._internal.sync_broadcast = broadcast_raw
+
+-- The one place a `send` declaration actually goes out on the wire. `card` is the
+-- live card when triggered from a calculate return, nil when triggered from a
+-- receive reply (receive is center-scoped, same as before).
+function MPAPI._internal.perform_send(obj, card, value)
+	local payload = value
+	if type(obj.send) == 'function' then
+		payload = obj:send(card, value)
+	end
+	broadcast_raw(obj, 'sync', payload)
+end
+
 -- Runs on every client that receives a bus frame. Demuxes to the target object; self-echo
--- (a frame we broadcast ourselves, looped back) is suppressed for sync/phantom, while a
--- 'request' returns a value that the ActionType response path ships back to the requester.
+-- (a frame we broadcast ourselves, looped back) is suppressed for sync/phantom. `receive`
+-- can itself return { send = value } to reply -- e.g. a request/response exchange is just
+-- two of these round trips, distinguished by whatever shape the payload's author gives it.
 local function demux(_action_type, from, p)
 	if not p or not p.obj then return end
 	local obj = resolve(p.obj)
 	if not obj then return end
-	if p.kind == 'request' then
-		if obj.on_sync_request then
-			return { data = obj:on_sync_request(from, p.data) }
-		end
+	if p.kind == 'phantom' then
+		if MPAPI._internal.phantom_apply then MPAPI._internal.phantom_apply(obj, p.data) end
 		return
 	end
 	if from == self_id() then return end -- suppress our own broadcast loopback
-	if p.kind == 'sync' then
-		if obj.on_sync then obj:on_sync(from, p.data) end
-	elseif p.kind == 'phantom' then
-		if MPAPI._internal.phantom_apply then MPAPI._internal.phantom_apply(obj, p.data) end
+	if p.kind == 'sync' and obj.receive then
+		local ret = obj:receive({ from = from, data = p.data })
+		if type(ret) == 'table' and ret.send ~= nil then
+			MPAPI._internal.perform_send(obj, nil, ret.send)
+		end
 	end
 end
 
@@ -57,36 +84,26 @@ function MPAPI._internal.get_sync_bus()
 	return bus
 end
 
--- Broadcast a raw bus frame from an object (shared by :sync and the phantom wiring).
-local function broadcast_raw(obj, kind, data)
-	local lobby = MPAPI.get_current_lobby()
-	local bus = MPAPI._internal.sync_bus[obj.mod and obj.mod.id]
-	if not (lobby and bus) then return end
-	lobby:action(bus):broadcast({ obj = obj.key, kind = kind, data = data })
-end
-MPAPI._internal.sync_broadcast = broadcast_raw
-
 -- Methods spread onto every synced GameObject class. `self` is the center object.
 MPAPI._internal.synced_mixin = {
-	-- Broadcast `data` to all other players; each runs on_sync(self, from, data).
+	-- Broadcast `data` to all other players; each runs receive({from=..., data=...}).
+	-- Stays public: the primitive perform_send/broadcast_raw build on, for any trigger
+	-- that doesn't go through the object's own calculate.
 	sync = function(self, data)
 		broadcast_raw(self, 'sync', data)
 	end,
 
-	-- Ask one player for something: runs on_sync_request(self, from, data) on the target,
-	-- whose return value comes back to on_sync_response(self, from, response) here.
-	sync_request = function(self, target_id, data)
-		local lobby = MPAPI.get_current_lobby()
-		local bus = MPAPI._internal.sync_bus[self.mod and self.mod.id]
-		if not (lobby and bus and target_id) then return end
-		local obj = self
-		-- The response callback is invoked as (instance, response_params); the demux wraps
-		-- on_sync_request's return as { data = ... }.
-		lobby:action(bus)
-			:callback(function(_instance, resp)
-				if obj.on_sync_response then obj:on_sync_response(target_id, resp and resp.data) end
-			end)
-			:send(target_id, { obj = self.key, kind = 'request', data = data })
+	-- Wraps the consumer's real calculate (captured as _user_calculate by objects.lua,
+	-- since a plain instance field would otherwise shadow this class-level method).
+	-- If the return has a `send` key, performs it and strips it before returning the
+	-- rest untouched to Balatro's own scoring engine.
+	calculate = function(self, card, context)
+		local ret = self._user_calculate and self:_user_calculate(card, context)
+		if type(ret) == 'table' and ret.send ~= nil then
+			MPAPI._internal.perform_send(self, card, ret.send)
+			ret.send = nil
+		end
+		return ret
 	end,
 
 	-- Per-remote-player scratch store (framework-managed). N-player content keys off `from`.
@@ -115,7 +132,7 @@ MPAPI._internal.synced_mixin = {
 -- (still inside the consumer's load, SMODS.current_mod correct): ensure the bus exists and
 -- wire phantom copies if declared.
 function MPAPI._internal.on_synced_registered(obj)
-	if obj.on_sync or obj.phantom or obj.on_sync_request then
+	if obj.receive or obj._user_calculate or obj.phantom then
 		MPAPI._internal.get_sync_bus()
 	end
 	if obj.phantom and MPAPI._internal.wire_phantom then

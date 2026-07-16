@@ -3,6 +3,11 @@
 -- (so it lands in G.P_BLINDS/G.P_CENTERS and MPAPI.Blinds/Jokers/Consumables with the mixin
 -- methods) and then runs framework setup (bus + phantom) while SMODS.current_mod is still the
 -- consumer -- so the sync ActionType is owned by the consumer and exists before any lobby.
+--
+-- The consumer's own `calculate`, if given, is moved aside to `_user_calculate` before
+-- construction: SMODS.GameObject:__call sets it as an INSTANCE field, which would otherwise
+-- shadow the mixin's class-level `calculate` wrapper (Lua's __index chain checks the instance
+-- table before falling back to the class) -- so the wrapper would never actually run.
 
 MPAPI.Blinds = MPAPI.Blinds or {}
 MPAPI.Jokers = MPAPI.Jokers or {}
@@ -22,6 +27,8 @@ local RawConsumable = extend_with_mixin(SMODS.Consumable, MPAPI.Consumables)
 
 local function wrap(RawClass)
 	return function(def)
+		def._user_calculate = def.calculate
+		def.calculate = nil
 		local obj = RawClass(def)
 		MPAPI._internal.on_synced_registered(obj)
 		return obj

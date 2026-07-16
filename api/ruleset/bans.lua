@@ -36,7 +36,7 @@ function MPAPI.ApplyBans()
 		G.GAME.banned_keys[key] = true
 	end
 
-	MPAPI.RunLayerHooks('on_apply_bans')
+	MPAPI.calculate_context({ apply_bans = true })
 
 	apply_to_game_table('modifiers', ruleset.game_modifiers)
 	apply_to_game_table('starting_params', ruleset.starting_params)
