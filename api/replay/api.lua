@@ -21,3 +21,14 @@ MPAPI.replay.spectate_lobby = function(code, callback)
 	end
 	conn.api:spectate_lobby(conn.jwt_token, code, callback)
 end
+
+-- Phase 9: fetch a player's buffered game_log_event stream for a lobby since
+-- `since_t`. callback(err, data) where data is {events=[{t, opcode, args}, ...]}.
+MPAPI.replay.get_tail = function(lobby_code, player_id, since_t, callback)
+	local conn = MPAPI.get_connection()
+	if not conn then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
+		return
+	end
+	conn.api:get_tail(conn.jwt_token, lobby_code, player_id, since_t, callback)
+end
