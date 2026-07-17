@@ -106,6 +106,10 @@ return {
 			k_banpick_pick = 'Pick',
 			k_banpick_pick_turn = 'Your turn: pick your deck',
 			k_banpick_banned = 'BANNED',
+			k_banpick_selected = 'Selected:',
+			k_banpick_selected_tag = 'Selected',
+			k_banpick_confirm = 'Confirm Ban',
+			k_banpick_confirm_pick = 'Confirm Pick',
 		},
 	},
 	descriptions = {
