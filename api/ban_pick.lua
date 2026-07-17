@@ -211,12 +211,33 @@ local function selection_prune(list, state)
 	return out
 end
 
+-- Replace the whole selection with `needed` random eligible decks -- a dice press
+-- is a full reroll, not a top-up, so pressing it again re-rolls. `rng` is
+-- injectable for tests (defaults to math.random).
+local function selection_randomize(state, rng)
+	rng = rng or math.random
+	local eligible = {}
+	for _, item in ipairs(state.pool) do
+		local k = item_key(item)
+		if not state.banned[k] then
+			eligible[#eligible + 1] = k
+		end
+	end
+	local out = {}
+	local needed = selection_needed(state)
+	while #out < needed and #eligible > 0 do
+		out[#out + 1] = table.remove(eligible, rng(#eligible))
+	end
+	return out
+end
+
 -- Exposed for the standalone test harness (dev/test_banpick_selection.lua).
 BP._selection = {
 	needed = selection_needed,
 	contains = selection_contains,
 	toggle = selection_toggle,
 	prune = selection_prune,
+	randomize = selection_randomize,
 	list = function()
 		return _selected
 	end,
@@ -474,9 +495,11 @@ local function build_banpick_contents()
 	_areas = areas
 	sync_selection_ui(state)
 
-	-- Selected counter + Confirm, only on our turn. The counter text updates live
-	-- via ref_table; the button enables itself per frame through the check func.
+	-- Selected counter + Confirm + Random (reroll), only on our turn. The counter
+	-- text updates live via ref_table; both buttons enable themselves per frame
+	-- through their check funcs.
 	if my_turn then
+		rows[#rows + 1] = { n = G.UIT.R, config = { minh = 0.4 } }
 		rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
 			{ n = G.UIT.T, config = { text = localize('k_banpick_selected') .. ' ', scale = 0.35, colour = G.C.UI.TEXT_LIGHT } },
 			{ n = G.UIT.T, config = { ref_table = _sel_ui, ref_value = 'count_text', scale = 0.35, colour = G.C.UI.TEXT_LIGHT } },
@@ -484,7 +507,8 @@ local function build_banpick_contents()
 		-- `button` must be present at definition time: UIElement:set_values only arms
 		-- states.click.can for nodes that HAVE config.button when the UIBox is built.
 		-- The per-frame check then gates it by nulling config.button while not ready
-		-- (the vanilla can_play pattern).
+		-- (the vanilla can_play pattern). The Random button is deliberately NOT
+		-- one_press: pressing it again re-rolls.
 		rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.06 }, nodes = {
 			{
 				n = G.UIT.C,
@@ -496,6 +520,19 @@ local function build_banpick_contents()
 				},
 				nodes = {
 					{ n = G.UIT.T, config = { text = localize(is_pick and 'k_banpick_confirm_pick' or 'k_banpick_confirm'), scale = 0.42, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+				},
+			},
+			{ n = G.UIT.C, config = { minw = 0.25 } },
+			{
+				n = G.UIT.C,
+				config = {
+					align = 'cm', minw = 1.6, minh = 0.7, r = 0.1, padding = 0.08,
+					shadow = true, hover = true, colour = G.C.UI.BACKGROUND_INACTIVE,
+					button = 'mpapi_ban_pick_random',
+					func = 'mpapi_ban_pick_random_check',
+				},
+				nodes = {
+					{ n = G.UIT.T, config = { text = localize('k_banpick_random'), scale = 0.42, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 				},
 			},
 		} }
@@ -709,6 +746,34 @@ G.FUNCS.mpapi_ban_pick_confirm_check = function(e)
 		e.config.colour = G.C.UI.BACKGROUND_INACTIVE
 		e.config.button = nil
 	end
+end
+
+-- Random: replace the selection with a fresh random one (full reroll on every
+-- press). Committing still goes through Confirm, so a bad roll costs nothing.
+G.FUNCS.mpapi_ban_pick_random_check = function(e)
+	local lobby = MPAPI.get_current_lobby()
+	local s = lobby and lobby._ban_pick
+	if s and is_my_turn(lobby, s) and selection_needed(s) > 0 then
+		e.config.colour = G.C.BLUE
+		e.config.button = "mpapi_ban_pick_random"
+	else
+		e.config.colour = G.C.UI.BACKGROUND_INACTIVE
+		e.config.button = nil
+	end
+end
+
+G.FUNCS.mpapi_ban_pick_random = function(_e)
+	local lobby = MPAPI.get_current_lobby()
+	local s = lobby and lobby._ban_pick
+	if not s or not is_my_turn(lobby, s) then
+		return
+	end
+	local out = selection_randomize(s)
+	if #out == 0 then
+		return
+	end
+	_selected = out
+	sync_selection_ui(s)
 end
 
 -- Commit the selection: request every marked key. Sequential requests are safe --

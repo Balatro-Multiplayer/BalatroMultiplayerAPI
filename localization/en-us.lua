@@ -110,6 +110,7 @@ return {
 			k_banpick_selected_tag = 'Selected',
 			k_banpick_confirm = 'Confirm Ban',
 			k_banpick_confirm_pick = 'Confirm Pick',
+			k_banpick_random = 'Random',
 		},
 	},
 	descriptions = {
