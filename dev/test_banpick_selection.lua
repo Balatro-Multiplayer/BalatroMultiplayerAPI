@@ -19,7 +19,7 @@
 MPAPI = {}
 G = {
 	FUNCS = {},
-	C = { GREEN = 'green', MULT = 'mult', UI = { BACKGROUND_INACTIVE = 'inactive', TEXT_LIGHT = 'light' } },
+	C = { GREEN = 'green', MULT = 'mult', BLUE = 'blue', WHITE = 'white', BLACK = 'black', CLEAR = 'clear', UI = { BACKGROUND_INACTIVE = 'inactive', TEXT_LIGHT = 'light' } },
 }
 
 dofile('api/ban_pick.lua')
@@ -152,6 +152,37 @@ check(LOBBY._ban_pick.complete, 'pick completes the draft')
 -- completion callback fires via on_state (state loops back over the wire)
 BP.on_state(LOBBY, LOBBY._ban_pick)
 check(completed ~= nil and #completed == 1 and completed[1] == 'b_green', 'on_complete got the picked survivor')
+
+-- ── dice: randomize fills exactly the needed count from eligible decks ──────
+print()
+print('-- dice: randomize respects count, bans, and injected rng --')
+start_draft({ { actor = 1, action = 'ban', count = 2 }, { actor = 2, action = 'ban', count = 1 } })
+LOBBY._ban_pick.banned['b_red'] = true
+local first = function(_n) return 1 end -- rigged rng: always take the first eligible
+local r = SEL.randomize(LOBBY._ban_pick, first)
+check(#r == 2, 'randomize returns exactly the needed count')
+check(r[1] ~= 'b_red' and r[2] ~= 'b_red', 'randomize never picks banned decks')
+check(r[1] ~= r[2], 'randomize picks distinct decks')
+check(r[1] == 'b_blue' and r[2] == 'b_yellow', 'randomize honours the injected rng')
+
+-- ── dice button: rerolls the module selection; confirm commits it ───────────
+print()
+print('-- dice button: reroll then confirm commits the random selection --')
+start_draft({ { actor = 1, action = 'ban', count = 2 }, { actor = 2, action = 'ban', count = 1 } })
+G.FUNCS.mpapi_ban_pick_random()
+check(#SEL.list() == 2, 'dice press fills the selection to the needed count')
+local rolled = { SEL.list()[1], SEL.list()[2] }
+G.FUNCS.mpapi_ban_pick_random()
+check(#SEL.list() == 2, 'second dice press re-rolls (still a full selection)')
+local e3 = { config = {} }
+G.FUNCS.mpapi_ban_pick_random_check(e3)
+check(e3.config.button == 'mpapi_ban_pick_random' and e3.config.colour == 'blue', 'dice button live on our turn')
+rolled = { SEL.list()[1], SEL.list()[2] }
+G.FUNCS.mpapi_ban_pick_confirm()
+check(LOBBY._ban_pick.banned[rolled[1]] == true and LOBBY._ban_pick.banned[rolled[2]] == true,
+	'confirm commits the rolled selection')
+G.FUNCS.mpapi_ban_pick_random_check(e3)
+check(e3.config.button == nil, "dice button disabled once it's not our turn")
 
 -- ── Summary ─────────────────────────────────────────────────────────────────
 print()
