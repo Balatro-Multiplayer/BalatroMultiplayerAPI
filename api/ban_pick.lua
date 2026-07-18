@@ -483,6 +483,18 @@ local function build_banpick_contents()
 		end
 		deck_tile(item, state.banned[item_key(item)], cur_area, decorate)
 	end
+	-- Tiles are buttons, not hand cards: never draggable (click-holding one
+	-- would drag it around the panel and dismiss its hover popup mid-read;
+	-- with click-to-select, a slightly-held click must still be a click).
+	-- This MUST run after every emplace: CardArea:emplace -> set_ranks
+	-- re-enables drag on every card already in the area, so a per-tile
+	-- disable would only survive on the row's LAST tile.
+	for _, area in ipairs(areas) do
+		for _, card in ipairs(area.cards or {}) do
+			card.states.drag.can = false
+		end
+	end
+
 	rows[#rows + 1] = { n = G.UIT.R, config = { minh = 0.25 } }
 	rows[#rows + 1] = {
 		n = G.UIT.R,
