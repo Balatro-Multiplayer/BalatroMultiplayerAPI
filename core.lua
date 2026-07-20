@@ -147,12 +147,6 @@ G.E_MANAGER:add_event(Event({
 		MPAPI._internal.set_ready(true)
 		MPAPI.connect()
 		MPAPI._internal.run_ready_callbacks()
-		if next(SMODS.find_mod('Integration')) then
-			local chunk = SMODS.load_file('testing/init.lua', MPAPI.id)
-			if chunk then
-				pcall(chunk)
-			end
-		end
 		return true
 	end,
 }))
