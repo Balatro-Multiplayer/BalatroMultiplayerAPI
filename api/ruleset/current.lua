@@ -49,8 +49,12 @@ local function resolve_scalar_field(ruleset, field)
 	return nil
 end
 
-local function resolve_field(field)
-	local ruleset_key = MPAPI.get_active_ruleset()
+-- Resolves a single field for an explicit ruleset key -- not necessarily the
+-- active one. The entry point for consumers with their own active-ruleset
+-- resolution (e.g. PvP's lobby/practice-mode/ghost-replay logic, which
+-- MPAPI.get_active_ruleset()'s lobby-only check can't see) should call this
+-- directly instead of reimplementing the field-kind merge logic.
+function MPAPI.resolve_ruleset_field(ruleset_key, field)
 	local ruleset = ruleset_key and MPAPI.Rulesets[ruleset_key] or nil
 	local is_array, is_table = field_kind_sets()
 	if is_array[field] then return resolve_array_field(ruleset, field) end
@@ -59,7 +63,7 @@ local function resolve_field(field)
 end
 
 local _resolver = setmetatable({}, {
-	__index = function(_, field) return resolve_field(field) end,
+	__index = function(_, field) return MPAPI.resolve_ruleset_field(MPAPI.get_active_ruleset(), field) end,
 })
 
 function MPAPI.current_ruleset()
