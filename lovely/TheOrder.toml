@@ -204,3 +204,31 @@ if MPAPI.should_use_the_order() then
 end
 '''
 match_indent = true
+
+# STEAMODDED BUG - fix for certificate calling pseudorandom for no reason.
+# Ported from BalatroMultiplayerPvP/lovely/TheOrder.toml (formerly duplicated
+# there, unconditionally -- both PvP and API's TheOrder.toml patched this same
+# base-game line simultaneously since PvP hard-depends on API). Gated behind
+# should_use_the_order(), unlike the original unconditional port: skipping the
+# wasted pseudorandom() draw when a seal is guaranteed is itself an RNG-queue
+# stabilization, the same category of fix as every other patch in this file --
+# it should only change queue behavior for Order matches, not vanilla-RNG ones.
+[[patches]]
+[patches.pattern]
+target = '''=[SMODS _ "src/utils.lua"]'''
+pattern = '''
+local seal_poll = pseudorandom(pseudoseed(key or 'stdseal'..G.GAME.round_resets.ante))
+if seal_poll > 1 - (type_weight*mod / total_weight) or guaranteed then -- is a seal generated
+'''
+position = 'at'
+payload = '''
+local seal_poll
+if MPAPI.should_use_the_order() then
+	seal_poll = guaranteed and 1 or pseudorandom(pseudoseed(key or 'stdseal'..G.GAME.round_resets.ante))
+else
+	seal_poll = pseudorandom(pseudoseed(key or 'stdseal'..G.GAME.round_resets.ante))
+end
+if seal_poll > 1 - (type_weight*mod / total_weight) or (not MPAPI.should_use_the_order() and guaranteed) then -- is a seal generated
+'''
+match_indent = true
+times = 1
