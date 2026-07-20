@@ -432,8 +432,12 @@ local function apply_action(lobby, from_player_id, deck_key)
 		return true
 	end
 
-	-- Ban.
+	-- Ban. `ban_order` records the sequence bans happened in -- unused by the legacy
+	-- survivors-only consumers (GSS/WST), but lets a `keep=0` draft (nothing survives) use the
+	-- order itself as a result, e.g. SPDRN's All Deck mode drafting play order rather than
+	-- narrowing a pool (see BalatroMultiplayerSpeed/objects/gamemodes/all_deck.lua).
 	s.banned[deck_key] = true
+	s.ban_order[#s.ban_order + 1] = deck_key
 	s.sched_remaining = (s.sched_remaining or 1) - 1
 	if s.sched_remaining <= 0 then
 		s.sched_index = s.sched_index + 1
@@ -503,7 +507,7 @@ function BP.on_state(lobby, state)
 		end
 		_render = nil
 		if cb then
-			cb(state.survivors or {})
+			cb(state.survivors or {}, state.ban_order or {})
 		end
 	end
 end
@@ -518,7 +522,9 @@ end
 --   build_pool, decorate_tile,       -- item pool + per-tile decoration hooks
 --   state_action, ban_action,        -- consumer ActionType keys
 --   on_refresh,                      -- inline render callback (else self-managed overlay)
--- }. on_complete(survivors) receives the surviving items (keys or {key,meta} tables).
+-- }. on_complete(survivors, ban_order) receives the surviving items (keys or {key,meta}
+-- tables) plus the full ban sequence (also keys/tables) -- useful for a `keep=0` draft, where
+-- `survivors` is always empty and the ban order itself is the meaningful result.
 function BP.start(lobby, config, on_complete)
 	_config = config
 	_on_complete = on_complete
@@ -530,6 +536,7 @@ function BP.start(lobby, config, on_complete)
 		lobby._ban_pick = {
 			pool = pool,
 			banned = {},
+			ban_order = {},
 			order = build_order(lobby),
 			first = math.random(2),
 			schedule = schedule,
