@@ -11,8 +11,34 @@ local function layer_membership_include(owning_layers)
 	end
 end
 
+-- Mod-content isolation: a consuming mod (PvP, Speedrun, or any future MPAPI
+-- consumer) registers ONCE how to tell whether its own custom pool content should
+-- be active right now, instead of every individual joker/consumable/voucher/tag
+-- hand-writing the same closure. should_exclude_from_pool below then applies this
+-- automatically to any object tagged with that mod's id (SMODS already sets
+-- v.mod.id on every registered center -- no naming-convention guesswork needed).
+MPAPI._mod_isolation_gates = MPAPI._mod_isolation_gates or {}
+
+function MPAPI.register_mod_isolation(mod_id, is_active_fn)
+	MPAPI._mod_isolation_gates[mod_id] = is_active_fn
+end
+
+-- Public so an object needing bespoke mp_include logic beyond its mod's default
+-- (e.g. an extra layer exclusion) can still build on the shared per-mod gate
+-- instead of re-deriving "is my mod's content active" by hand.
+function MPAPI.mod_isolation_active(mod_id)
+	local gate = MPAPI._mod_isolation_gates[mod_id]
+	return gate ~= nil and gate() or false
+end
+
 function MPAPI.should_exclude_from_pool(v)
+	-- Explicit per-object override always wins first (escape hatch for bespoke logic).
 	if v.mp_include and type(v.mp_include) == 'function' then return not v:mp_include() end
+	-- Mod-level default: exclude unless the owning mod's own content is active right now.
+	local owner = v.mod and v.mod.id
+	local gate = owner and MPAPI._mod_isolation_gates[owner]
+	if gate then return not gate() end
+	-- Last-resort safety net for objects from an isolated mod with no .mod set.
 	if v.key and v.key:match('^%a+_mp_') then return true end
 	return false
 end
