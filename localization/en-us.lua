@@ -66,6 +66,12 @@ return {
 			k_chat_birth_privacy_1 = 'We do not store your date of birth anywhere.',
 			k_chat_birth_privacy_2 = 'It is collected solely to enable chat on your account, as required by child safety regulations in many countries.',
 			b_chat_submit_age = 'Confirm',
+			-- Queue guard overlay (blocks starting a run while queued)
+			k_queue_guard_title = 'Matchmaking In Progress',
+			k_queue_guard_desc = "You can't start a run or join a lobby while searching for a match.",
+			b_queue_guard_leave_play = 'Leave Queue & Continue',
+			b_queue_guard_leave = 'Leave Queue',
+			b_queue_guard_stay = 'Stay Queued',
 			-- In-game chat feedback
 			k_chat_age_blocked = '[MultiplayerAPI] Chat is not available for your account.',
 			k_chat_client_disabled = '[MultiplayerAPI] Chat is disabled. Re-enable it in the account overlay.',

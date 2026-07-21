@@ -40,6 +40,10 @@ MPAPI.matchmaking._make_handle = function(mod_id, game_mode)
 		end
 		self._left = true
 		MPAPI._internal.mm.remove_handle(self)
+		-- Notify subscribers no matter which code path initiated the leave (a
+		-- consumer mod's own cancel button, the queue-guard overlay, ...), and
+		-- before the server round-trip so UI state resets even if it fails.
+		self:_fire('left')
 
 		local conn = MPAPI.get_connection()
 		if not conn then
