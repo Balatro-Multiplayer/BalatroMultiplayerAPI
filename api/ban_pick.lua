@@ -32,6 +32,13 @@ local _overlay = nil
 local _render = nil
 local _fired = false
 
+-- Select-and-confirm UI state: deck keys raised this turn, committed by the
+-- Confirm button. Lives outside the overlay so it survives rebuilds on state
+-- broadcasts (pruned against each new state instead).
+local _selected = {}
+local _sel_ui = { count_text = '' }
+local _areas = {}
+
 -----------------------------
 -- Helpers
 -----------------------------
@@ -138,26 +145,117 @@ local function survivors_left(state)
 end
 
 -----------------------------
+-- Selection (select-then-confirm)
+-----------------------------
+
+-- How many selections the current step requires. A pick step is always exactly 1;
+-- a ban step wants the remaining count of the step (so a count=3 turn is one
+-- three-deck selection, not three separate commits).
+local function selection_needed(state)
+	if not state or state.complete then
+		return 0
+	end
+	local step = current_step(state)
+	if not step then
+		return 0
+	end
+	if step.action == "pick" then
+		return 1
+	end
+	return state.sched_remaining or step.count or 0
+end
+
+local function selection_contains(list, key)
+	for _, k in ipairs(list) do
+		if k == key then
+			return true
+		end
+	end
+	return false
+end
+
+-- Toggle `key` in the selection under `cap`. Returns what happened:
+-- 'removed' | 'added' | 'swapped' (cap-1 turns replace the selection, matching the
+-- old single-highlight behaviour) | 'blocked' (cap full, or nothing to select).
+local function selection_toggle(list, key, cap)
+	for i, k in ipairs(list) do
+		if k == key then
+			table.remove(list, i)
+			return "removed"
+		end
+	end
+	if cap <= 0 then
+		return "blocked"
+	end
+	if #list >= cap then
+		if cap == 1 then
+			list[1] = key
+			return "swapped"
+		end
+		return "blocked"
+	end
+	list[#list + 1] = key
+	return "added"
+end
+
+-- Drop selections invalidated by a state broadcast: keys that got banned or left
+-- the pool, and anything beyond the (possibly shrunken) cap.
+local function selection_prune(list, state)
+	local out = {}
+	local cap = selection_needed(state)
+	for _, k in ipairs(list) do
+		if #out < cap and item_for_key(state, k) and not state.banned[k] then
+			out[#out + 1] = k
+		end
+	end
+	return out
+end
+
+-- Replace the whole selection with `needed` random eligible decks -- a dice press
+-- is a full reroll, not a top-up, so pressing it again re-rolls. `rng` is
+-- injectable for tests (defaults to math.random).
+local function selection_randomize(state, rng)
+	rng = rng or math.random
+	local eligible = {}
+	for _, item in ipairs(state.pool) do
+		local k = item_key(item)
+		if not state.banned[k] then
+			eligible[#eligible + 1] = k
+		end
+	end
+	local out = {}
+	local needed = selection_needed(state)
+	while #out < needed and #eligible > 0 do
+		out[#out + 1] = table.remove(eligible, rng(#eligible))
+	end
+	return out
+end
+
+-- Exposed for the standalone test harness (dev/test_banpick_selection.lua).
+BP._selection = {
+	needed = selection_needed,
+	contains = selection_contains,
+	toggle = selection_toggle,
+	prune = selection_prune,
+	randomize = selection_randomize,
+	list = function()
+		return _selected
+	end,
+}
+
+-----------------------------
 -- UI
 -----------------------------
 
 local PER_ROW = 9
 local ROW_SCALE = 1 / 1.75
 
-local function deck_action_buttons(card, key, banned, my_turn, action)
-	local text, colour, button
+-- Passive marker attached to a selected card. Reads "Selected" (the consequence
+-- lives on the Confirm button: Confirm Ban / Confirm Pick); colour still hints the
+-- action (red = ban, green = pick). Purely visual -- committing happens through the
+-- Confirm button, never on the card.
+local function selected_tag_ui(card, action)
 	local is_pick = action == "pick"
-	if banned then
-		colour = G.C.UI.BACKGROUND_INACTIVE
-		text = localize("k_banpick_banned")
-	elseif my_turn then
-		colour = is_pick and G.C.GREEN or G.C.MULT
-		text = is_pick and localize("k_banpick_pick") or localize("k_banpick_ban")
-		button = "mpapi_ban_pick_ban"
-	else
-		colour = G.C.UI.BACKGROUND_INACTIVE
-		text = is_pick and localize("k_banpick_pick") or localize("k_banpick_ban")
-	end
 	return {
 		n = G.UIT.ROOT,
 		config = { padding = 0, colour = G.C.CLEAR },
@@ -165,26 +263,52 @@ local function deck_action_buttons(card, key, banned, my_turn, action)
 			{
 				n = G.UIT.R,
 				config = {
-					ref_table = { deck_key = key },
 					r = 0.08,
-					padding = 0.1,
+					padding = 0.08,
 					align = "bm",
 					minw = 0.5 * card.T.w - 0.15,
-					maxw = 0.9 * card.T.w - 0.15,
-					minh = 1 * card.T.h, hover = true, shadow = true, colour = colour, one_press = true, button = button,
+					shadow = true,
+					colour = is_pick and G.C.GREEN or G.C.MULT,
 				},
 				nodes = {
-					{ n = G.UIT.T, config = { text = text, colour = G.C.UI.TEXT_LIGHT, scale = 0.45, shadow = true } },
+					{ n = G.UIT.T, config = { text = localize("k_banpick_selected_tag"), colour = G.C.UI.TEXT_LIGHT, scale = 0.35, shadow = true } },
 				},
 			},
 		},
 	}
 end
 
+local function set_card_selected(card, on, action)
+	card.highlighted = on
+	if on and not card.children.mp_sel_tag then
+		card.children.mp_sel_tag = UIBox({
+			definition = selected_tag_ui(card, action),
+			config = { align = "bmi", offset = { x = 0, y = 0.4 }, parent = card },
+		})
+	elseif not on and card.children.mp_sel_tag then
+		card.children.mp_sel_tag:remove()
+		card.children.mp_sel_tag = nil
+	end
+end
+
+-- Re-derive every tile's raised/tagged state and the live counter from _selected.
+local function sync_selection_ui(state)
+	_sel_ui.count_text = tostring(#_selected) .. '/' .. tostring(selection_needed(state))
+	local step = current_step(state)
+	local action = step and step.action or "ban"
+	for _, area in ipairs(_areas) do
+		for _, card in ipairs(area.cards or {}) do
+			if card.mp_deck_key then
+				set_card_selected(card, selection_contains(_selected, card.mp_deck_key), action)
+			end
+		end
+	end
+end
+
 -- One deck tile: a card showing the deck's Back center. `item` may carry metadata; the
 -- consumer's decorate_tile(card, item) is called after emplace (e.g. to stamp a stake
 -- sticker via card.sticker). BANNED tiles are debuffed.
-local function deck_tile(item, banned, my_turn, area, decorate, action)
+local function deck_tile(item, banned, area, decorate)
 	local key = item_key(item)
 	local center = G.P_CENTERS[key]
 	local card = Card(
@@ -203,30 +327,25 @@ local function deck_tile(item, banned, my_turn, area, decorate, action)
 	if banned then
 		card.debuff = true
 	end
+	card.mp_deck_key = key
 
+	-- Clicking toggles the mark; nothing commits here (that's the Confirm button).
+	-- Off-turn and banned tiles don't react at all.
+	function card:click()
+		local lobby = MPAPI.get_current_lobby()
+		local state = lobby and lobby._ban_pick
+		if banned or not state or not is_my_turn(lobby, state) then
+			return
+		end
+		if selection_toggle(_selected, key, selection_needed(state)) ~= "blocked" then
+			sync_selection_ui(state)
+		end
+	end
+
+	-- Selection drives the raise through set_card_selected; neuter the vanilla
+	-- highlight (it would spawn run-context joker buttons on these tiles).
 	function card:highlight(is_higlighted)
-		if is_higlighted then
-			for _, _area in ipairs(self.area.mp_ban_areas) do
-				if _area ~= area then
-					_area:unhighlight_all()
-				end
-			end
-		end
 		self.highlighted = is_higlighted
-		if self.highlighted and self.area then
-			if self.children.use_button then self.children.use_button:remove() end
-			self.children.use_button = UIBox({
-				definition = deck_action_buttons(self, key, banned, my_turn, action),
-				config = {
-					align = "bmi",
-					offset = { x = 0, y = 0.55 },
-					parent = self,
-				},
-			})
-		elseif self.children.use_button then
-			self.children.use_button:remove()
-			self.children.use_button = nil
-		end
 	end
 
 	function card:hover()
@@ -341,7 +460,6 @@ local function build_banpick_contents()
 		{ n = G.UIT.T, config = { text = detail, scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
 	} }
 
-	local action = step and step.action or "ban"
 	local decorate = _config and _config.decorate_tile
 	local areas = {}
 	local areas_container = {}
@@ -350,12 +468,11 @@ local function build_banpick_contents()
 		if (i - 1) % PER_ROW == 0 then
 			cur_area = CardArea(0, 0, G.CARD_W * ROW_SCALE * PER_ROW, G.CARD_H * ROW_SCALE, {
 				type = "joker",
-				highlight_limit = 1,
+				highlight_limit = PER_ROW,
 				card_limit = PER_ROW,
 			})
 			cur_area.ARGS.invisible_area_types = { joker = 1 }
 			areas[#areas + 1] = cur_area
-			cur_area.mp_ban_areas = areas
 			areas_container[#areas_container + 1] = {
 				n = G.UIT.R,
 				config = { align = "cm" },
@@ -364,14 +481,74 @@ local function build_banpick_contents()
 				},
 			}
 		end
-		deck_tile(item, state.banned[item_key(item)], my_turn, cur_area, decorate, action)
+		deck_tile(item, state.banned[item_key(item)], cur_area, decorate)
 	end
+	-- Tiles are buttons, not hand cards: never draggable (click-holding one
+	-- would drag it around the panel and dismiss its hover popup mid-read;
+	-- with click-to-select, a slightly-held click must still be a click).
+	-- This MUST run after every emplace: CardArea:emplace -> set_ranks
+	-- re-enables drag on every card already in the area, so a per-tile
+	-- disable would only survive on the row's LAST tile.
+	for _, area in ipairs(areas) do
+		for _, card in ipairs(area.cards or {}) do
+			card.states.drag.can = false
+		end
+	end
+
 	rows[#rows + 1] = { n = G.UIT.R, config = { minh = 0.25 } }
 	rows[#rows + 1] = {
 		n = G.UIT.R,
 		config = { align = "cm", padding = 0.25, r = 0.25, colour = { 0, 0, 0, 0.1 } },
 		nodes = areas_container,
 	}
+
+	-- Re-apply any surviving selection to the freshly built tiles (the overlay is
+	-- rebuilt on every state broadcast; _selected was pruned in on_state).
+	_areas = areas
+	sync_selection_ui(state)
+
+	-- Selected counter + Confirm + Random (reroll), only on our turn. The counter
+	-- text updates live via ref_table; both buttons enable themselves per frame
+	-- through their check funcs.
+	if my_turn then
+		rows[#rows + 1] = { n = G.UIT.R, config = { minh = 0.4 } }
+		rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+			{ n = G.UIT.T, config = { text = localize('k_banpick_selected') .. ' ', scale = 0.35, colour = G.C.UI.TEXT_LIGHT } },
+			{ n = G.UIT.T, config = { ref_table = _sel_ui, ref_value = 'count_text', scale = 0.35, colour = G.C.UI.TEXT_LIGHT } },
+		} }
+		-- `button` must be present at definition time: UIElement:set_values only arms
+		-- states.click.can for nodes that HAVE config.button when the UIBox is built.
+		-- The per-frame check then gates it by nulling config.button while not ready
+		-- (the vanilla can_play pattern). The Random button is deliberately NOT
+		-- one_press: pressing it again re-rolls.
+		rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.06 }, nodes = {
+			{
+				n = G.UIT.C,
+				config = {
+					align = 'cm', minw = 3.2, minh = 0.7, r = 0.1, padding = 0.08,
+					shadow = true, hover = true, colour = G.C.UI.BACKGROUND_INACTIVE,
+					button = 'mpapi_ban_pick_confirm', one_press = true,
+					func = 'mpapi_ban_pick_confirm_check',
+				},
+				nodes = {
+					{ n = G.UIT.T, config = { text = localize(is_pick and 'k_banpick_confirm_pick' or 'k_banpick_confirm'), scale = 0.42, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+				},
+			},
+			{ n = G.UIT.C, config = { minw = 0.25 } },
+			{
+				n = G.UIT.C,
+				config = {
+					align = 'cm', minw = 1.6, minh = 0.7, r = 0.1, padding = 0.08,
+					shadow = true, hover = true, colour = G.C.UI.BACKGROUND_INACTIVE,
+					button = 'mpapi_ban_pick_random',
+					func = 'mpapi_ban_pick_random_check',
+				},
+				nodes = {
+					{ n = G.UIT.T, config = { text = localize('k_banpick_random'), scale = 0.42, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+				},
+			},
+		} }
+	end
 
 	return rows
 end
@@ -489,6 +666,9 @@ function BP.on_state(lobby, state)
 	end
 	lobby._ban_pick = state
 
+	-- Drop marks the broadcast invalidated (opponent banned them, cap shrank).
+	_selected = selection_prune(_selected, state)
+
 	if _overlay then
 		_overlay:update()
 	elseif _render then
@@ -529,6 +709,8 @@ function BP.start(lobby, config, on_complete)
 	_config = config
 	_on_complete = on_complete
 	_fired = false
+	_selected = {}
+	_areas = {}
 
 	if lobby.is_host then
 		local pool = (config.build_pool and config.build_pool()) or default_build_pool(config.pool_size)
@@ -566,12 +748,69 @@ function BP.start(lobby, config, on_complete)
 end
 
 -----------------------------
--- Button handler
+-- Button handlers
 -----------------------------
 
-G.FUNCS.mpapi_ban_pick_ban = function(e)
-	local key = e and e.config and e.config.ref_table and e.config.ref_table.deck_key
-	if key then
-		MPAPI.BanPick.request_ban(key)
+-- Per-frame enable/disable for the Confirm button: live only when it's our turn
+-- and the selection is exactly the size the current step requires.
+G.FUNCS.mpapi_ban_pick_confirm_check = function(e)
+	local lobby = MPAPI.get_current_lobby()
+	local s = lobby and lobby._ban_pick
+	local needed = selection_needed(s)
+	if s and is_my_turn(lobby, s) and needed > 0 and #_selected == needed then
+		local step = current_step(s)
+		e.config.colour = (step and step.action == "pick") and G.C.GREEN or G.C.MULT
+		e.config.button = "mpapi_ban_pick_confirm"
+	else
+		e.config.colour = G.C.UI.BACKGROUND_INACTIVE
+		e.config.button = nil
+	end
+end
+
+-- Random: replace the selection with a fresh random one (full reroll on every
+-- press). Committing still goes through Confirm, so a bad roll costs nothing.
+G.FUNCS.mpapi_ban_pick_random_check = function(e)
+	local lobby = MPAPI.get_current_lobby()
+	local s = lobby and lobby._ban_pick
+	if s and is_my_turn(lobby, s) and selection_needed(s) > 0 then
+		e.config.colour = G.C.BLUE
+		e.config.button = "mpapi_ban_pick_random"
+	else
+		e.config.colour = G.C.UI.BACKGROUND_INACTIVE
+		e.config.button = nil
+	end
+end
+
+G.FUNCS.mpapi_ban_pick_random = function(_e)
+	local lobby = MPAPI.get_current_lobby()
+	local s = lobby and lobby._ban_pick
+	if not s or not is_my_turn(lobby, s) then
+		return
+	end
+	local out = selection_randomize(s)
+	if #out == 0 then
+		return
+	end
+	_selected = out
+	sync_selection_ui(s)
+end
+
+-- Commit the selection: request every marked key. Sequential requests are safe --
+-- the turn stays ours until the step's count is exhausted, and the host validates
+-- each one independently (see apply_action).
+G.FUNCS.mpapi_ban_pick_confirm = function(_e)
+	local lobby = MPAPI.get_current_lobby()
+	local s = lobby and lobby._ban_pick
+	if not s or not is_my_turn(lobby, s) then
+		return
+	end
+	local needed = selection_needed(s)
+	if needed == 0 or #_selected ~= needed then
+		return
+	end
+	local keys = _selected
+	_selected = {}
+	for _, k in ipairs(keys) do
+		BP.request_ban(k)
 	end
 end
