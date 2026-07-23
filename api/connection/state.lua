@@ -24,6 +24,7 @@ MPAPI.connection_state = {
 	tos_is_update = false,
 	chat_enabled = false,
 	chat_blocked = false,
+	mute_list = {},
 }
 
 C.update_display_name = function()
@@ -59,6 +60,7 @@ C.reset_state_vars = function()
 	MPAPI.connection_state.privileges = nil
 	MPAPI.connection_state.chat_enabled = false
 	MPAPI.connection_state.chat_blocked = false
+	MPAPI.connection_state.mute_list = {}
 end
 
 C.set_status_text = function()

@@ -65,3 +65,29 @@ function api_client:set_preferred_joker(jwt_token, preferred_joker, callback)
 	local body = api_client.json_encode({ preferredJoker = preferred_joker })
 	self.mqtt:http_post_auth(self.base_url .. '/api/auth/preferences/joker', body, jwt_token)
 end
+
+-- Unlike set_preferred_joker/set_display_name_pref, /api/mutes/* doesn't return a
+-- refreshed JWT (nothing auth-relevant changed), so this uses the generic
+-- token-less JSON callback (_setup_json_callback), not _setup_http_callback
+-- (which requires data.token and would always fail here).
+function api_client:mute_player(jwt_token, target_id, callback)
+	if not self:_transport_ready() then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
+		return
+	end
+
+	self:_setup_json_callback(callback)
+
+	self.mqtt:http_post_auth(self.base_url .. '/api/mutes/' .. target_id, '{}', jwt_token)
+end
+
+function api_client:unmute_player(jwt_token, target_id, callback)
+	if not self:_transport_ready() then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
+		return
+	end
+
+	self:_setup_json_callback(callback)
+
+	self.mqtt:http_delete_auth(self.base_url .. '/api/mutes/' .. target_id, jwt_token)
+end

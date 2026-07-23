@@ -75,6 +75,9 @@ return {
 			-- In-game chat feedback
 			k_chat_age_blocked = '[MultiplayerAPI] Chat is not available for your account.',
 			k_chat_client_disabled = '[MultiplayerAPI] Chat is disabled. Re-enable it in the account overlay.',
+			-- Player mute overlay (lobby player list)
+			k_mute_player = 'Mute Player',
+			k_unmute_player = 'Unmute Player',
 			k_join_lobby_cap = 'JOIN LOBBY',
 			k_lobby_code_cap = 'LOBBY CODE',
 			k_copied_cap = 'COPIED!',

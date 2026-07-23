@@ -26,6 +26,10 @@ function connection.new(opts)
 		is_temp = false,
 		chat_enabled = false,
 		chat_blocked = false,
+		-- {[player_id]=true} for O(1) chat-filter lookups. Fetched once per auth
+		-- response (see _handle_auth_success below) and kept current locally by
+		-- mute_player/unmute_player for the rest of the session (see profile.lua).
+		mute_list = {},
 		auth_ticket_handle = nil,
 
 		-- Steam ID of the currently active Steam account (raw, used only for token_store keying)
@@ -79,6 +83,10 @@ function connection:_handle_auth_success(data)
 		end
 		self.chat_enabled = data.player.chatEnabled or false
 		self.chat_blocked = data.player.chatBlocked or false
+		self.mute_list = {}
+		for _, id in ipairs(data.player.mutedPlayerIds or {}) do
+			self.mute_list[id] = true
+		end
 	end
 
 	self.lobby_data = data.lobby or nil

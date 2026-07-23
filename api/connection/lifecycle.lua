@@ -217,6 +217,7 @@ connection_on_state_change = function(new_state, context)
 		MPAPI.connection_state.privileges = C.connection.privileges
 		MPAPI.connection_state.chat_enabled = C.connection.chat_enabled or false
 		MPAPI.connection_state.chat_blocked = C.connection.chat_blocked or false
+		MPAPI.connection_state.mute_list = C.connection.mute_list or {}
 	end
 	C.set_status_text()
 
