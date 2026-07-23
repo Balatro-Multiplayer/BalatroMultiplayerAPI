@@ -14,6 +14,12 @@ local _current_lobby = nil
 local _lobby_chat_active = false
 local _chat_topic = nil
 
+-- Moderation UX state (reset on cleanup):
+--   _muted = { [player_id] = true } — client-side mutes; muted senders are
+--     dropped from the local display. The mute ACTION is local; we also send an
+--     aggregate signal so moderation can auto-review a widely-muted player.
+local _muted = {}
+
 -----------------------------
 -- MESSAGE DISPLAY
 -----------------------------
@@ -31,11 +37,7 @@ end
 -----------------------------
 
 local function make_not_enabled_cb()
-	return function(text)
-		if text:sub(1, 1) == '/' then
-			MPAPI.chat.addMessage(localize('k_chat_unknown_command') .. ': ' .. text, COLOUR_SYSTEM)
-			return
-		end
+	return function(_)
 		if MPAPI.connection_state.chat_enabled then
 			MPAPI.chat.addMessage(localize('k_chat_lobby_only'), COLOUR_SYSTEM)
 		else
@@ -50,9 +52,25 @@ local function make_publish_fn(lobby)
 			MPAPI.chat.addMessage(localize('k_chat_client_disabled'), COLOUR_SYSTEM)
 			return
 		end
-		MPAPI._internal.send_chat_message(lobby.code, text, function(err, _)
+		-- The server rejects whitespace-only messages; don't echo them either.
+		if text:match('^%s*$') then
+			return
+		end
+		-- Optimistic local echo: show the sender their own message instantly
+		-- instead of waiting ~1s for the moderated MQTT echo. Recipients are
+		-- unaffected — they still only ever receive the moderated message.
+		-- subscribe_chat drops our own MQTT echo so this doesn't double-render.
+		local own_name = MPAPI.chat._own_name or localize('k_you')
+		MPAPI.chat.addMessage(own_name .. ': ' .. text, COLOUR_OWN)
+		MPAPI._internal.send_chat_message(lobby.code, text, function(err, data)
 			if err then
-				MPAPI.chat.addMessage('[!] ' .. tostring(err), COLOUR_SYSTEM)
+				-- The message above never reached anyone; say so with the
+				-- server's reason (moderated / rate-limited / unavailable).
+				MPAPI.chat.addMessage(localize('k_chat_not_sent') .. ' ' .. tostring(err), COLOUR_SYSTEM)
+			elseif data and type(data.publishText) == 'string' and data.publishText ~= text then
+				-- Moderation rewrote the message; the echo above showed the raw
+				-- form, so tell the sender what other players actually got.
+				MPAPI.chat.addMessage(localize('k_chat_sent_as') .. ' ' .. data.publishText, COLOUR_SYSTEM)
 			end
 		end)
 	end
@@ -68,9 +86,19 @@ local function subscribe_chat(lobby)
 			return
 		end
 
+		-- Own messages already rendered optimistically at send time
+		-- (make_publish_fn); drop the MQTT echo so they don't double-render.
+		if sender_id == lobby.player_id then
+			return
+		end
+
+		-- Locally muted senders never render.
+		if _muted[sender_id] then
+			return
+		end
+
 		local name = data.displayName or sender_id
-		local colour = (sender_id == lobby.player_id) and COLOUR_OWN or COLOUR_INCOMING
-		MPAPI.chat.addMessage(name .. ': ' .. data.message, colour)
+		MPAPI.chat.addMessage(name .. ': ' .. data.message, COLOUR_INCOMING)
 	end)
 end
 
@@ -79,6 +107,25 @@ local function unsubscribe_chat()
 		_current_lobby._mqtt:unsubscribe(_chat_topic)
 	end
 	_chat_topic = nil
+end
+
+-----------------------------
+-- MODERATION ACTIONS
+-----------------------------
+
+-- Mute player_id for this session: local drop + best-effort aggregate signal.
+-- Used by the report overlay's MUTE button. (Slash commands were removed —
+-- all moderation actions go through UI surfaces: player cards, pause menu,
+-- post-match screen.)
+function MPAPI.chat.mute_player(player_id, name)
+	_muted[player_id] = true
+	-- Best-effort aggregate signal; the local mute above stands regardless.
+	-- Bridge-guarded: the intake bridge (and its relay endpoint) ships in v2,
+	-- so on the forward-only v1 relay this is a clean local-only mute.
+	if _current_lobby and MPAPI._internal.mute_signal then
+		MPAPI._internal.mute_signal(_current_lobby.code, player_id, function() end)
+	end
+	MPAPI.chat.addMessage(localize('k_chat_muted') .. ' ' .. name, COLOUR_SYSTEM)
 end
 
 -- Wire up send callback + subscribe for the current lobby.
@@ -96,13 +143,7 @@ local function activate_lobby_chat(announce)
 		dp_compat.send_fn = publish
 	else
 		MPAPI.chat._send_fn = publish
-		console.setSendCallback(function(text)
-			if text:sub(1, 1) == '/' then
-				MPAPI.chat.addMessage(localize('k_chat_unknown_command') .. ': ' .. text, COLOUR_SYSTEM)
-				return
-			end
-			publish(text)
-		end)
+		console.setSendCallback(publish)
 	end
 
 	subscribe_chat(lobby)
@@ -182,6 +223,7 @@ function MPAPI.chat.cleanup()
 	_chat_topic = nil
 	_current_lobby = nil
 	_lobby_chat_active = false
+	_muted = {}
 	if using_dp then
 		dp_compat.send_fn = nil
 	else
