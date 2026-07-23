@@ -112,6 +112,17 @@ MPAPI._internal.unmute_player = function(target_id, callback)
 	end)
 end
 
+-- No optimistic local-state mutation needed here (unlike mute) -- a report has
+-- no persistent client-visible cache to keep in sync.
+MPAPI._internal.report_player = function(code, target_id, report_type, message, callback)
+	local conn = require_connected(callback)
+	if not conn then
+		return
+	end
+
+	conn.api:report_player(conn.jwt_token, code, target_id, report_type, message, callback)
+end
+
 MPAPI._internal.unlink_discord = function(callback)
 	local conn = require_connected(callback)
 	if not conn then

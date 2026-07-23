@@ -91,3 +91,22 @@ function api_client:unmute_player(jwt_token, target_id, callback)
 
 	self.mqtt:http_delete_auth(self.base_url .. '/api/mutes/' .. target_id, jwt_token)
 end
+
+-- Reports are filed against a lobby (the existing /api/lobbies/:code/report
+-- endpoint), not a standalone /api/reports/* route -- reportType is one of the
+-- fixed taxonomy keys the report overlay's buttons pick from.
+function api_client:report_player(jwt_token, code, reported_id, report_type, message, callback)
+	if not self:_transport_ready() then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
+		return
+	end
+
+	self:_setup_json_callback(callback)
+
+	local body = api_client.json_encode({
+		reportedPlayerId = reported_id,
+		type = report_type,
+		message = message,
+	})
+	self.mqtt:http_post_auth(self.base_url .. '/api/lobbies/' .. code .. '/report', body, jwt_token)
+end
