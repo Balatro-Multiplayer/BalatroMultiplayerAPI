@@ -145,20 +145,31 @@ function MPAPI.LoadReworks(ruleset_key, key)
 	end
 end
 
+-- §9.6/§9.7: MPAPI owns applying both bans and reworks itself (rather than
+-- relying on a consumer mod like PvP to inject a lovely patch, or SPDRN never
+-- calling either at all) -- every mod gets both for free just by loading
+-- MPAPI. Both run AFTER the real vanilla start_run body, once the base game
+-- has actually finished creating cards/centers, matching the doc's "the right
+-- point during startup" for each -- previously this ran BEFORE, at the very
+-- front of the whole start_run call stack, before G.GAME was even reset.
 local _start_run_ref = Game.start_run
 function Game:start_run(args)
+	local ret = _start_run_ref(self, args)
+
 	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
 	local ruleset_key = lobby and lobby:get_metadata().ruleset or nil
-	-- Only drive the API's rework engine when the active ruleset is one the API
-	-- actually owns (an MPAPI.Ruleset), or when there is no ruleset at all (vanilla
-	-- reset for base-game / non-lobby play). Consumer mods that keep their own
-	-- rework system (e.g. MultiplayerPvP, whose centers are baked into the SAME
-	-- mp_reworks/mp_vanilla_* namespace) select non-API ruleset keys; running
-	-- LoadReworks for those would reset their reworked centers back to vanilla and
-	-- clobber their content. In that case we leave the centers alone and let the
-	-- consumer mod's own LoadReworks own them.
+	-- Only drive the API's rework/ban engines when the active ruleset is one the
+	-- API actually owns (an MPAPI.Ruleset), or when there is no ruleset at all
+	-- (vanilla reset for base-game / non-lobby play). Consumer mods that keep
+	-- their own rework system (e.g. MultiplayerPvP, whose centers are baked into
+	-- the SAME mp_reworks/mp_vanilla_* namespace) select non-API ruleset keys;
+	-- running LoadReworks for those would reset their reworked centers back to
+	-- vanilla and clobber their content. In that case we leave the centers alone
+	-- and let the consumer mod's own LoadReworks own them.
 	if ruleset_key == nil or (MPAPI.Rulesets and MPAPI.Rulesets[ruleset_key]) then
 		MPAPI.LoadReworks(ruleset_key)
+		MPAPI.ApplyBans()
 	end
-	return _start_run_ref(self, args)
+
+	return ret
 end
