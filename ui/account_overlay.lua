@@ -260,7 +260,7 @@ chat_section = function()
 				}).node,
 			},
 		}
-	else
+	elseif chat_blocked then
 		nodes[#nodes + 1] = {
 			n = G.UIT.R,
 			config = { align = 'cm', padding = 0.04 },
@@ -269,6 +269,20 @@ chat_section = function()
 					text = localize('k_chat_status_blocked'),
 					scale = 0.35, colour = G.C.RED,
 				} },
+			},
+		}
+	else
+		-- Not blocked, just never enabled (e.g. a legacy account predating the age-gate rollout)
+		nodes[#nodes + 1] = {
+			n = G.UIT.R,
+			config = { align = 'cm', padding = 0.04 },
+			nodes = {
+				UIBox_button({
+					label = { localize('k_chat_enable_title') },
+					button = 'mpapi_open_chat_enable',
+					minh = 0.7, scale = 0.4, colour = G.C.GREEN,
+					focus_args = { nav = 'wide' },
+				}),
 			},
 		}
 	end
