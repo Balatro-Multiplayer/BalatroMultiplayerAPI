@@ -63,6 +63,12 @@ local function subscribe_chat(lobby)
 	lobby._mqtt:subscribe(_chat_topic, 1, function(topic, payload)
 		local sender_id = topic:match('/chat/([^/]+)$')
 
+		-- Checked before anything else, per the design doc: a muted sender's
+		-- message is silently dropped, not even parsed.
+		if MPAPI.connection_state.mute_list[sender_id] then
+			return
+		end
+
 		local ok, data = pcall(MPAPI.json_decode, payload)
 		if not ok or type(data) ~= 'table' or type(data.message) ~= 'string' then
 			return

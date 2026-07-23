@@ -343,6 +343,12 @@ end
 
 lobby_card_click_override = function(self)
 	if self.params.mpapi_lobby_card then
+		if self.facing == 'front' and _current_lobby_ref then
+			local player_data = get_player_for_card(self)
+			if player_data and player_data.id ~= _current_lobby_ref.player_id then
+				MPAPI.open_player_mute_overlay(player_data.id, player_data.displayName or 'Unknown')
+			end
+		end
 		return true
 	end
 end
