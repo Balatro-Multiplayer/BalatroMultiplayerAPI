@@ -4,7 +4,6 @@ local joker_preview
 local account_info_row
 local account_info_rows
 local display_name_option_cycle
-local auto_login_toggle
 local discord_linking_buttons
 local settings_row
 local chat_section
@@ -184,22 +183,6 @@ display_name_option_cycle = function(discord_linked)
 	}
 end
 
-auto_login_toggle = function()
-	return {
-		n = G.UIT.C,
-		config = { align = 'cm', padding = 0.1 },
-		nodes = {
-			MPAPI.disableable_toggle({
-				label = localize('k_auto_login'),
-				ref_table = MPAPI.config,
-				ref_value = 'auto_login',
-				callback = G.FUNCS.mpapi_change_auto_login,
-				enabled = true,
-			}).node,
-		},
-	}
-end
-
 discord_linking_buttons = function(discord_linked)
 	local button = UIBox_button({ label = { localize('k_link_discord') }, button = 'mpapi_link_discord', minh = 0.7, scale = 0.4, colour = G.C.BLUE, focus_args = { nav = 'wide' } })
 
@@ -222,7 +205,6 @@ settings_row = function(discord_linked)
 		config = { align = 'cm', padding = 0.1 },
 		nodes = {
 			display_name_option_cycle(discord_linked),
-			auto_login_toggle(),
 			discord_linking_buttons(discord_linked),
 		},
 	}
@@ -313,10 +295,6 @@ G.FUNCS.mpapi_change_use_discord_name = function(args)
 		end
 		MPAPI.sendDebugMessage('Display name preference updated')
 	end)
-end
-
-G.FUNCS.mpapi_change_auto_login = function(new_value)
-	MPAPI._internal.config_set('auto_login', new_value)
 end
 
 G.FUNCS.mpapi_unlink_discord = function(e)

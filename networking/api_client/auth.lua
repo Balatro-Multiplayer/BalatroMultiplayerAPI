@@ -39,18 +39,6 @@ function api_client:authenticate_impersonate(target, callback)
 	self.mqtt:http_post(self.base_url .. '/api/auth/dev/impersonate', body)
 end
 
-function api_client:authenticate_refresh(refresh_token, steam_name, callback)
-	if not self:_transport_ready() then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
-		return
-	end
-
-	self:_setup_http_callback(callback)
-
-	local body = api_client.json_encode({ refreshToken = refresh_token, steamName = steam_name })
-	self.mqtt:http_post(self.base_url .. '/api/auth/refresh', body)
-end
-
 function api_client:accept_tos_update(pending_token, chat_eligible, callback)
 	if not self:_transport_ready() then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)

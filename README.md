@@ -230,7 +230,6 @@ MultiplayerAPI is configured via SMODS mod config (`config.lua`), editable in-ga
 ```lua
 return {
     ["chat_enabled"] = false,           -- enable/disable built-in lobby chat
-    ["auto_login"] = true,              -- auto sign-in on launch
 
     -- Self-hosted / local server (development). When use_custom_server is true, lobbies connect
     -- to custom_server_url instead of the official server. Use 127.0.0.1 (not "localhost") on

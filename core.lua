@@ -107,7 +107,6 @@ else
 	MPAPI.sendWarnMessage('Steam module failed to load')
 end
 
-MPAPI.load_mpapi_file('networking/token_store.lua')
 MPAPI.load_mpapi_file('networking/api_client.lua')
 MPAPI.load_mpapi_file('networking/connection.lua')
 

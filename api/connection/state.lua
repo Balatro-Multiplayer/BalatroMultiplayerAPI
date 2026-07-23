@@ -29,11 +29,7 @@ MPAPI.connection_state = {
 
 C.update_display_name = function()
 	if MPAPI.connection_state.state ~= MPAPI.ConnectionState.CONNECTED then
-		if MPAPI.connection_state.state == MPAPI.ConnectionState.LOGIN_AVAILABLE then
-			MPAPI.connection_state.display_name = localize('b_log_in')
-		else
-			MPAPI.connection_state.display_name = localize('b_retry_connection')
-		end
+		MPAPI.connection_state.display_name = localize('b_retry_connection')
 	elseif C.connection and C.connection.display_name then
 		MPAPI.connection_state.display_name = MPAPI.truncate(C.connection.display_name, 20)
 	elseif MPAPI.connection_state.steam_name ~= '' then

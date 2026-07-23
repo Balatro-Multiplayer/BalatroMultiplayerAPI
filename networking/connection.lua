@@ -10,7 +10,6 @@ function connection.new(opts)
 		mqtt = opts.mqtt_client,
 		api = opts.api_client,
 		steam = opts.steam,
-		token_store = opts.token_store,
 		config = opts.config or {},
 		state = STATES.DISCONNECTED,
 
@@ -31,9 +30,6 @@ function connection.new(opts)
 		-- mute_player/unmute_player for the rest of the session (see profile.lua).
 		mute_list = {},
 		auth_ticket_handle = nil,
-
-		-- Steam ID of the currently active Steam account (raw, used only for token_store keying)
-		_steam_id = nil,
 
 		lobby_data = nil,
 		on_state_change = nil,
@@ -96,52 +92,14 @@ function connection:_handle_auth_success(data)
 		return
 	end
 
-	-- Persist the new refresh token against this Steam account.
-	if data.refreshToken and self.token_store and self._steam_id then
-		self.token_store.save_refresh_token(self._steam_id, data.refreshToken)
-	end
-
 	self:_mqtt_connect_with_credentials()
 end
 
--- Inner auth: try the saved refresh token, fall back to a fresh Steam ticket.
+-- §4.2/§4.3: no persisted credentials -- every launch does a fresh, silent
+-- Steam ticket handshake instead of preferring a cached refresh token.
 function connection:_do_auth()
 	set_state(self, STATES.AUTHENTICATING)
-
-	local account = self.token_store and self._steam_id and self.token_store.get_account(self._steam_id)
-
-	if account and account.refresh_token then
-		self:_try_refresh_auth(account.refresh_token)
-	else
-		self:_try_steam_auth()
-	end
-end
-
-function connection:_try_refresh_auth(refresh_token)
-	local steam_name = self.steam_name or 'Player'
-	self.mqtt:start_thread()
-
-	self.api:authenticate_refresh(refresh_token, steam_name, function(err, data)
-		if err then
-			-- Refresh token expired or invalid; clear it and fall back to Steam ticket.
-			if self.token_store and self._steam_id then
-				self.token_store.save_refresh_token(self._steam_id, nil)
-			end
-			self:_try_steam_auth()
-			return
-		end
-
-		if data.tosRequired then
-			if data.refreshToken and self.token_store and self._steam_id then
-				self.token_store.save_refresh_token(self._steam_id, data.refreshToken)
-			end
-			self._pending_tos_token = data.token
-			set_state(self, STATES.TOS_REQUIRED, { steam_name = self.steam_name, tos_update = data.tosUpdate or false })
-			return
-		end
-
-		self:_handle_auth_success(data)
-	end)
+	self:_try_steam_auth()
 end
 
 function connection:_try_steam_auth()
@@ -226,82 +184,28 @@ function connection:connect()
 		return
 	end
 
-	self._steam_id = self.steam.get_steam_id()
 	self.steam_name = self.steam.get_persona_name() or 'Player'
-
-	if not self.config.auto_login and not self.config.force_login then
-		set_state(self, STATES.LOGIN_AVAILABLE, { steam_name = self.steam_name })
-		return
-	end
 
 	self:_do_auth()
 end
 
---[[ ORIGINAL STEAM AUTH (preserved for reference)
-	-- We need a Steam ID to key the login file.
-	if not self.steam or not self.steam.available() then
-		set_state(self, STATES.DISCONNECTED, { error = 'Steam is not available' })
-		return
-	end
-
-	local steam_id = self.steam.get_steam_id()
-	self._steam_id = steam_id
-	self.steam_name = self.steam.get_persona_name() or 'Player'
-
-	if not self.token_store then
-		-- No persistence layer at all — go straight to auth.
-		self:_do_auth()
-		return
-	end
-
-	local account = self.token_store.get_account(steam_id)
-
-	if not account then
-		-- First time seeing this Steam account — show ToS / Privacy Policy.
-		set_state(self, STATES.TOS_REQUIRED, { steam_name = self.steam_name })
-		return
-	end
-
-	self._auto_login = account.auto_login ~= false
-
-	if not account.auto_login and not self.config.force_login then
-		-- User previously disabled auto-login — show one-click prompt.
-		set_state(self, STATES.LOGIN_AVAILABLE, { steam_name = self.steam_name })
-		return
-	end
-
-	-- auto_login = true — proceed silently.
-	self:_do_auth()
-end]]
-
 -- Called by the UI after the user reads and accepts the ToS / Privacy Policy.
 -- chat_eligible: boolean computed client-side from birthdate (never sent raw).
 function connection:accept_tos(chat_eligible)
-	if self.state ~= STATES.TOS_REQUIRED then
+	if self.state ~= STATES.TOS_REQUIRED or not self._pending_tos_token then
 		return
 	end
 
-	if self._pending_tos_token then
-		-- Server requires re-acceptance of updated ToS.
-		set_state(self, STATES.AUTHENTICATING)
-		local token = self._pending_tos_token
-		self._pending_tos_token = nil
-		self.api:accept_tos_update(token, chat_eligible, function(err, data)
-			if err then
-				set_state(self, STATES.DISCONNECTED, { error = 'ToS acceptance failed: ' .. tostring(err) })
-				return
-			end
-			self:_handle_auth_success(data)
-		end)
-	else
-		-- First-time: record locally then authenticate.
-		if not self._steam_id then
+	set_state(self, STATES.AUTHENTICATING)
+	local token = self._pending_tos_token
+	self._pending_tos_token = nil
+	self.api:accept_tos_update(token, chat_eligible, function(err, data)
+		if err then
+			set_state(self, STATES.DISCONNECTED, { error = 'ToS acceptance failed: ' .. tostring(err) })
 			return
 		end
-		self._auto_login = true
-		self.token_store.create_account(self._steam_id, nil)
-		self:_do_auth()
-	end
+		self:_handle_auth_success(data)
+	end)
 end
 
 -- Called by the UI when the user declines the ToS.
@@ -312,34 +216,6 @@ function connection:decline_tos()
 		self.mqtt:disconnect()
 	end
 	set_state(self, STATES.DISCONNECTED)
-end
-
--- Called by the UI when the user clicks the one-click login button
--- (auto_login = false case).
-function connection:login()
-	if self.state ~= STATES.LOGIN_AVAILABLE then
-		return
-	end
-	self:_do_auth()
-end
-
--- Convenience wrapper for the "disable auto-login" button in account settings.
--- Keeps the account entry (ToS acceptance is preserved) but stops silent login.
-function connection:disable_auto_login()
-	if not self.token_store or not self._steam_id then
-		return
-	end
-	self._auto_login = false
-	self.token_store.set_auto_login(self._steam_id, false)
-end
-
--- Re-enable auto-login (e.g. a toggle in account settings turning it back on).
-function connection:enable_auto_login()
-	if not self.token_store or not self._steam_id then
-		return
-	end
-	self._auto_login = true
-	self.token_store.set_auto_login(self._steam_id, true)
 end
 
 function connection:_mqtt_connect_with_credentials()

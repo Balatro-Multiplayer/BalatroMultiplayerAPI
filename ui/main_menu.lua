@@ -40,7 +40,7 @@ local create_UIBox_account_button = function()
 			text = localize('b_sign_up'),
 			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
 		} }
-	elseif state == MPAPI.ConnectionState.TOS_REQUIRED or state == MPAPI.ConnectionState.LOGIN_AVAILABLE then
+	elseif state == MPAPI.ConnectionState.TOS_REQUIRED then
 		account_button_label = { n = G.UIT.T, config = {
 			text = localize('b_sign_in'),
 			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
@@ -221,17 +221,10 @@ G.FUNCS.mpapi_account_button = function(e)
 	elseif state == MPAPI.ConnectionState.DISCONNECTED then
 		MPAPI.sendDebugMessage('[main_menu] retry pressed | UIBOX: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?') .. ' | ROOM_ATTACH scale: ' .. tostring(G.ROOM_ATTACH and G.ROOM_ATTACH.VT and G.ROOM_ATTACH.VT.scale or '?'))
 		MPAPI.disconnect()
-		local last_opts = MPAPI.shallow_copy(MPAPI.get_last_opts() or {})
-		last_opts.force_login = true
-		MPAPI.connect(last_opts)
+		MPAPI.connect(MPAPI.get_last_opts() or {})
 	elseif state == MPAPI.ConnectionState.TOS_REQUIRED then
 		if MPAPI._internal.show_tos_overlay then
 			MPAPI._internal.show_tos_overlay(MPAPI.connection_state.tos_is_update)
-		end
-	elseif state == MPAPI.ConnectionState.LOGIN_AVAILABLE then
-		local conn = MPAPI.get_connection()
-		if conn then
-			conn:login()
 		end
 	end
 end
