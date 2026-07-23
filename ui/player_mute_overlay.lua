@@ -46,6 +46,21 @@ local create_UIBox_player_mute_overlay = function()
 						} },
 					},
 				},
+				{ n = G.UIT.R, config = { minh = 0.15 } },
+				{
+					n = G.UIT.R,
+					config = { align = 'cm' },
+					nodes = {
+						{ n = G.UIT.C, config = {
+							align = 'cm', padding = 0.15, minw = 5, minh = 0.7, r = 0.1,
+							colour = G.C.ORANGE, shadow = true, hover = true, button = 'mpapi_open_report_player',
+						}, nodes = {
+							{ n = G.UIT.T, config = {
+								text = localize('k_report_player'), scale = 0.45, colour = G.C.UI.TEXT_LIGHT, shadow = true,
+							} },
+						} },
+					},
+				},
 			},
 		},
 	}
@@ -56,6 +71,10 @@ end
 -----------------------------
 -- LOGIC FUNCTIONS
 -----------------------------
+
+G.FUNCS.mpapi_open_report_player = function(e)
+	MPAPI.open_player_report_overlay(_target_id, _target_name)
+end
 
 G.FUNCS.mpapi_toggle_mute = function(e)
 	if _submitting or not _target_id then

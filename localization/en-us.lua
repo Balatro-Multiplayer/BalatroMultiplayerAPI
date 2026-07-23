@@ -78,6 +78,14 @@ return {
 			-- Player mute overlay (lobby player list)
 			k_mute_player = 'Mute Player',
 			k_unmute_player = 'Unmute Player',
+			-- Player report overlay (lobby player list)
+			k_report_player = 'Report Player',
+			k_report_cheating = 'Cheating',
+			k_report_chat_abuse = 'Chat Abuse',
+			k_report_griefing = 'Griefing',
+			k_report_inappropriate_username = 'Inappropriate Username',
+			k_report_other = 'Other',
+			k_report_submitted = 'Report submitted',
 			k_join_lobby_cap = 'JOIN LOBBY',
 			k_lobby_code_cap = 'LOBBY CODE',
 			k_copied_cap = 'COPIED!',
