@@ -5,26 +5,12 @@
 -- `inject` (the G.P_CENTER_POOLS.Ruleset registration) is called automatically
 -- by SMODS's own boot-time injection sweep; ruleset definitions must NOT call
 -- `:inject()` themselves anymore (that would double-register).
+--
+-- §9.2: a ruleset is purely a named bundle of layers now -- it no longer
+-- declares banned_*/reworked_* directly, so there's no longer a separate
+-- reverse-index step needed here. Every reworked entry is indexed once, by
+-- MPAPI.Layer() itself, when the owning layer registers.
 MPAPI.Rulesets = MPAPI.Rulesets or {}
-
--- Reworked entries defined directly on the ruleset need reverse-index entries;
--- entries pulled in from layers are already indexed when MPAPI.Layer() was called.
--- Must run synchronously at construction time, not inside `inject` (which SMODS
--- defers to its boot-time sweep) -- pool_gating.lua's auto-gate-on-register check
--- reads these indices the moment each Joker/Consumable/Tag registers, which can
--- happen well before the deferred sweep runs.
-local function index_ruleset_reworks(init)
-	local function index_list(list, index_table)
-		if not list then return end
-		for _, key in ipairs(list) do
-			index_table[key] = index_table[key] or {}
-			table.insert(index_table[key], init.key)
-		end
-	end
-	index_list(init.reworked_jokers, MPAPI._JOKER_LAYERS)
-	index_list(init.reworked_consumables, MPAPI._CONSUMABLE_LAYERS)
-	index_list(init.reworked_tags, MPAPI._TAG_LAYERS)
-end
 
 local RulesetBase = SMODS.GameObject:extend({
 	obj_table = MPAPI.Rulesets,
@@ -49,6 +35,5 @@ local RulesetBase = SMODS.GameObject:extend({
 function MPAPI.Ruleset(init)
 	assert(type(init) == 'table' and init.key, 'MPAPI.Ruleset: key is required')
 	init = MPAPI.resolve_layers(init)
-	index_ruleset_reworks(init)
 	return RulesetBase(init)
 end
