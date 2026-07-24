@@ -23,6 +23,17 @@ function api_client:join_lobby(token, code, callback)
 	self.mqtt:http_post_auth(self.base_url .. '/api/lobbies/' .. code .. '/join', '{}', token)
 end
 
+-- §22.3: which live lobbies are currently spectatable (GET /api/lobbies/spectatable) --
+-- the discovery step a "Spectate" browser needs. Returns {lobbies = [{code, modId, playerCount}, ...]}.
+function api_client:list_spectatable(token, callback)
+	if not self:_transport_ready() then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	self.mqtt:http_get_auth(self.base_url .. '/api/lobbies/spectatable', token)
+end
+
 function api_client:leave_lobby(token, code, callback)
 	if not self:_transport_ready() then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
