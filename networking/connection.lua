@@ -233,7 +233,11 @@ function connection:_mqtt_connect_with_credentials()
 		end
 
 		if self.player_id then
-			local topic = 'player/' .. self.player_id .. '/account/#'
+			-- Every player-addressed push (account/*, and §22.5's replay-tail
+			-- reconnect catch-up) lives under this one topic namespace -- the
+			-- server's own ACL already allows the whole player/{id}/# tree to
+			-- this player, not just player/{id}/account/#.
+			local topic = 'player/' .. self.player_id .. '/#'
 			MPAPI.sendDebugMessage('Subscribing to ' .. topic)
 			self.mqtt:subscribe(topic, 1, function(t, payload)
 				self:_handle_player_notification(t, payload)
@@ -269,12 +273,12 @@ function connection:_mqtt_connect_with_credentials()
 end
 
 function connection:_handle_player_notification(topic, payload)
-	local subtopic = topic:match('^player/[^/]+/account/(.+)$')
-	if not subtopic then
+	local full_subtopic = topic:match('^player/[^/]+/(.+)$')
+	if not full_subtopic then
 		return
 	end
 
-	MPAPI.sendDebugMessage('Player notification: ' .. subtopic .. ' payload=' .. tostring(payload))
+	MPAPI.sendDebugMessage('Player notification: ' .. full_subtopic .. ' payload=' .. tostring(payload))
 
 	local function decode_payload()
 		local ok, data = pcall(function()
@@ -284,6 +288,25 @@ function connection:_handle_player_notification(topic, payload)
 			return require('json').decode(payload)
 		end)
 		return ok and data or nil
+	end
+
+	-- §22.5: reconnect catch-up pushed directly to this player, instead of a
+	-- REST pull -- surfaced to consumer mods (e.g. PvP's reconnect_tail.lua)
+	-- via the same on_connection_state_change context every other player
+	-- update already flows through, rather than a new bespoke callback.
+	if full_subtopic == 'replay-tail' then
+		local data = decode_payload()
+		if data and data.tails then
+			fire(self, self.state, { replay_tail = data })
+		else
+			MPAPI.sendWarnMessage('replay-tail: failed to parse payload')
+		end
+		return
+	end
+
+	local subtopic = full_subtopic:match('^account/(.+)$')
+	if not subtopic then
+		return
 	end
 
 	if subtopic == 'discord_linked' then
