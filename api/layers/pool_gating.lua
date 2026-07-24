@@ -4,6 +4,9 @@
 MPAPI._JOKER_LAYERS = MPAPI._JOKER_LAYERS or {}
 MPAPI._CONSUMABLE_LAYERS = MPAPI._CONSUMABLE_LAYERS or {}
 MPAPI._TAG_LAYERS = MPAPI._TAG_LAYERS or {}
+MPAPI._VOUCHER_LAYERS = MPAPI._VOUCHER_LAYERS or {}
+MPAPI._ENHANCEMENT_LAYERS = MPAPI._ENHANCEMENT_LAYERS or {}
+MPAPI._BLIND_LAYERS = MPAPI._BLIND_LAYERS or {}
 
 local function layer_membership_include(owning_layers)
 	return function(_)
@@ -84,4 +87,31 @@ local _original_tag_register = SMODS.Tag.register
 function SMODS.Tag:register()
 	auto_gate_on_register(self, MPAPI._TAG_LAYERS, 'tag', 'tag_mpapi_')
 	return _original_tag_register(self)
+end
+
+-- §9.4: Vouchers and Enhancements share get_current_pool() with Jokers/
+-- Consumables (vanilla's own function, patched above), so the same
+-- mp_include auto-attach closes the gap for them with no new patch needed.
+local _original_voucher_register = SMODS.Voucher.register
+function SMODS.Voucher:register()
+	auto_gate_on_register(self, MPAPI._VOUCHER_LAYERS, 'voucher', 'v_mpapi_')
+	return _original_voucher_register(self)
+end
+
+local _original_enhancement_register = SMODS.Enhancement.register
+function SMODS.Enhancement:register()
+	auto_gate_on_register(self, MPAPI._ENHANCEMENT_LAYERS, 'enhancement', 'm_mpapi_')
+	return _original_enhancement_register(self)
+end
+
+-- Blinds are NOT gated through get_current_pool() at all -- boss selection is
+-- vanilla's separate get_new_boss(), patched in lovely/pool_gating.toml to
+-- also drop any blind whose owning layer isn't active, alongside its existing
+-- G.GAME.banned_keys filter (explicit banned_blinds already worked before
+-- this, since get_new_boss checks banned_keys natively; this only adds the
+-- layer-membership half auto_gate_on_register gives every other content type).
+local _original_blind_register = SMODS.Blind.register
+function SMODS.Blind:register()
+	auto_gate_on_register(self, MPAPI._BLIND_LAYERS, 'blind', 'bl_mpapi_')
+	return _original_blind_register(self)
 end
