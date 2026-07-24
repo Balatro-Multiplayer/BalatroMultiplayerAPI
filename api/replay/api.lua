@@ -11,6 +11,17 @@ MPAPI.replay.get = function(run_id, callback)
 	conn.api:get_replay(conn.jwt_token, run_id, callback)
 end
 
+-- §22.2: the player's own past run ids. callback(err, data) where data is
+-- {runs = [{id, lobbyCode, modId, lobbyType, status, startedAt, finalizedAt}, ...]}.
+MPAPI.replay.list_mine = function(callback)
+	local conn = MPAPI.get_connection()
+	if not conn then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
+		return
+	end
+	conn.api:get_my_runs(conn.jwt_token, callback)
+end
+
 -- Phase 7: request a spectator token + one-time snapshot for a lobby.
 -- callback(err, data) where data is {token, snapshot}.
 MPAPI.replay.spectate_lobby = function(code, callback)
@@ -20,4 +31,15 @@ MPAPI.replay.spectate_lobby = function(code, callback)
 		return
 	end
 	conn.api:spectate_lobby(conn.jwt_token, code, callback)
+end
+
+-- §22.3: which live lobbies are currently spectatable. callback(err, data)
+-- where data is {lobbies = [{code, modId, playerCount}, ...]}.
+MPAPI.replay.list_spectatable = function(callback)
+	local conn = MPAPI.get_connection()
+	if not conn then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
+		return
+	end
+	conn.api:list_spectatable(conn.jwt_token, callback)
 end
