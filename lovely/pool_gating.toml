@@ -25,3 +25,27 @@ if MPAPI.should_exclude_from_pool(v) then
 end
 '''
 match_indent = true
+
+# §9.4: get_new_boss() is a separate eligibility loop with no should_exclude_from_pool
+# call at all -- it only ever checked G.GAME.banned_keys (explicit bans), never layer
+# membership. This mirrors that same check right alongside the existing banned_keys
+# loop, so a blind whose only gating is being in an inactive layer is excluded from
+# boss selection exactly like a reworked joker/consumable/voucher/enhancement already is.
+[[patches]]
+[patches.pattern]
+target = "functions/common_events.lua"
+pattern = '''
+    for k, v in pairs(G.GAME.banned_keys) do
+        if eligible_bosses[k] then eligible_bosses[k] = nil end
+    end
+'''
+position = "after"
+payload = '''
+for k in pairs(eligible_bosses) do
+	local blind_center = G.P_BLINDS[k]
+	if blind_center and MPAPI.should_exclude_from_pool(blind_center) then
+		eligible_bosses[k] = nil
+	end
+end
+'''
+match_indent = true
