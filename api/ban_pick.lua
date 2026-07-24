@@ -8,14 +8,18 @@
 -- and request actions; they never mutate state locally.
 --
 -- Two draft shapes are supported through one engine:
---   * Legacy: `config = { pool_size, keep }` -> alternating single bans down to `keep`
---     (this is what the Speedrun mod uses; unchanged behaviour aside from random first).
+--   * Legacy: `config = { pool_size, keep }` -> alternating single bans down to `keep`,
+--     rotating through every player in the lobby (2 for a plain 1v1, more for an
+--     N-player draft -- §17.7; this is what the Speedrun mod uses).
 --   * Scheduled: `config.schedule = { { actor=1|2, action='ban'|'pick', count=N }, ... }`
---     -> arbitrary per-turn ban counts and a final 'pick' (the picked item wins).
+--     -> arbitrary per-turn ban counts and a final 'pick' (the picked item wins). Actor
+--     numbers here are still author-written turn slots (1..N), resolved the same way
+--     as the legacy shape's derived schedule.
 --
 -- Pool items may be plain center KEYS ('b_red') or tables `{ key='b_red', ... }` carrying
 -- metadata (e.g. a stake); `config.decorate_tile(card, item)` lets the consumer decorate
--- each tile (e.g. stamp a stake sticker). The FIRST actor is always randomized.
+-- each tile (e.g. stamp a stake sticker). The first actor is always randomized among
+-- however many players are actually in the draft.
 --
 -- The two networked actions live in the *consuming* mod (a lobby only routes ActionTypes
 -- whose mod.id matches -- see api/lobby.lua). The caller passes their keys via
@@ -68,19 +72,24 @@ local function default_build_pool(size)
 	return pool
 end
 
--- Legacy schedule: `pool_size - keep` alternating single bans, no pick.
-local function derive_schedule(pool_size, keep)
+-- Legacy schedule: `pool_size - keep` alternating single bans, no pick, rotating
+-- through however many actors are actually in the draft (2 for a plain 1v1,
+-- more for §17.7's N-player rotation -- see resolve_actor below for the
+-- matching actor->player-id resolution).
+local function derive_schedule(pool_size, keep, num_actors)
+	num_actors = math.max(1, num_actors or 2)
 	local bans = math.max(0, (pool_size or 0) - (keep or 1))
 	local sched = {}
 	for i = 1, bans do
-		sched[i] = { actor = ((i - 1) % 2) + 1, action = "ban", count = 1 }
+		sched[i] = { actor = ((i - 1) % num_actors) + 1, action = "ban", count = 1 }
 	end
 	return sched
 end
 
 -- Turn order: host first (order[1] == host, so guest ban routing via send(order[1],...)
--- is stable), then others by sorted id. `state.first` (1|2) picks which order slot is the
--- logical actor 1, so the *acting* first player is randomized independently of routing.
+-- is stable), then others by sorted id. `state.first` (1..#order) picks which order slot
+-- is the logical actor 1, so the *acting* first player is randomized independently of
+-- routing -- for an N-player draft this rotates through every slot, not just the two.
 local function build_order(lobby)
 	local order = { lobby.player_id }
 	local others = {}
@@ -96,8 +105,16 @@ local function build_order(lobby)
 	return order
 end
 
+-- §17.7: generalized to however many players are actually in state.order
+-- (build_order already returns every lobby member, not just 2 -- only this
+-- resolution math was hardcoded to a 2-slot draft). state.first (1..#order)
+-- picks which order slot is logical actor 1; every other actor rotates
+-- forward from there. Reduces to the exact previous 2-actor formula
+-- (3 - state.first) when #order == 2, so every existing 1v1 draft is
+-- unaffected.
 local function resolve_actor(state, actor)
-	local slot = (actor == 1) and (state.first or 1) or (3 - (state.first or 1))
+	local n = #state.order
+	local slot = ((state.first or 1) - 1 + (actor - 1)) % n + 1
 	return state.order[slot]
 end
 
@@ -714,13 +731,14 @@ function BP.start(lobby, config, on_complete)
 
 	if lobby.is_host then
 		local pool = (config.build_pool and config.build_pool()) or default_build_pool(config.pool_size)
-		local schedule = config.schedule or derive_schedule(config.pool_size or #pool, config.keep or 1)
+		local order = build_order(lobby)
+		local schedule = config.schedule or derive_schedule(config.pool_size or #pool, config.keep or 1, #order)
 		lobby._ban_pick = {
 			pool = pool,
 			banned = {},
 			ban_order = {},
-			order = build_order(lobby),
-			first = math.random(2),
+			order = order,
+			first = math.random(#order),
 			schedule = schedule,
 			sched_index = 1,
 			sched_remaining = schedule[1] and schedule[1].count or 0,
