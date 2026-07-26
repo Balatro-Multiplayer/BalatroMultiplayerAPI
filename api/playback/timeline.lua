@@ -34,12 +34,14 @@ function MPAPI.playback.build_timeline(logs)
 				for _, ev in ipairs(events) do
 					-- [t, opcode, args] positional tuple (see encode_event_tuple in
 					-- replay_log.lua) -- not an {t=,opcode=,args=} object.
-					timeline[#timeline + 1] = {
-						t = ev[1],
-						player_id = log.playerId,
-						opcode = ev[2],
-						args = ev[3],
-					}
+					if ev[1] ~= nil then
+						timeline[#timeline + 1] = {
+							t = ev[1],
+							player_id = log.playerId,
+							opcode = ev[2],
+							args = ev[3],
+						}
+					end
 				end
 			end
 		end
