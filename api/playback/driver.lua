@@ -18,18 +18,26 @@ MPAPI.playback._active_drivers = MPAPI.playback._active_drivers or {}
 local Driver = {}
 Driver.__index = Driver
 
--- Exposed as a module field (not a local) so a test can stub it: at an idle
--- menu screen (as opposed to a real running match), the base queue always
--- carries one lingering low-priority entry that never drains on its own,
--- which would otherwise make playback pacing look permanently stuck outside
--- a live run context.
+-- Exposed as a module field (not a local) so a test can stub it: the base
+-- queue always carries a couple of lingering low-priority housekeeping
+-- entries (confirmed live at both the main menu AND BLIND_SELECT -- e.g. a
+-- `no_delete=true` entry and a ~2-minute-interval timer entry, neither ever
+-- actually removed from the queue), which would otherwise make playback
+-- pacing look permanently stuck. Only `blocking` entries represent real
+-- in-progress animation/scoring work -- confirmed live by snapshotting the
+-- base queue mid-hand-play: every genuine gameplay event (chip/mult
+-- animations, scoring, etc.) has blocking=true, while every persistent
+-- housekeeping entry has blocking=false. So "busy" means "has a blocking
+-- entry", not "queue is non-empty".
 function MPAPI.playback._queues_empty()
 	if not (G.E_MANAGER and G.E_MANAGER.queues) then
 		return true
 	end
 	for _, q in pairs(G.E_MANAGER.queues) do
-		if #q > 0 then
-			return false
+		for _, ev in ipairs(q) do
+			if ev.blocking then
+				return false
+			end
 		end
 	end
 	return true
