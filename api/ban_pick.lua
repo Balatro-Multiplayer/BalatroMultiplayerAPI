@@ -48,7 +48,26 @@ local _areas = {}
 -----------------------------
 
 -- Pool items are either a plain key string or a { key = ..., <meta> } table.
+-- `id`, when present, is the draft-tracking identity instead of `key` -- lets
+-- a pool item's *rendered art* (key, a real G.P_CENTERS deck-back) repeat
+-- across items while each item still bans/picks independently. Needed once a
+-- pool has more real candidates than there are distinct deck-back keys to
+-- assign one-to-one (e.g. Challenge's full G.CHALLENGES list, 20+ vanilla
+-- entries against only 15 vanilla deck backs) -- without `id`, items sharing
+-- one `key` would all get banned together the instant any one of them is
+-- banned (this is exactly what forced Challenge's pool to be truncated to a
+-- random 5 previously: 5 fits inside 15 distinct keys, the full list doesn't).
 local function item_key(item)
+	if type(item) == "table" then
+		return item.id or item.key
+	end
+	return item
+end
+
+-- The G.P_CENTERS key used to render a pool item's tile art -- always
+-- item.key (or the item itself, if a plain string), even when item_key()
+-- above resolves to a different tracking identity via item.id.
+local function item_art_key(item)
 	if type(item) == "table" then
 		return item.key
 	end
@@ -327,7 +346,7 @@ end
 -- sticker via card.sticker). BANNED tiles are debuffed.
 local function deck_tile(item, banned, area, decorate)
 	local key = item_key(item)
-	local center = G.P_CENTERS[key]
+	local center = G.P_CENTERS[item_art_key(item)]
 	local card = Card(
 		area.T.x + area.T.w / 2,
 		area.T.y,
