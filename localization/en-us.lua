@@ -126,6 +126,20 @@ return {
 			k_banpick_confirm = 'Confirm Ban',
 			k_banpick_confirm_pick = 'Confirm Pick',
 			k_banpick_random = 'Random',
+			-- End-screen Ko-fi plug (MPAPI.end_screen_uibox, api/end_screen.lua) -- shared by
+			-- every gamemode's win/lose screen, not just PvP's (where these two keys used to
+			-- live exclusively). Without PvP loaded, end_screen_uibox's localize('ml_mp_kofi_message')[3]
+			-- lookup returned nil and crashed string concatenation, which the pcall in
+			-- MPAPI.end_screen_show silently swallowed -- so SPDRN's own custom win/lose
+			-- overlay never got built, and the vanilla Game Over/win screen showed instead.
+			-- Reproduced live driving SPDRN practice mode with MultiplayerPvP removed from Mods/.
+			ml_mp_kofi_message = {
+				'This game server is',
+				'funded by the community,',
+				'if you enjoy BMP',
+				'consider',
+			},
+			b_mp_kofi_button = 'Supporting me on Ko-fi',
 		},
 	},
 	descriptions = {

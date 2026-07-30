@@ -87,10 +87,25 @@ MPAPI._internal.on_lobby_connected = function(lobby)
 	-- A lobby can opt out of the lobby-menu view (e.g. SPDRN practice drops straight into a run).
 	-- Tear the whole menu down so nothing shows behind the run; current_view is cleared so the
 	-- post-run rebuild does not restore a lobby view that was never shown.
+	--
+	-- teardown_menu is deferred to the next clean Game:update tick (see
+	-- MPAPI._check_pending_menu_teardown below) rather than run here: this handler is itself
+	-- called from inside an Event's func, mid-way through EventManager:update()'s own event-queue
+	-- loop for this frame. teardown_menu's title_top:remove() nils title_top.cards *before*
+	-- deregistering it from G.I.CARDAREA a few lines later (see cardarea.lua's CardArea:remove) --
+	-- calling it from here left a window, still within this same frame, where the base engine's
+	-- own per-frame G.I.CARDAREA move loop (game.lua, later in Game:update than EventManager:
+	-- update()) could visit title_top with cards already nil, crashing on cardarea.lua's
+	-- `ipairs(self.cards)`. Reliably reproduced going through the real practice deck-select UI
+	-- (SPDRN practice's overlay -> confirm -> begin_run); never hit calling SPDRN._start_practice
+	-- directly, which skips the overlay entirely. A flag polled after the frame's own Game:update
+	-- (and therefore after that frame's EventManager:update() and CardArea move loop) both have
+	-- already returned avoids the window, matching SPDRN's own run_start.lua
+	-- request_run_transition/_check_pending_run_transition pattern for the identical class of
+	-- hazard.
 	if lobby.suppress_lobby_view then
-		MPAPI.teardown_menu()
 		state.current_view = nil
-		MPAPI._internal.mod_registry.update_account_button()
+		MPAPI._pending_menu_teardown = true
 		return
 	end
 
@@ -159,4 +174,26 @@ MPAPI._internal.rebuild_current_menu = function()
 		end
 	end
 	return false
+end
+
+-- See the long comment in on_lobby_connected above for why this is deferred rather than run
+-- inline there.
+MPAPI._pending_menu_teardown = false
+
+local function _check_pending_menu_teardown()
+	if not MPAPI._pending_menu_teardown then
+		return
+	end
+	MPAPI._pending_menu_teardown = false
+	MPAPI.teardown_menu()
+	MPAPI._internal.mod_registry.update_account_button()
+end
+
+if not MPAPI._menu_teardown_hooked then
+	MPAPI._menu_teardown_hooked = true
+	local _ref = Game.update
+	function Game:update(dt)
+		_ref(self, dt)
+		pcall(_check_pending_menu_teardown)
+	end
 end
