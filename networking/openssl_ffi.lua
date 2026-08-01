@@ -87,6 +87,43 @@ ffi.cdef([[
     int OPENSSL_init_ssl(uint64_t opts, void *settings);
 ]])
 
+-- Additional libcrypto declarations for anticheat/crypto.lua's RFC 5869
+-- HKDF (built on the HMAC primitive below) and the Ranked-mode launcher<->
+-- mod supervision channel's AES-256-GCM framing (see
+-- anticheat/launcher_thread.lua). Kept in this file rather than a second
+-- loader so there's exactly one place that dlopen's libcrypto and manages
+-- its search paths - see load_openssl() below.
+ffi.cdef([[
+    typedef struct evp_md_st EVP_MD;
+    typedef struct evp_cipher_st EVP_CIPHER;
+    typedef struct evp_cipher_ctx_st EVP_CIPHER_CTX;
+
+    const EVP_MD *EVP_sha256(void);
+    unsigned char *HMAC(const EVP_MD *evp_md, const void *key, int key_len,
+        const unsigned char *d, size_t n, unsigned char *md, unsigned int *md_len);
+
+    const EVP_CIPHER *EVP_aes_256_gcm(void);
+    EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void);
+    void EVP_CIPHER_CTX_free(EVP_CIPHER_CTX *ctx);
+    int EVP_CIPHER_CTX_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr);
+
+    // The "engine" parameter (ENGINE*) is always passed nil here, so it's
+    // declared as void* rather than pulling in the opaque ENGINE type.
+    int EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher, void *engine,
+        const unsigned char *key, const unsigned char *iv);
+    int EVP_EncryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
+        const unsigned char *in, int inl);
+    int EVP_EncryptFinal_ex(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl);
+
+    int EVP_DecryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *cipher, void *engine,
+        const unsigned char *key, const unsigned char *iv);
+    int EVP_DecryptUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl,
+        const unsigned char *in, int inl);
+    int EVP_DecryptFinal_ex(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl);
+
+    int RAND_bytes(unsigned char *buf, int num);
+]])
+
 -- POSIX fcntl for non-blocking socket control
 pcall(function()
 	ffi.cdef([[
@@ -119,6 +156,11 @@ local SSL_OP_NO_SSLv2 = 0x01000000
 local SSL_OP_NO_SSLv3 = 0x02000000
 local SSL_OP_NO_TLSv1 = 0x04000000
 local SSL_OP_NO_TLSv1_1 = 0x10000000
+
+-- EVP_CIPHER_CTX_ctrl() GCM control codes - stable across OpenSSL 1.1.x/3.x.
+local EVP_CTRL_GCM_SET_IVLEN = 0x9
+local EVP_CTRL_GCM_GET_TAG = 0x10
+local EVP_CTRL_GCM_SET_TAG = 0x11
 
 -- Load OpenSSL libraries
 local ssl_lib, crypto_lib
@@ -510,6 +552,168 @@ end
 function M.available()
 	local ok = load_openssl()
 	return ok
+end
+
+-- Returns count cryptographically random bytes via OpenSSL's CSPRNG - used
+-- for the Ranked-mode supervision channel's per-connection nonce (see
+-- anticheat/launcher_thread.lua), deliberately not Lua's math.random,
+-- which is predictable and unsuitable even where the nonce itself isn't
+-- secret (only unique/unpredictable, same reasoning a TLS client random
+-- gets a real CSPRNG rather than a plain PRNG).
+function M.random_bytes(count)
+	if not crypto_lib then
+		return nil, 'OpenSSL not loaded'
+	end
+	local buf = ffi.new('unsigned char[?]', count)
+	if crypto_lib.RAND_bytes(buf, count) ~= 1 then
+		return nil, 'RAND_bytes failed: ' .. (M.get_error() or 'unknown error')
+	end
+	return ffi.string(buf, count)
+end
+
+-- Returns the 32-byte HMAC-SHA256 digest of data keyed by key (both plain
+-- Lua strings - LuaJIT FFI converts them to const-pointer args directly,
+-- same convention M.write()/M.read() already use for SSL_write/SSL_read).
+-- Used both directly and as the building block for anticheat/crypto.lua's
+-- RFC 5869 HKDF (a standard construction, not invented crypto).
+function M.hmac_sha256(key, data)
+	if not crypto_lib then
+		return nil, 'OpenSSL not loaded'
+	end
+
+	local md_len = ffi.new('unsigned int[1]')
+	local md = ffi.new('unsigned char[32]')
+	local result = crypto_lib.HMAC(crypto_lib.EVP_sha256(), key, #key, data, #data, md, md_len)
+	if result == nil then
+		return nil, 'HMAC failed: ' .. (M.get_error() or 'unknown error')
+	end
+	return ffi.string(md, md_len[0])
+end
+
+-- key must be exactly 32 bytes (AES-256), nonce exactly 12 bytes (the
+-- standard 96-bit GCM nonce). Returns ciphertext with the 16-byte GCM tag
+-- appended, mirroring the launcher's C++-side aesGcmEncrypt() (see
+-- Source/Launcher/src/anticheat/cryptoprimitives.h) so both ends of the
+-- Ranked-mode supervision channel produce/expect the identical wire format.
+function M.aes256gcm_encrypt(key, nonce, plaintext)
+	if not crypto_lib then
+		return nil, 'OpenSSL not loaded'
+	end
+	if #key ~= 32 or #nonce ~= 12 then
+		return nil, 'aes256gcm_encrypt: invalid key/nonce length'
+	end
+
+	local ctx = crypto_lib.EVP_CIPHER_CTX_new()
+	if ctx == nil then
+		return nil, 'EVP_CIPHER_CTX_new failed'
+	end
+
+	local ok, result = pcall(function()
+		if crypto_lib.EVP_EncryptInit_ex(ctx, crypto_lib.EVP_aes_256_gcm(), nil, nil, nil) ~= 1 then
+			error('EVP_EncryptInit_ex (cipher select) failed')
+		end
+		if crypto_lib.EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nil) ~= 1 then
+			error('EVP_CTRL_GCM_SET_IVLEN failed')
+		end
+		if crypto_lib.EVP_EncryptInit_ex(ctx, nil, nil, key, nonce) ~= 1 then
+			error('EVP_EncryptInit_ex (key/iv) failed')
+		end
+
+		-- GCM ciphertext length always equals plaintext length; a
+		-- zero-size VLA is undefined in LuaJIT FFI, hence the "or 1" floor
+		-- (only outlen[0] bytes, which will be 0, are ever read back out).
+		local outbuf = ffi.new('unsigned char[?]', #plaintext > 0 and #plaintext or 1)
+		local outlen = ffi.new('int[1]')
+		if crypto_lib.EVP_EncryptUpdate(ctx, outbuf, outlen, plaintext, #plaintext) ~= 1 then
+			error('EVP_EncryptUpdate failed')
+		end
+		local ciphertext = ffi.string(outbuf, outlen[0])
+
+		-- GCM produces no additional ciphertext bytes on finalize (it's a
+		-- stream mode) - this call only finalizes the auth tag below.
+		local final_len = ffi.new('int[1]')
+		if crypto_lib.EVP_EncryptFinal_ex(ctx, outbuf, final_len) ~= 1 then
+			error('EVP_EncryptFinal_ex failed')
+		end
+
+		local tag = ffi.new('unsigned char[16]')
+		if crypto_lib.EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag) ~= 1 then
+			error('EVP_CTRL_GCM_GET_TAG failed')
+		end
+
+		return ciphertext .. ffi.string(tag, 16)
+	end)
+
+	crypto_lib.EVP_CIPHER_CTX_free(ctx)
+
+	if not ok then
+		return nil, tostring(result)
+	end
+	return result
+end
+
+-- Inverse of M.aes256gcm_encrypt(). Returns nil (not "") on ANY failure,
+-- including GCM tag mismatch (tampered/forged/wrong key) - an expected,
+-- security-relevant outcome for an unauthenticated peer, not a bug.
+-- Callers MUST check for nil, not for an empty string: a genuine
+-- zero-length plaintext is a valid decrypt result and comes back as "".
+-- Mirrors the C++ side's aesGcmDecrypt() (see cryptoprimitives.h's comment
+-- on isNull() vs isEmpty() for the same distinction in QByteArray terms).
+function M.aes256gcm_decrypt(key, nonce, ciphertext_with_tag)
+	if not crypto_lib then
+		return nil, 'OpenSSL not loaded'
+	end
+	if #key ~= 32 or #nonce ~= 12 or #ciphertext_with_tag < 16 then
+		return nil, 'aes256gcm_decrypt: invalid input length'
+	end
+
+	local cipher_len = #ciphertext_with_tag - 16
+	local ciphertext = ciphertext_with_tag:sub(1, cipher_len)
+	local tag = ciphertext_with_tag:sub(cipher_len + 1)
+
+	local ctx = crypto_lib.EVP_CIPHER_CTX_new()
+	if ctx == nil then
+		return nil, 'EVP_CIPHER_CTX_new failed'
+	end
+
+	local ok, result = pcall(function()
+		if crypto_lib.EVP_DecryptInit_ex(ctx, crypto_lib.EVP_aes_256_gcm(), nil, nil, nil) ~= 1 then
+			error('EVP_DecryptInit_ex (cipher select) failed')
+		end
+		if crypto_lib.EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, nil) ~= 1 then
+			error('EVP_CTRL_GCM_SET_IVLEN failed')
+		end
+		if crypto_lib.EVP_DecryptInit_ex(ctx, nil, nil, key, nonce) ~= 1 then
+			error('EVP_DecryptInit_ex (key/iv) failed')
+		end
+
+		local outbuf = ffi.new('unsigned char[?]', cipher_len > 0 and cipher_len or 1)
+		local outlen = ffi.new('int[1]')
+		if crypto_lib.EVP_DecryptUpdate(ctx, outbuf, outlen, ciphertext, cipher_len) ~= 1 then
+			error('EVP_DecryptUpdate failed')
+		end
+		local plaintext = ffi.string(outbuf, outlen[0])
+
+		local tag_buf = ffi.new('unsigned char[16]')
+		ffi.copy(tag_buf, tag, 16)
+		if crypto_lib.EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag_buf) ~= 1 then
+			error('EVP_CTRL_GCM_SET_TAG failed')
+		end
+
+		local final_len = ffi.new('int[1]')
+		if crypto_lib.EVP_DecryptFinal_ex(ctx, outbuf, final_len) ~= 1 then
+			error('tag verification failed')
+		end
+
+		return plaintext
+	end)
+
+	crypto_lib.EVP_CIPHER_CTX_free(ctx)
+
+	if not ok then
+		return nil, tostring(result)
+	end
+	return result
 end
 
 if MPAPI then
