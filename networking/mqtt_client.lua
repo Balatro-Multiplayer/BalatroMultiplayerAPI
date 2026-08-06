@@ -399,6 +399,25 @@ function mqtt_client:disconnect()
 		self.tx_channel:push('shutdown')
 	end
 	self.connected = false
+
+	-- Block until the background thread actually processes 'shutdown' and its
+	-- loop returns, instead of just queuing the message and moving on. Without
+	-- this, a quick disconnect()-then-connect() (e.g. MPAPI.reconnect()) spawns
+	-- a brand new thread while the old one is still winding down its own
+	-- socket/TLS teardown -- multiple threads independently driving luamqtt +
+	-- the OpenSSL FFI bridge at once, confirmed live via mqtt_thread.lua diag
+	-- logging (concurrent 'connect' handlers firing on different threads
+	-- within the same reconnect burst). Thread:wait() is a no-op if the thread
+	-- already finished, so this is safe to call unconditionally. Usually
+	-- resolves in well under 100ms (bounded by _sync_iteration's 0.05s socket
+	-- timeout); can take longer if the thread is mid-retry on an HTTP request
+	-- (request_with_retry's backoff sleeps run on the same thread), but
+	-- disconnect/reconnect isn't a hot path so that's an acceptable trade-off
+	-- against leaking/duplicating connections.
+	if self.thread then
+		self.thread:wait()
+		self.thread = nil
+	end
 end
 
 MPAPI.networking.mqtt_client = mqtt_client

@@ -119,7 +119,12 @@ local function do_https_request(method, url, body, extra_headers)
 	local ctx, ctx_err = ossl.new_context({ verify = false })
 	if not ctx then sock:close(); return nil, 'ssl ctx: ' .. tostring(ctx_err) end
 
-	local ssl, ssl_err = ossl.new_ssl(ctx, fd, host)
+	-- sni_ref: unused past this point, but must stay reachable for the rest of
+	-- this function (OpenSSL holds a raw, uncopied pointer into it -- see
+	-- new_ssl's own comment in openssl_ffi.lua). Letting it go out of scope
+	-- before the handshake/request/response below finishes would leave `ssl`
+	-- pointing at memory the GC is free to reclaim mid-request.
+	local ssl, ssl_err, sni_ref = ossl.new_ssl(ctx, fd, host)
 	if not ssl then
 		ossl.free_context(ctx); sock:close()
 		return nil, 'ssl obj: ' .. tostring(ssl_err)
