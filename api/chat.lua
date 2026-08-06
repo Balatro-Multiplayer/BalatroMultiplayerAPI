@@ -44,15 +44,56 @@ local function make_not_enabled_cb()
 	end
 end
 
+-- How much of a message to quote when attributing a failed send to it (item
+-- 2: with several sends in flight -- the fast-typing case that triggers rate
+-- limiting -- the player needs to tell which one a notice is about). Long
+-- enough to recognize at a glance, short enough to stay on one line.
+local NOTICE_QUOTE_MAX = 30
+
+local function quote_for_notice(text)
+	return '"' .. MPAPI.truncate(text, NOTICE_QUOTE_MAX) .. '"'
+end
+
 local function make_publish_fn(lobby)
 	return function(text)
 		if not MPAPI.config.chat_enabled then
 			MPAPI.chat.addMessage(localize('k_chat_client_disabled'), COLOUR_SYSTEM)
 			return
 		end
-		MPAPI._internal.send_chat_message(lobby.code, text, function(err, _)
+		-- The server rejects whitespace-only messages; don't echo them either.
+		if text:match('^%s*$') then
+			return
+		end
+		-- Optimistic echo: the sender sees their message the instant they hit
+		-- enter rather than after the round trip. The log is append-only on
+		-- both backends (DebugPlus owns its own log and hands back no handle),
+		-- so a line cannot be retracted or recoloured afterwards -- instead a
+		-- failure notice below quotes the message it refers to, which also
+		-- disambiguates several sends in flight.
+		local own_name = MPAPI.chat._own_name or localize('k_you')
+		MPAPI.chat.addMessage(own_name .. ': ' .. text, COLOUR_OWN)
+
+		MPAPI._internal.send_chat_message(lobby.code, text, function(err, data)
 			if err then
-				MPAPI.chat.addMessage('[!] ' .. tostring(err), COLOUR_SYSTEM)
+				-- Client-side failures (offline, transport, an unreadable
+				-- server response) don't carry player-facing copy -- only
+				-- ErrorKind.SERVER does -- so those get a generic reason
+				-- instead of leaking transport/proxy jargon.
+				local reason = tostring(err)
+				if err.kind ~= MPAPI.ErrorKind.SERVER then
+					reason = localize('k_chat_reason_unavailable')
+				end
+				MPAPI.chat.addMessage(
+					localize('k_chat_not_sent') .. ' ' .. quote_for_notice(text) .. ': ' .. reason,
+					COLOUR_SYSTEM
+				)
+				return
+			end
+
+			if data and type(data.publishText) == 'string' and data.publishText ~= text then
+				-- Moderation rewrote the message; the echo above showed the raw
+				-- form, so tell the sender what other players actually got.
+				MPAPI.chat.addMessage(localize('k_chat_sent_as') .. ' ' .. data.publishText, COLOUR_SYSTEM)
 			end
 		end)
 	end
@@ -74,9 +115,15 @@ local function subscribe_chat(lobby)
 			return
 		end
 
+		-- Own messages are rendered directly from the send result (see
+		-- make_publish_fn), never from this subscription; drop our own MQTT
+		-- echo so they don't double-render.
+		if sender_id == lobby.player_id then
+			return
+		end
+
 		local name = data.displayName or sender_id
-		local colour = (sender_id == lobby.player_id) and COLOUR_OWN or COLOUR_INCOMING
-		MPAPI.chat.addMessage(name .. ': ' .. data.message, colour)
+		MPAPI.chat.addMessage(name .. ': ' .. data.message, COLOUR_INCOMING)
 	end)
 end
 
