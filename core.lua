@@ -120,6 +120,18 @@ end
 
 MPAPI._internal = {}
 
+-----------------------------
+-- RANKED-MODE ANTI-CHEAT (launcher<->mod supervision channel)
+-----------------------------
+
+-- Entirely inert unless BET_RANKED_SUPERVISOR_PORT/_SECRET are set (a
+-- Ranked-mode launch via BET only) - see anticheat/launcher_channel.lua's
+-- header comment. Loaded here (after the MPAPI.update stub above, before
+-- lib/api/ui) since it chain-wraps MPAPI.update itself, the same
+-- convention api/connection/lifecycle.lua uses for the MQTT client.
+MPAPI.load_mpapi_file('anticheat/crypto.lua')
+MPAPI.load_mpapi_file('anticheat/launcher_channel.lua')
+
 MPAPI.load_mpapi_dir('lib')
 MPAPI.load_mpapi_dir('api', true)
 MPAPI.load_mpapi_dir('ui', true)

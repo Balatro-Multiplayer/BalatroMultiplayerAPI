@@ -1,12 +1,39 @@
 MPAPI.matchmaking = MPAPI.matchmaking or {}
 
 -- Queue for a single mode. Returns a handle, or nil if not connected.
+--
+-- opts.ranked (or opts.lobby_type == MPAPI.LobbyType.RANKED) is an explicit
+-- signal the caller sets - there's no way to infer ranked-ness from
+-- game_mode/modId alone (see domain/lobby_type.lua and
+-- gamemode/definition.lua's has_ranked_mode, which only says a mode *can*
+-- have a ranked variant, not that this particular call is for it). When
+-- set, this refuses to queue at all unless the launcher's anti-cheat
+-- supervision channel is active and currently healthy
+-- (anticheat/launcher_channel.lua) - the mod-side half of "the game
+-- confirms ranked mode when connecting to a lobby". A Casual launch (or the
+-- game started outside BET entirely) never sets MPAPI.anticheat.active, so
+-- this only ever blocks a genuine ranked queue attempt made without a
+-- supervising launcher; every non-ranked queue() call is unaffected.
 MPAPI.matchmaking.queue = function(opts)
 	local mm = MPAPI._internal.mm
 	local conn = MPAPI.get_connection()
 	if not conn or conn:get_state() ~= MPAPI.ConnectionState.CONNECTED then
 		MPAPI.sendWarnMessage('[mmdbg] matchmaking.queue: not connected (conn=' .. tostring(conn ~= nil) .. ' state=' .. tostring(conn and conn:get_state()) .. ')')
 		return nil
+	end
+
+	local wants_ranked = opts.ranked or opts.lobby_type == MPAPI.LobbyType.RANKED
+	local anticheat_ok = false
+	if wants_ranked then
+		local A = MPAPI.anticheat
+		anticheat_ok = A ~= nil and A.active and A.launcher_connected and not A.launcher_supervision_lost
+		if not anticheat_ok then
+			MPAPI.sendWarnMessage('matchmaking.queue: refusing a ranked queue attempt - no active/healthy '
+				.. 'launcher anti-cheat supervision (active=' .. tostring(A and A.active)
+				.. ' launcher_connected=' .. tostring(A and A.launcher_connected)
+				.. ' supervision_lost=' .. tostring(A and A.launcher_supervision_lost) .. ')')
+			return nil
+		end
 	end
 
 	MPAPI.sendDebugMessage('[mmdbg] matchmaking.queue mod=' .. tostring(opts.mod_id) .. ' gameMode=' .. tostring(opts.game_mode) .. ' min=' .. tostring(opts.min_players) .. ' max=' .. tostring(opts.max_players))
@@ -21,6 +48,11 @@ MPAPI.matchmaking.queue = function(opts)
 		gameMode = opts.game_mode,
 		minPlayers = opts.min_players,
 		maxPlayers = opts.max_players,
+		-- Lets the (future) server independently see the same anti-cheat
+		-- status the local gate above already enforced - only meaningful
+		-- (and only ever true) for a ranked attempt; omitted otherwise so
+		-- non-ranked queue requests keep their existing wire shape exactly.
+		anticheatActive = wants_ranked and anticheat_ok or nil,
 	}, function(err, data)
 		if err then
 			MPAPI.sendWarnMessage('[mmdbg] queue_matchmaking API error: ' .. tostring(err))
