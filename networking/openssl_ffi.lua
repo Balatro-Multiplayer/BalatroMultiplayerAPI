@@ -94,6 +94,21 @@ pcall(function()
     ]])
 end)
 
+-- Windows has no fcntl() at all -- confirmed live ("cannot resolve symbol
+-- 'fcntl': The specified procedure could not be found") on every single
+-- connection attempt on the only platform this ships for. ioctlsocket is
+-- WinSock's equivalent for toggling non-blocking mode (FIONBIO).
+local ioctlsocket_lib
+if ffi.os == 'Windows' then
+	pcall(function()
+		ffi.cdef([[
+            typedef uintptr_t SOCKET;
+            int ioctlsocket(SOCKET s, long cmd, unsigned long *argp);
+        ]])
+		ioctlsocket_lib = ffi.load('ws2_32.dll')
+	end)
+end
+
 -- Constants
 local SSL_VERIFY_NONE = 0
 local SSL_VERIFY_PEER = 1
@@ -106,10 +121,12 @@ local SSL_ERROR_ZERO_RETURN = 6
 local OPENSSL_INIT_LOAD_SSL_STRINGS = 0x00200000
 local OPENSSL_INIT_LOAD_CRYPTO_STRINGS = 0x00000002
 local TLS1_2_VERSION = 0x0303
--- fcntl constants for non-blocking socket control
+-- fcntl constants for non-blocking socket control (POSIX only)
 local F_GETFL = 3
 local F_SETFL = 4
 local O_NONBLOCK = (ffi.os == 'OSX') and 0x0004 or 2048
+-- ioctlsocket constant for non-blocking socket control (Windows only)
+local FIONBIO = 0x8004667E
 
 -- SSL mode control
 local SSL_MODE_AUTO_RETRY = 0x00000004
@@ -375,6 +392,20 @@ function M.free_context(ctx)
 	end
 end
 
+-- Returns (ssl, err, sni_ref). sni_ref is the FFI buffer backing the SNI
+-- hostname passed to SSL_ctrl below -- SSL_CTRL_SET_TLSEXT_HOSTNAME stores
+-- OpenSSL's raw pointer into it (s->ext.hostname = arg, no strdup; see
+-- SSL_set_tlsext_host_name(3): "the application must ensure the string
+-- remains valid for the lifetime of the SSL object"), but nothing in this
+-- function's own scope keeps that buffer alive past return. Without an
+-- external owner, LuaJIT's GC is free to reclaim it at any point during the
+-- connection's life -- observed live via a broker-side packet trace: PUBLISH
+-- calls that returned success from every Lua-level layer (including
+-- SSL_write itself) while zero bytes ever reached the broker, consistent
+-- with heap corruption from OpenSSL reading a freed/reused buffer while
+-- building or re-referencing the ClientHello. The caller MUST keep sni_ref
+-- alive for as long as the returned ssl handle is in use (e.g. store it
+-- alongside the connection wrapper), or this bug reappears.
 function M.new_ssl(ctx, fd, hostname)
 	if not ssl_lib then
 		return nil, 'OpenSSL not loaded'
@@ -390,12 +421,13 @@ function M.new_ssl(ctx, fd, hostname)
 		return nil, 'Failed to set SSL fd: ' .. (M.get_error() or 'unknown error')
 	end
 
+	local sni_ref
 	if hostname then
-		local hostname_cstr = ffi.new('char[?]', #hostname + 1, hostname)
-		ssl_lib.SSL_ctrl(ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME, 0, hostname_cstr)
+		sni_ref = ffi.new('char[?]', #hostname + 1, hostname)
+		ssl_lib.SSL_ctrl(ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME, 0, sni_ref)
 	end
 
-	return ssl
+	return ssl, nil, sni_ref
 end
 
 function M.connect(ssl)
@@ -481,6 +513,23 @@ end
 
 -- Set a file descriptor to non-blocking mode via fcntl
 function M.set_nonblocking(fd)
+	if ffi.os == 'Windows' then
+		if not ioctlsocket_lib then
+			return nil, 'ioctlsocket not available'
+		end
+		local ok, err = pcall(function()
+			local nonblocking = ffi.new('unsigned long[1]', 1)
+			local ret = ioctlsocket_lib.ioctlsocket(ffi.cast('SOCKET', fd), FIONBIO, nonblocking)
+			if ret ~= 0 then
+				error('ioctlsocket(FIONBIO) failed, ret=' .. tostring(ret))
+			end
+		end)
+		if not ok then
+			return nil, tostring(err)
+		end
+		return true
+	end
+
 	local ok, err = pcall(function()
 		local flags = ffi.C.fcntl(fd, F_GETFL)
 		if flags < 0 then

@@ -144,6 +144,7 @@ function SSLSocket:close()
 		openssl.shutdown(self.ssl)
 		openssl.free(self.ssl)
 		self.ssl = nil
+		self.sni_ref = nil
 	end
 	if self.sock then
 		pcall(function()
@@ -198,8 +199,12 @@ function openssl_connector.connect(conn)
 		return false, 'Failed to get socket fd'
 	end
 
-	-- Create SSL object
-	local ssl, err = openssl.new_ssl(conn.ssl_ctx, fd, conn.host)
+	-- Create SSL object. sni_ref is the FFI buffer OpenSSL's SNI extension
+	-- points at internally (no copy on OpenSSL's side -- see new_ssl's own
+	-- comment) and must stay alive for as long as `ssl` does; it gets stored
+	-- on `wrapper` below for exactly that reason. Letting it go out of scope
+	-- here would leave `ssl` holding a pointer straight into GC'd memory.
+	local ssl, err, sni_ref = openssl.new_ssl(conn.ssl_ctx, fd, conn.host)
 	if not ssl then
 		sock:shutdown()
 		return false, 'Failed to create SSL: ' .. tostring(err)
@@ -229,23 +234,34 @@ function openssl_connector.connect(conn)
 		return false, 'TLS handshake failed: ' .. tostring(handshake_err or 'timeout')
 	end
 
-	-- Set the underlying fd to TRUE non-blocking via fcntl.
-	-- luasocket's settimeout(0) only sets internal Lua-level timeouts,
-	-- it does NOT set O_NONBLOCK on the fd.
+	-- Set the underlying fd to TRUE non-blocking (fcntl on POSIX, ioctlsocket
+	-- on Windows -- see set_nonblocking's own comment). luasocket's
+	-- settimeout(0) only sets internal Lua-level timeouts, it does NOT set
+	-- O_NONBLOCK on the fd.
+	-- nb_err intentionally unchecked past this point (matches this file's
+	-- existing silent-degrade convention -- e.g. crypto_lib load failures
+	-- above); disable_auto_retry below no longer depends on this succeeding.
 	local nb_ok, nb_err = openssl.set_nonblocking(fd)
-	if nb_ok then
-		-- Disable SSL_MODE_AUTO_RETRY (enabled by default in OpenSSL 1.1.1+).
-		-- With AUTO_RETRY, SSL_read retries internally on non-application
-		-- records (renegotiation, alerts), which blocks even on a non-blocking fd.
-		openssl.disable_auto_retry(ssl)
-	end
+
+	-- Disable SSL_MODE_AUTO_RETRY (enabled by default in OpenSSL 1.1.1+)
+	-- unconditionally, not just when set_nonblocking above succeeded: with
+	-- AUTO_RETRY, SSL_read retries internally on non-application records
+	-- (TLS 1.3 post-handshake NewSessionTicket messages chief among them --
+	-- servers routinely send these right after the handshake, before any
+	-- application data) which can block the calling thread regardless of the
+	-- fd's blocking mode, defeating the whole point of the 0.05s poll-and-
+	-- return pattern _sync_iteration relies on.
+	openssl.disable_auto_retry(ssl)
 	-- Also set luasocket's internal timeout for consistency
 	sock:settimeout(0)
 
-	-- Create wrapper object
+	-- Create wrapper object. Holding sni_ref here (never read again, just
+	-- kept reachable) anchors the SNI buffer against GC for exactly as long
+	-- as `ssl` itself is alive.
 	local wrapper = setmetatable({
 		sock = sock,
 		ssl = ssl,
+		sni_ref = sni_ref,
 		timeout = 0,
 		_recv_buf = '',
 	}, SSLSocket)
