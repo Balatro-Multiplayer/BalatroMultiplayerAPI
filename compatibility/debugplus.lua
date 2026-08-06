@@ -1,7 +1,10 @@
 -- BalatroMultiplayerAPI — DebugPlus compatibility layer
--- Hooks into DebugPlus's console so BMP chat messages appear there and
--- bare text (no leading /) is sent as chat instead of a DP command.
--- T is added as an alias for / to open the console.
+-- Hooks into DebugPlus's console so BMP chat messages appear there, and
+-- /say <message> sends a chat message. Everything else typed into the
+-- console (including every other /command) passes through to DebugPlus
+-- completely unmodified, so DP's own commands behave exactly as they do
+-- without this mod installed. T is added as an alias for / to open the
+-- console.
 
 local M = {}
 
@@ -79,21 +82,23 @@ local function patch(dp_console, orig_render)
 
 		if key == 'return' and dp_console.isConsoleFocused() then
 			local text = input_widget:toString():match('^%s*(.-)%s*$')
-			if text ~= '' then
-				if text:sub(1, 1) ~= '/' then
-					-- No / prefix → send as chat
-					if M.send_fn then
-						M.send_fn(text)
-					else
-						M.addMessage(localize('k_chat_not_enabled'), COLOUR_SYSTEM)
-					end
-					dp_keypressed('escape', 'escape', false)
-					return
+			local say_arg = text:match('^/say%s+(.+)$')
+			if say_arg then
+				-- /say <message> → send as chat, don't let DP see it at all.
+				if M.send_fn then
+					M.send_fn(say_arg)
 				else
-					-- / prefix → strip it, let DP execute as a command
-					input_widget:set(text:sub(2))
+					M.addMessage(localize('k_chat_not_enabled'), COLOUR_SYSTEM)
 				end
+				dp_keypressed('escape', 'escape', false)
+				return
+			elseif text == '/say' then
+				M.addMessage(localize('k_chat_say_usage'), COLOUR_SYSTEM)
+				dp_keypressed('escape', 'escape', false)
+				return
 			end
+			-- Anything else (including every other /command) is left completely
+			-- untouched and falls through to DP's own Enter handling below.
 		end
 
 		return dp_keypressed(key, scancode, isrepeat)

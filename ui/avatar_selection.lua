@@ -210,7 +210,7 @@ G.FUNCS.mpapi_open_avatar_selection = function(e)
 end
 
 G.FUNCS.mpapi_back_to_account_overlay = function(e)
-	MPAPI.account_overlay:as_overlay()
+	MPAPI.open_account_overlay()
 end
 
 -----------------------------

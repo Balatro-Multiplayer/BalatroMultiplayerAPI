@@ -11,15 +11,17 @@ MPAPI.replay.get = function(run_id, callback)
 	conn.api:get_replay(conn.jwt_token, run_id, callback)
 end
 
--- §22.2: the player's own past run ids. callback(err, data) where data is
--- {runs = [{id, lobbyCode, modId, lobbyType, status, startedAt, finalizedAt}, ...]}.
-MPAPI.replay.list_mine = function(callback)
+-- §22.2 (+pagination): the player's own past run ids. opts = {page=,
+-- page_size=} (both optional; server defaults to page 1, pageSize 20).
+-- callback(err, data) where data is {runs = [{id, lobbyCode, modId,
+-- lobbyType, status, startedAt, finalizedAt}, ...], total, page, pageSize}.
+MPAPI.replay.list_mine = function(opts, callback)
 	local conn = MPAPI.get_connection()
 	if not conn then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
 		return
 	end
-	conn.api:get_my_runs(conn.jwt_token, callback)
+	conn.api:get_my_runs(conn.jwt_token, opts, callback)
 end
 
 -- Phase 7: request a spectator token + one-time snapshot for a lobby.

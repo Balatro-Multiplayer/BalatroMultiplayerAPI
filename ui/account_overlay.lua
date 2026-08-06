@@ -7,6 +7,44 @@ local display_name_option_cycle
 local discord_linking_buttons
 local settings_row
 local chat_section
+local respectful_use_block
+local build_account_tab_content
+local build_chat_tab_content
+local format_run_date
+local match_status_label_and_colour
+local match_history_row
+local build_history_tab_content
+local fetch_history_page
+local build_account_overlay_inner
+local account_overlay_inner
+
+-----------------------------
+-- STATE
+-----------------------------
+
+-- tab: which of the three tabs is currently shown. history: the Match
+-- History tab's own paginated fetch state, reset whenever the overlay is
+-- freshly opened (MPAPI.open_account_overlay below) but preserved across
+-- in-place :update() refreshes triggered by unrelated events (chat-enable
+-- completion, connection-state changes -- see those call sites' own comments
+-- further down).
+local _state = {
+	tab = 'account', -- 'account' | 'chat' | 'history'
+	history = {
+		page = 1,
+		page_size = 10,
+		loading = false,
+		error = nil,
+		runs = {},
+		total = 0,
+	},
+}
+
+local TABS = {
+	{ key = 'account', label_key = 'k_account_tab_account' },
+	{ key = 'chat', label_key = 'k_account_tab_chat' },
+	{ key = 'history', label_key = 'k_account_tab_history' },
+}
 
 -----------------------------
 -- UI FUNCTIONS
@@ -17,42 +55,73 @@ local create_UIBox_account_overlay = function()
 		return G.FUNCS.exit_overlay_menu()
 	end
 
-	local steam_name = MPAPI.connection_state.steam_name ~= '' and MPAPI.connection_state.steam_name or localize('k_unknown')
-	local name_colour = G.C.GREEN
-	if MPAPI.connection_state.is_temp then
-		steam_name = steam_name .. ' ' .. localize('k_dev_mode_suffix')
-		name_colour = G.C.GOLD
-	end
-
-	local discord_linked = MPAPI.connection_state.discord_name ~= ''
-
 	local contents = {
 		{
 			n = G.UIT.C,
 			config = { align = 'cm', minw = 3, padding = 0.2, r = 0.1, colour = G.C.CLEAR },
-			nodes = {
-				multiplayer_account_title(),
-				{
-					n = G.UIT.R,
-					config = { align = 'cm', padding = 0.1 },
-					nodes = {
-						joker_preview(),
-						{
-							n = G.UIT.C,
-							config = { align = 'cm', padding = 0.05 },
-							nodes = {
-								account_info_rows(steam_name, name_colour, discord_linked),
-								settings_row(discord_linked),
-								chat_section(),
-							},
-						},
-					},
-				},
-			},
+			nodes = { account_overlay_inner.node },
 		},
 	}
 
 	return create_UIBox_generic_options({ snap_back = true, contents = contents })
+end
+
+-- Title, tab strip, and whichever tab's content is currently selected --
+-- separated from create_UIBox_account_overlay (same split as
+-- ui/the_order.lua's the_order_inner vs create_UIBox_the_order) so a tab
+-- switch or a history-page fetch only needs to swap this inner element's
+-- children in place, not rebuild/reopen the whole overlay.
+build_account_overlay_inner = function()
+	-- The Chat tab is hidden entirely (not just shown-but-disabled) for an
+	-- account that's permanently age-blocked from chat -- there's nothing
+	-- for that tab to ever offer them, per MPAPI.connection_state.chat_blocked
+	-- (set once during age verification, never changes -- see chat_section's
+	-- own comments below).
+	local active_tab = _state.tab
+	if active_tab == 'chat' and MPAPI.connection_state.chat_blocked then
+		active_tab = 'account'
+	end
+
+	local tab_cols = {}
+	for _, tab in ipairs(TABS) do
+		if tab.key ~= 'chat' or not MPAPI.connection_state.chat_blocked then
+			local is_selected = (tab.key == active_tab)
+			tab_cols[#tab_cols + 1] = {
+				n = G.UIT.C,
+				config = { align = 'cm', padding = 0.05 },
+				nodes = {
+					UIBox_button({
+						label = { localize(tab.label_key) },
+						button = is_selected and 'nil' or 'mpapi_account_select_tab',
+						ref_table = { tab = tab.key },
+						minw = 3,
+						minh = 0.6,
+						scale = 0.35,
+						chosen = is_selected,
+						colour = is_selected and G.C.RED or G.C.UI.BACKGROUND_INACTIVE,
+						focus_args = { type = 'none' },
+					}),
+				},
+			}
+		end
+	end
+	local tab_strip = { n = G.UIT.R, config = { align = 'cm', padding = 0.08 }, nodes = tab_cols }
+
+	local content_nodes
+	if active_tab == 'chat' then
+		content_nodes = build_chat_tab_content()
+	elseif active_tab == 'history' then
+		content_nodes = build_history_tab_content()
+	else
+		content_nodes = build_account_tab_content()
+	end
+
+	local nodes = { multiplayer_account_title(), tab_strip }
+	for _, node in ipairs(content_nodes) do
+		nodes[#nodes + 1] = node
+	end
+
+	return { n = G.UIT.ROOT, config = { align = 'cm', colour = G.C.CLEAR }, nodes = nodes }
 end
 
 multiplayer_account_title = function()
@@ -210,9 +279,40 @@ settings_row = function(discord_linked)
 	}
 end
 
+-- Account tab: everything the overlay used to show unconditionally, minus
+-- the chat section (moved to its own tab, see build_chat_tab_content below).
+build_account_tab_content = function()
+	local steam_name = MPAPI.connection_state.steam_name ~= '' and MPAPI.connection_state.steam_name or localize('k_unknown')
+	local name_colour = G.C.GREEN
+	if MPAPI.connection_state.is_temp then
+		steam_name = steam_name .. ' ' .. localize('k_dev_mode_suffix')
+		name_colour = G.C.GOLD
+	end
+
+	local discord_linked = MPAPI.connection_state.discord_name ~= ''
+
+	return {
+		{
+			n = G.UIT.R,
+			config = { align = 'cm', padding = 0.1 },
+			nodes = {
+				joker_preview(),
+				{
+					n = G.UIT.C,
+					config = { align = 'cm', padding = 0.05 },
+					nodes = {
+						account_info_rows(steam_name, name_colour, discord_linked),
+						settings_row(discord_linked),
+					},
+				},
+			},
+		},
+	}
+end
+
 chat_section = function()
 	local server_enabled = MPAPI.connection_state.chat_enabled
-	local chat_blocked   = MPAPI.connection_state.chat_blocked
+	local chat_blocked = MPAPI.connection_state.chat_blocked
 
 	local nodes = {
 		{
@@ -228,18 +328,20 @@ chat_section = function()
 	}
 
 	if server_enabled and not chat_blocked then
-		-- Client-side toggle only — chat eligibility is set at account creation and never changes
+		-- Client-side only — chat eligibility is set at account creation and
+		-- never changes. A centered button whose own label carries the current
+		-- state reads clearer here than a right-aligned toggle switch would.
 		nodes[#nodes + 1] = {
 			n = G.UIT.R,
 			config = { align = 'cm', padding = 0.04 },
 			nodes = {
-				MPAPI.disableable_toggle({
-					label = localize('k_chat_section_title'),
-					ref_table = MPAPI.config,
-					ref_value = 'chat_enabled',
-					callback = G.FUNCS.mpapi_chat_toggle,
-					enabled = true,
-				}).node,
+				UIBox_button({
+					label = { MPAPI.config.chat_enabled and localize('b_chat_on') or localize('b_chat_off') },
+					button = 'mpapi_chat_toggle',
+					minw = 3, minh = 0.7, scale = 0.4,
+					colour = MPAPI.config.chat_enabled and G.C.GREEN or G.C.RED,
+					focus_args = { nav = 'wide' },
+				}),
 			},
 		}
 	elseif chat_blocked then
@@ -282,9 +384,210 @@ chat_section = function()
 	}
 end
 
+respectful_use_block = function()
+	return {
+		n = G.UIT.R,
+		config = { align = 'cm', padding = 0.1 },
+		nodes = {
+			{
+				n = G.UIT.C,
+				config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05 },
+				nodes = {
+					{ n = G.UIT.R, config = { align = 'cm', padding = 0.06 }, nodes = {
+						{ n = G.UIT.T, config = { text = localize('k_chat_respectful_use_title'), scale = 0.38, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+					} },
+					{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+						{ n = G.UIT.T, config = { text = localize('k_chat_respectful_use_1'), scale = 0.3, colour = G.C.UI.TEXT_LIGHT } },
+					} },
+					{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+						{ n = G.UIT.T, config = { text = localize('k_chat_respectful_use_2'), scale = 0.3, colour = G.C.UI.TEXT_LIGHT } },
+					} },
+					{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+						{ n = G.UIT.T, config = { text = localize('k_chat_respectful_use_3'), scale = 0.3, colour = G.C.UI.TEXT_LIGHT } },
+					} },
+				},
+			},
+		},
+	}
+end
+
+build_chat_tab_content = function()
+	return { chat_section(), respectful_use_block() }
+end
+
+-- 'YYYY-MM-DD' out of a run's startedAt timestamp string, same extraction
+-- BalatroMultiplayerPvP's ui/replay/replay_browser.lua already uses for its
+-- own (unpaginated) replay list, kept split into its own column here rather
+-- than concatenated into one label so status can be coloured independently.
+format_run_date = function(run)
+	return tostring(run.startedAt or ''):match('^(%d%d%d%d%-%d%d%-%d%d)') or '?'
+end
+
+match_status_label_and_colour = function(status)
+	if status == 'completed' then return localize('k_match_status_completed'), G.C.GREEN end
+	if status == 'active' then return localize('k_match_status_active'), G.C.GOLD end
+	if status == 'abandoned' then return localize('k_match_status_abandoned'), G.C.UI.TEXT_INACTIVE end
+	if status == 'terminated' then return localize('k_match_status_terminated'), G.C.UI.TEXT_INACTIVE end
+	return tostring(status), G.C.UI.TEXT_INACTIVE
+end
+
+-- One row per run: date / lobby code / status, plus "View Log" (opens a
+-- website link -- the target page doesn't exist yet, that's expected) and
+-- "View Replay" (dispatches to whichever mod registered a launcher for this
+-- run's modId, see api/playback/registry.lua's register_launcher/launch --
+-- MPAPI itself doesn't know how to bootstrap a replay for any given mod's
+-- gamemode). Per-run dynamic G.FUNCS names, same idiom
+-- BalatroMultiplayerPvP's replay_browser.lua already uses for its own list.
+match_history_row = function(run)
+	local status_label, status_colour = match_status_label_and_colour(run.status)
+	local can_replay = run.status ~= 'active'
+
+	G.FUNCS['mpapi_match_history_view_log_' .. run.id] = function()
+		local conn = MPAPI._internal.conn and MPAPI._internal.conn.connection
+		local base_url = conn and conn.api and conn.api.base_url
+		if base_url then
+			love.system.openURL(base_url .. '/runs/' .. tostring(run.id))
+		end
+	end
+
+	G.FUNCS['mpapi_match_history_view_replay_' .. run.id] = function()
+		G.FUNCS.exit_overlay_menu()
+		MPAPI.playback.launch(run.modId, run.id)
+	end
+
+	return {
+		n = G.UIT.R,
+		config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05 },
+		nodes = {
+			{ n = G.UIT.C, config = { align = 'cl', minw = 2.2, padding = 0.05 }, nodes = {
+				{ n = G.UIT.T, config = { text = format_run_date(run), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
+			} },
+			{ n = G.UIT.C, config = { align = 'cl', minw = 2.2, padding = 0.05 }, nodes = {
+				{ n = G.UIT.T, config = { text = tostring(run.lobbyCode or '??????'), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
+			} },
+			{ n = G.UIT.C, config = { align = 'cl', minw = 2, padding = 0.05 }, nodes = {
+				{ n = G.UIT.T, config = { text = status_label, scale = 0.32, colour = status_colour } },
+			} },
+			{ n = G.UIT.C, config = { align = 'cm', padding = 0.05 }, nodes = {
+				UIBox_button({
+					label = { localize('b_view_log') },
+					button = 'mpapi_match_history_view_log_' .. run.id,
+					minw = 2, minh = 0.6, scale = 0.3, colour = G.C.BLUE,
+				}),
+			} },
+			{ n = G.UIT.C, config = { align = 'cm', padding = 0.05 }, nodes = {
+				MPAPI.disableable_button({
+					label = { localize('b_view_replay') },
+					button = 'mpapi_match_history_view_replay_' .. run.id,
+					enabled = can_replay,
+					minw = 2, minh = 0.6, scale = 0.3, colour = G.C.GREEN,
+				}).node,
+			} },
+		},
+	}
+end
+
+build_history_tab_content = function()
+	local h = _state.history
+
+	if h.loading then
+		return { { n = G.UIT.R, config = { align = 'cm', minh = 2 }, nodes = {
+			{ n = G.UIT.T, config = { text = localize('k_match_history_loading'), scale = 0.4, colour = G.C.UI.TEXT_LIGHT } },
+		} } }
+	end
+
+	if h.error then
+		return {
+			{ n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
+				{ n = G.UIT.T, config = { text = localize('k_match_history_error'), scale = 0.4, colour = G.C.RED } },
+			} },
+			{ n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
+				UIBox_button({ label = { localize('b_match_history_retry') }, button = 'mpapi_match_history_retry', minw = 3, minh = 0.6, scale = 0.35, colour = G.C.RED }),
+			} },
+		}
+	end
+
+	if #h.runs == 0 then
+		return { { n = G.UIT.R, config = { align = 'cm', minh = 2 }, nodes = {
+			{ n = G.UIT.T, config = { text = localize('k_match_history_empty'), scale = 0.4, colour = G.C.UI.TEXT_LIGHT } },
+		} } }
+	end
+
+	local rows = {}
+	for _, run in ipairs(h.runs) do
+		rows[#rows + 1] = match_history_row(run)
+	end
+
+	local total_pages = math.max(1, math.ceil(h.total / h.page_size))
+	rows[#rows + 1] = {
+		n = G.UIT.R,
+		config = { align = 'cm', padding = 0.1 },
+		nodes = {
+			MPAPI.disableable_button({
+				label = { localize('b_match_history_prev') }, button = 'mpapi_match_history_prev_page',
+				enabled = h.page > 1, minw = 1.8, minh = 0.6, scale = 0.3, colour = G.C.BLUE,
+			}).node,
+			{ n = G.UIT.C, config = { align = 'cm', padding = 0.1 }, nodes = {
+				{ n = G.UIT.T, config = {
+					text = localize('k_match_history_page_label') .. ' ' .. tostring(h.page) .. ' / ' .. tostring(total_pages),
+					scale = 0.32, colour = G.C.UI.TEXT_LIGHT,
+				} },
+			} },
+			MPAPI.disableable_button({
+				label = { localize('b_match_history_next') }, button = 'mpapi_match_history_next_page',
+				enabled = h.page < total_pages, minw = 1.8, minh = 0.6, scale = 0.3, colour = G.C.BLUE,
+			}).node,
+		},
+	}
+
+	return rows
+end
+
 -----------------------------
 -- LOGIC FUNCTIONS
 -----------------------------
+
+fetch_history_page = function(page)
+	_state.history.loading = true
+	_state.history.error = nil
+	account_overlay_inner:update()
+
+	MPAPI.replay.list_mine({ page = page, page_size = _state.history.page_size }, function(err, data)
+		_state.history.loading = false
+		if err then
+			_state.history.error = err
+		else
+			_state.history.runs = (data and data.runs) or {}
+			_state.history.total = (data and data.total) or #_state.history.runs
+			_state.history.page = (data and data.page) or page
+		end
+		account_overlay_inner:update()
+	end)
+end
+
+G.FUNCS.mpapi_account_select_tab = function(e)
+	local tab = e.config and e.config.ref_table and e.config.ref_table.tab
+	if not tab or tab == _state.tab then return end
+	_state.tab = tab
+	if tab == 'history' and #_state.history.runs == 0 and not _state.history.loading and not _state.history.error then
+		fetch_history_page(1)
+	else
+		account_overlay_inner:update()
+	end
+end
+
+G.FUNCS.mpapi_match_history_retry = function()
+	fetch_history_page(_state.history.page)
+end
+
+G.FUNCS.mpapi_match_history_prev_page = function()
+	if _state.history.page > 1 then fetch_history_page(_state.history.page - 1) end
+end
+
+G.FUNCS.mpapi_match_history_next_page = function()
+	local total_pages = math.max(1, math.ceil(_state.history.total / _state.history.page_size))
+	if _state.history.page < total_pages then fetch_history_page(_state.history.page + 1) end
+end
 
 G.FUNCS.mpapi_change_use_discord_name = function(args)
 	local use_discord = args.to_key == 2
@@ -307,9 +610,14 @@ G.FUNCS.mpapi_unlink_discord = function(e)
 	end)
 end
 
-G.FUNCS.mpapi_chat_toggle = function(new_value)
+-- Button press (not a toggle-widget callback, so there's no new_value handed
+-- to us) -- flips the current local config value and re-renders so the
+-- button's own label picks up the new "Chat: On"/"Chat: Off" text.
+G.FUNCS.mpapi_chat_toggle = function(e)
+	local new_value = not MPAPI.config.chat_enabled
 	MPAPI._internal.config_set('chat_enabled', new_value)
 	MPAPI.chat.on_config_changed(new_value)
+	account_overlay_inner:update()
 end
 
 G.FUNCS.mpapi_link_discord = function(e)
@@ -329,4 +637,17 @@ end
 -- GLOBAL UI ELEMENTS
 -----------------------------
 
+account_overlay_inner = MPAPI.ui_element(build_account_overlay_inner)
 MPAPI.account_overlay = MPAPI.ui_element(create_UIBox_account_overlay)
+
+-- Fresh-open entry point: resets the tab strip (and any stale Match History
+-- page/error state) back to the Account tab. build_fn (build_account_overlay_inner)
+-- has no way to tell a genuine fresh :as_overlay() open apart from an
+-- in-place :update() triggered by an unrelated event (chat-enable completion,
+-- connection-state changes -- see those call sites below), so the reset lives
+-- here instead, in the one place that's ONLY ever called on a real open.
+function MPAPI.open_account_overlay()
+	_state.tab = 'account'
+	_state.history = { page = 1, page_size = 10, loading = false, error = nil, runs = {}, total = 0 }
+	MPAPI.account_overlay:as_overlay()
+end
