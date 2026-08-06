@@ -14,16 +14,21 @@ function api_client:get_replay(token, run_id, callback)
 	self.mqtt:http_get_auth(self.base_url .. '/api/runs/' .. run_id .. '/replay', token)
 end
 
--- §22.2: a player's own past run ids (GET /api/runs/mine) -- the discovery
--- step a "My Matches" replay list needs. Returns {runs = [{id, lobbyCode,
--- modId, lobbyType, status, startedAt, finalizedAt}, ...]}.
-function api_client:get_my_runs(token, callback)
+-- §22.2 (+pagination): a player's own past run ids (GET /api/runs/mine) --
+-- the discovery step a "My Matches" replay list needs. opts = {page=,
+-- page_size=} (both optional; server defaults to page 1, pageSize 20).
+-- Returns {runs = [{id, lobbyCode, modId, lobbyType, status, startedAt,
+-- finalizedAt}, ...], total, page, pageSize}.
+function api_client:get_my_runs(token, opts, callback)
 	if not self:_transport_ready() then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
 		return
 	end
 	self:_setup_json_callback(callback)
-	self.mqtt:http_get_auth(self.base_url .. '/api/runs/mine', token)
+	opts = opts or {}
+	local url = self.base_url .. '/api/runs/mine?page=' .. tostring(opts.page or 1)
+		.. '&pageSize=' .. tostring(opts.page_size or 20)
+	self.mqtt:http_get_auth(url, token)
 end
 
 -- Phase 7 (live spectating): request a short-lived spectator token scoped to

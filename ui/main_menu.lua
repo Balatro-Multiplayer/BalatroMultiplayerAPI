@@ -217,7 +217,7 @@ end
 G.FUNCS.mpapi_account_button = function(e)
 	local state = MPAPI.connection_state.state
 	if state == MPAPI.ConnectionState.CONNECTED then
-		MPAPI.account_overlay:as_overlay()
+		MPAPI.open_account_overlay()
 	elseif state == MPAPI.ConnectionState.DISCONNECTED then
 		MPAPI.sendDebugMessage('[main_menu] retry pressed | UIBOX: ' .. tostring(G.I and G.I.UIBOX and #G.I.UIBOX or '?') .. ' | ROOM_ATTACH scale: ' .. tostring(G.ROOM_ATTACH and G.ROOM_ATTACH.VT and G.ROOM_ATTACH.VT.scale or '?'))
 		MPAPI.disconnect()
