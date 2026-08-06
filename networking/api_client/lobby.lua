@@ -96,13 +96,25 @@ function api_client:send_chat_message(jwt_token, code, message, callback)
 
 	self:_enqueue(function(status, body)
 		if status < 200 or status >= 300 then
+			-- Only a decoded { error = "..." } body is genuine player-facing
+			-- copy (chat.lua's k_chat_not_sent guard shows it verbatim). A
+			-- non-JSON or bare-status response -- a proxy error page, an
+			-- unexpected 5xx with no body -- carries no usable reason, so it's
+			-- TRANSPORT rather than SERVER: the caller falls back to its own
+			-- clean message instead of leaking this raw text to the player.
 			local ok, data = pcall(api_client.json_decode, body)
-			local emsg = (ok and data and data.error) or ('Server returned status ' .. tostring(status))
-			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, emsg), nil)
+			if ok and data and data.error then
+				callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, data.error), nil)
+			else
+				callback(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'Server returned status ' .. tostring(status)), nil)
+			end
 			return
 		end
 
-		callback(nil, { ok = true })
+		-- Pass the response body through: on a moderation rewrite it carries
+		-- publishText (what other players actually received).
+		local ok, data = pcall(api_client.json_decode, body)
+		callback(nil, (ok and type(data) == 'table') and data or { ok = true })
 	end, function(msg)
 		callback(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'HTTP request failed: ' .. tostring(msg)), nil)
 	end)
