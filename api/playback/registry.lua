@@ -20,7 +20,7 @@ end
 -- Default-deny: an unregistered opcode is a debug-logged no-op, not a crash --
 -- matches this codebase's existing default-deny philosophy (pool_gating.lua's
 -- warn_if_ungated). Framing opcodes emitted by the recorder itself (manifest/
--- end/chk -- see BalatroMultiplayerPvP/lib/replay_log.lua) are expected to be
+-- end/chk -- see api/replay/recorder.lua) are expected to be
 -- registered like any other opcode if a consumer wants to react to them (e.g.
 -- to seed initial run state from "manifest"), not treated specially here.
 function MPAPI.playback.dispatch(mod_id, opcode, args, ctx)
