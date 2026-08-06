@@ -55,6 +55,12 @@ local function run_supervision_lost_callbacks()
 	end
 end
 
+-- Set by notify_session() when it arrives before A.launcher_connected is
+-- true yet (the mod's own server login can finish before or after this
+-- channel's handshake with the launcher - no guaranteed ordering) - flushed
+-- once the 'authenticated' event below actually lands.
+A._internal.pending_session = nil
+
 local port = os.getenv('BET_RANKED_SUPERVISOR_PORT')
 local secret_hex = os.getenv('BET_RANKED_SUPERVISOR_SECRET')
 
@@ -106,6 +112,14 @@ function A.update()
 		if event.type == 'authenticated' then
 			A.launcher_connected = true
 			MPAPI.sendDebugMessage('Ranked anti-cheat supervision channel authenticated.')
+			if A._internal.pending_session then
+				tx_channel:push({
+					cmd = 'send_session_token',
+					token = A._internal.pending_session.token,
+					player_id = A._internal.pending_session.player_id,
+				})
+				A._internal.pending_session = nil
+			end
 		elseif event.type == 'supervision_lost' then
 			A.launcher_supervision_lost = true
 			A.launcher_supervision_lost_at = os.time()
@@ -135,6 +149,36 @@ function A.update()
 			thread = nil
 			A.launcher_connected = false
 		end
+	end
+end
+
+-- Hands the mod's own server session (token + player id) to the launcher
+-- over this already-authenticated channel, once the mod itself reaches
+-- MPAPI.ConnectionState.CONNECTED (see api/connection/lifecycle.lua's
+-- connection_on_state_change). The launcher uses this to open its own
+-- direct connection to the server as the same player
+-- (LauncherIntegrityClient) rather than independently re-authenticating via
+-- Steam - one Steam auth ticket per Ranked run instead of two.
+--
+-- A no-op if this channel isn't active at all (Casual, or the game started
+-- outside BET - A.active stays false, see the top of this file). If it IS
+-- active but hasn't finished its own handshake with the launcher yet, the
+-- session is queued (pending_session above) and flushed as soon as the
+-- 'authenticated' event arrives - there's no guaranteed ordering between
+-- "mod logs into the game server" and "this channel's own handshake
+-- completes".
+function A.notify_session(token, player_id)
+	if not A.active then
+		return
+	end
+	if not token or token == '' or not player_id or player_id == '' then
+		return
+	end
+
+	if A.launcher_connected then
+		tx_channel:push({ cmd = 'send_session_token', token = token, player_id = tostring(player_id) })
+	else
+		A._internal.pending_session = { token = token, player_id = tostring(player_id) }
 	end
 end
 

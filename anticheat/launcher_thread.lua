@@ -250,6 +250,18 @@ while running do
 		end
 		if cmd.cmd == 'shutdown' then
 			running = false
+		elseif cmd.cmd == 'send_session_token' then
+			-- Only meaningful post-handshake (see launcher_channel.lua's
+			-- notify_session(), which queues on the main-thread side until
+			-- A.launcher_connected is true - by the time that's true, this
+			-- side's own `authenticated` below is already true too, since
+			-- A.launcher_connected only ever becomes true in reaction to the
+			-- 'authenticated' event this thread pushes after a successful
+			-- handshake). The check here is just a defensive backstop, not
+			-- something expected to actually trigger.
+			if authenticated then
+				send_frame({ type = 'session_token', token = cmd.token, player_id = cmd.player_id })
+			end
 		end
 	end
 	if not running then
