@@ -3,7 +3,7 @@
 -- timeline, tagged with which player performed each action.
 --
 -- Each player's carbon log is a separately gzip+base64'd JSON array of
--- [t, opcode, args] tuples (see BalatroMultiplayerPvP/lib/replay_log.lua's
+-- [t, opcode, args] tuples (see api/replay/recorder.lua's
 -- RLOG.record/canonical_hash_input for the exact wire shape this mirrors) --
 -- one blob per player, never pre-merged across players server-side. `t` is
 -- elapsed-ms since THAT player's own manifest (recorded independently on
@@ -33,7 +33,7 @@ function MPAPI.playback.build_timeline(logs)
 			else
 				for _, ev in ipairs(events) do
 					-- [t, opcode, args] positional tuple (see encode_event_tuple in
-					-- replay_log.lua) -- not an {t=,opcode=,args=} object.
+					-- recorder.lua) -- not an {t=,opcode=,args=} object.
 					if ev[1] ~= nil then
 						timeline[#timeline + 1] = {
 							t = ev[1],
