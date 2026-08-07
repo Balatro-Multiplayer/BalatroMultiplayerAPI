@@ -73,6 +73,13 @@ return {
 			k_match_status_completed = 'Completed',
 			k_match_status_abandoned = 'Abandoned',
 			k_match_status_terminated = 'Terminated',
+			-- Delivery outcomes for a message the player already saw echoed.
+			-- The frame makes no claim about why or for how long: the reason
+			-- appended after it is the server's own self-contained sentence,
+			-- or k_chat_reason_unavailable when the server gave none.
+			k_chat_not_sent = '[MultiplayerAPI] Not sent',
+			k_chat_sent_as = '[MultiplayerAPI] Other players saw:',
+			k_chat_reason_unavailable = 'Something went wrong. Try again.',
 			-- Chat section in account overlay
 			k_chat_section_title = 'Chat',
 			b_chat_on = 'On',
