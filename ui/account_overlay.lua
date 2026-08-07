@@ -43,7 +43,10 @@ local _state = {
 local TABS = {
 	{ key = 'account', label_key = 'k_account_tab_account' },
 	{ key = 'chat', label_key = 'k_account_tab_chat' },
-	{ key = 'history', label_key = 'k_account_tab_history' },
+	-- Match History tab disabled for now (button hidden below) -- its full
+	-- implementation (build_history_tab_content and friends, further down
+	-- this file) is left intact to re-enable later by uncommenting this line.
+	-- { key = 'history', label_key = 'k_account_tab_history' },
 }
 
 -----------------------------
@@ -79,6 +82,12 @@ build_account_overlay_inner = function()
 	-- own comments below).
 	local active_tab = _state.tab
 	if active_tab == 'chat' and MPAPI.connection_state.chat_blocked then
+		active_tab = 'account'
+	end
+	-- Match History tab is disabled (see TABS above) -- fall back off it the same
+	-- way a chat-blocked account falls back off the Chat tab, in case _state.tab
+	-- is left over as 'history' from before it was disabled.
+	if active_tab == 'history' then
 		active_tab = 'account'
 	end
 
