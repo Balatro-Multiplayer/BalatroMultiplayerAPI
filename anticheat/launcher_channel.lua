@@ -125,10 +125,21 @@ function A.update()
 			A.launcher_supervision_lost_at = os.time()
 			MPAPI.sendWarnMessage('Lost contact with the BET launcher during a Ranked run.')
 			run_supervision_lost_callbacks()
+			-- Repaint the main-menu RANKED badge (ui/main_menu.lua) so a
+			-- supervision drop is visible without the player having to
+			-- close/reopen the account panel. nil-checked: the badge only
+			-- ever gets built once account_button itself has loaded, and
+			-- this event can in principle race that on startup.
+			if MPAPI.account_button then
+				MPAPI.account_button:update()
+			end
 		elseif event.type == 'supervision_restored' then
 			A.launcher_supervision_lost = false
 			A.launcher_supervision_lost_at = nil
 			MPAPI.sendDebugMessage('Ranked anti-cheat supervision channel restored.')
+			if MPAPI.account_button then
+				MPAPI.account_button:update()
+			end
 		elseif event.type == 'fatal_error' then
 			-- The launcher already enforces its own handshake timeout (it
 			-- kills the game process if the mod never authenticates - see

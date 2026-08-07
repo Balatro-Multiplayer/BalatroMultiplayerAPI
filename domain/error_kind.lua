@@ -11,4 +11,8 @@ MPAPI.ErrorKind = {
 	AUTH_FAILED = 'auth_failed',
 	TIMEOUT = 'timeout',
 	SERVER = 'server',
+	-- A ranked queue attempt was refused because the launcher's anti-cheat
+	-- supervision channel isn't active/healthy (see
+	-- api/matchmaking/api.lua's queue() and anticheat/launcher_channel.lua).
+	ANTICHEAT_REQUIRED = 'anticheat_required',
 }

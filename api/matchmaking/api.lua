@@ -14,6 +14,19 @@ MPAPI.matchmaking = MPAPI.matchmaking or {}
 -- game started outside BET entirely) never sets MPAPI.anticheat.active, so
 -- this only ever blocks a genuine ranked queue attempt made without a
 -- supervising launcher; every non-ranked queue() call is unaffected.
+--
+-- Unlike the plain "not connected" guard below (bare nil - nothing was ever
+-- attempted), a refused ranked attempt still returns a real handle that
+-- fires MPAPI.MatchmakingEvent.ERROR (kind = ANTICHEAT_REQUIRED) on the next
+-- tick - same contract a server-side queue_matchmaking failure already gets
+-- further down this function - so a caller that always does
+-- `local h = queue(opts); h:on('error', fn)` gets one consistent, listenable
+-- signal instead of having to separately guard against a silent nil. The
+-- fire is deferred a tick (not inline here) so that :on('error', fn) call
+-- has a chance to run first - same deferred-event convention
+-- create_local_lobby (api/lobby/public.lua) uses for its own synchronous
+-- CONNECTED. Never added to mm.handles: no server-side queue entry exists
+-- for it, so there's nothing for leave()/dispatch to ever reach.
 MPAPI.matchmaking.queue = function(opts)
 	local mm = MPAPI._internal.mm
 	local conn = MPAPI.get_connection()
@@ -23,16 +36,45 @@ MPAPI.matchmaking.queue = function(opts)
 	end
 
 	local wants_ranked = opts.ranked or opts.lobby_type == MPAPI.LobbyType.RANKED
+
+	-- Heuristic-only integration check: MPAPI cannot trust an arbitrary
+	-- game_mode string's contents (see this function's own doc comment on
+	-- why ranked-ness can't be inferred), so this never blocks anything -
+	-- only a real opts.ranked/opts.lobby_type gets the gate below. But a
+	-- game_mode that LOOKS like it encodes "ranked" (e.g. a "ranked:" key
+	-- prefix, a convention some consuming mods use for their own
+	-- leaderboard/pool separation) while wants_ranked is false is a strong
+	-- smell that a mod author meant to set the flag and forgot - exactly
+	-- the failure mode that let a ranked-looking queue attempt skip the
+	-- anti-cheat gate entirely in practice. Surfaced here, in the same
+	-- debug log a mod author is already watching during their own testing,
+	-- rather than staying silent until someone notices anti-cheat wasn't
+	-- actually enforced.
+	if not wants_ranked and type(opts.game_mode) == 'string' and opts.game_mode:lower():find('ranked', 1, true) then
+		MPAPI.sendWarnMessage('[mmdbg] matchmaking.queue: game_mode "' .. opts.game_mode .. '" (mod='
+			.. tostring(opts.mod_id) .. ') looks ranked but opts.ranked/opts.lobby_type was not set - the '
+			.. 'launcher anti-cheat gate was NOT applied to this queue attempt. If this is really a ranked '
+			.. 'queue, pass ranked=true or lobby_type=MPAPI.LobbyType.RANKED explicitly.')
+	end
+
 	local anticheat_ok = false
 	if wants_ranked then
 		local A = MPAPI.anticheat
 		anticheat_ok = A ~= nil and A.active and A.launcher_connected and not A.launcher_supervision_lost
 		if not anticheat_ok then
-			MPAPI.sendWarnMessage('matchmaking.queue: refusing a ranked queue attempt - no active/healthy '
-				.. 'launcher anti-cheat supervision (active=' .. tostring(A and A.active)
+			local reason = 'no active/healthy launcher anti-cheat supervision (active=' .. tostring(A and A.active)
 				.. ' launcher_connected=' .. tostring(A and A.launcher_connected)
-				.. ' supervision_lost=' .. tostring(A and A.launcher_supervision_lost) .. ')')
-			return nil
+				.. ' supervision_lost=' .. tostring(A and A.launcher_supervision_lost) .. ')'
+			MPAPI.sendWarnMessage('matchmaking.queue: refusing a ranked queue attempt - ' .. reason)
+
+			local handle = MPAPI.matchmaking._make_handle(opts.mod_id, opts.game_mode)
+			G.E_MANAGER:add_event(Event({
+				func = function()
+					handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(MPAPI.ErrorKind.ANTICHEAT_REQUIRED, reason))
+					return true
+				end,
+			}))
+			return handle
 		end
 	end
 
