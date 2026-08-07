@@ -99,9 +99,11 @@ MPAPI.end_screen_uibox = function(config)
 			{ n = G.UIT.C, config = { align = 'cm', padding = 0.1 }, nodes = { t.nodes[1] } },
 		},
 	}
-	if config.id then
-		t.config.id = config.id
-	end
+	-- Always carry an id (even when the caller doesn't supply one) so the
+	-- restorable-overlay mechanism below (MPAPI.end_screen_show /
+	-- G.FUNCS.exit_overlay_menu) can always tell whether the currently-open
+	-- overlay IS this end screen.
+	t.config.id = config.id or 'mpapi_end_screen'
 	return t
 end
 
@@ -131,12 +133,83 @@ MPAPI.end_screen_show = function(config)
 	G.SETTINGS.paused = true
 	local no_esc = config.no_esc
 	if no_esc == nil then no_esc = config.won end
-	G.FUNCS.overlay_menu({ definition = def, config = { no_esc = no_esc } })
+	local overlay_config = { no_esc = no_esc }
+	-- Register this as the currently-pending "restorable" overlay BEFORE showing
+	-- it, so if the pause/options menu (mod_registry/view.lua's G.FUNCS.options,
+	-- reachable from the in-run HUD's Options button or Escape) or any other
+	-- plain overlay_menu call (e.g. SPDRN's View Deck button,
+	-- BalatroMultiplayerSpeed/ui/end_game_panel.lua's spdrn_view_selected_deck)
+	-- opens on top and is later closed via G.FUNCS.exit_overlay_menu, this end
+	-- screen is rebuilt and re-shown instead of being lost -- see the
+	-- G.FUNCS.exit_overlay_menu wrap below. Rebuilding via
+	-- MPAPI.end_screen_uibox(config), NOT end_screen_show(config), deliberately
+	-- skips on_build/sounds/quip/room_jiggle -- those fire once, not per restore.
+	MPAPI._restorable_overlay = {
+		id = def.config.id,
+		overlay_config = overlay_config,
+		rebuild_fn = function()
+			local rok, rdef = pcall(MPAPI.end_screen_uibox, config)
+			return rok and rdef or def
+		end,
+	}
+	G.FUNCS.overlay_menu({ definition = def, config = overlay_config })
 	if config.room_jiggle and G.ROOM then
 		G.ROOM.jiggle = G.ROOM.jiggle + config.room_jiggle
 	end
 	if config.quip then
 		MPAPI.animate_jimbo_quip(config.quip.prefix, config.quip.max, config.quip.delay)
+	end
+end
+
+-----------------------------
+-- Overlay-over-overlay restore
+-----------------------------
+
+-- Balatro's G.FUNCS.overlay_menu is a hard singleton: opening a second overlay
+-- unconditionally destroys whatever was already showing, and G.FUNCS.exit_overlay_menu
+-- has no memory of what that was (base game functions/button_callbacks.lua).
+-- MPAPI._restorable_overlay (set by MPAPI.end_screen_show, above) is the one
+-- currently-pending overlay that should come back once whatever's on top of it
+-- closes. PvP's own end screen has the identical latent bug -- it already has a
+-- single-purpose rebuild (G.FUNCS.overlay_endgame_menu,
+-- BalatroMultiplayerPvP/ui/game/functions.lua), wired only as its nemesis-deck-
+-- viewer's back_func, not to this same pause-menu-close path. Not migrated here
+-- (SPDRN-scoped fix); PvP could opt into this exact mechanism later by setting
+-- MPAPI._restorable_overlay itself before its own overlay_menu call.
+MPAPI._restorable_overlay = nil -- { id, overlay_config, rebuild_fn } or nil
+
+local exit_overlay_menu_ref = G.FUNCS.exit_overlay_menu
+G.FUNCS.exit_overlay_menu = function(...)
+	local restorable = MPAPI._restorable_overlay
+	-- Whichever overlay is open IS the restorable one iff its root node's config.id
+	-- (set unconditionally by MPAPI.end_screen_uibox) is found via get_UIE_by_ID --
+	-- NOT G.OVERLAY_MENU.config.id, which is the UIBox's own align/offset/no_esc config
+	-- (set by G.FUNCS.overlay_menu's args.config), not the definition's root node config.
+	local closing_is_restorable = restorable
+		and G.OVERLAY_MENU
+		and G.OVERLAY_MENU ~= true
+		and G.OVERLAY_MENU:get_UIE_by_ID(restorable.id) ~= nil
+	if closing_is_restorable then
+		-- The restorable overlay itself is what's being dismissed (one of its own
+		-- buttons, or Escape) -- forget it so nothing tries to resurrect it later.
+		MPAPI._restorable_overlay = nil
+	end
+	exit_overlay_menu_ref(...)
+	if restorable and not closing_is_restorable and G.OVERLAY_MENU == nil then
+		-- Something else was closed while this overlay was still pending underneath
+		-- it -- rebuild and bring it back rather than leaving the game board exposed.
+		--
+		-- Must set paused BEFORE overlay_menu, matching vanilla's own ordering
+		-- (base game functions/button_callbacks.lua's G.FUNCS.options etc always
+		-- pause first): engine/node.lua captures `created_on_pause = G.SETTINGS.paused`
+		-- once, at construction, and engine/moveable.lua's Moveable:move (the per-frame
+		-- position-easing update) permanently skips easing a node for which
+		-- created_on_pause is false while paused is true. exit_overlay_menu_ref just
+		-- set paused = false, so building the new UIBox before flipping it back true
+		-- would freeze it at its pop-in start offset forever instead of sliding into place.
+		G.SETTINGS.paused = true
+		local def = restorable.rebuild_fn()
+		G.FUNCS.overlay_menu({ definition = def, config = restorable.overlay_config })
 	end
 end
 
@@ -282,34 +355,45 @@ end
 --                    (e.g. PvP's create_UIBox_round_scores_row_nemesis)
 --   defeated_by?  -- (bool) show the base game's "Defeated By" row (SPDRN's
 --                    run-lost-to-a-blind screen)
+--   stat_rows?    -- overrides the left column's stat block entirely with a
+--                    caller-supplied row node list (e.g. SPDRN's 4 match-wide
+--                    stat rows, ui/end_game_panel.lua's build_end_game_stat_rows).
+--                    Falls back to the base game's own hand/poker_hand/
+--                    cards_purchased/times_rerolled/ante/round block when omitted.
 --   buttons       -- button node list (from the caller's own end_screen_buttons)
 MPAPI.end_screen_body = function(config)
 	local left_col = {}
-	left_col[#left_col + 1] = create_UIBox_round_scores_row('hand')
-	left_col[#left_col + 1] = create_UIBox_round_scores_row('poker_hand')
-	left_col[#left_col + 1] = {
-		n = G.UIT.R,
-		config = {},
-		nodes = {
-			{
-				n = G.UIT.C,
-				nodes = {
-					create_UIBox_round_scores_row('cards_purchased', G.C.MONEY),
-					{ n = G.UIT.R, config = { minh = 0.08 } },
-					create_UIBox_round_scores_row('times_rerolled', G.C.GREEN),
+	if config.stat_rows then
+		for _, row in ipairs(config.stat_rows) do
+			left_col[#left_col + 1] = row
+		end
+	else
+		left_col[#left_col + 1] = create_UIBox_round_scores_row('hand')
+		left_col[#left_col + 1] = create_UIBox_round_scores_row('poker_hand')
+		left_col[#left_col + 1] = {
+			n = G.UIT.R,
+			config = {},
+			nodes = {
+				{
+					n = G.UIT.C,
+					nodes = {
+						create_UIBox_round_scores_row('cards_purchased', G.C.MONEY),
+						{ n = G.UIT.R, config = { minh = 0.08 } },
+						create_UIBox_round_scores_row('times_rerolled', G.C.GREEN),
+					},
+				},
+				{ n = G.UIT.C, config = { minw = 0.08 } },
+				{
+					n = G.UIT.C,
+					nodes = {
+						create_UIBox_round_scores_row('furthest_ante', G.C.FILTER),
+						{ n = G.UIT.R, config = { minh = 0.08 } },
+						create_UIBox_round_scores_row('furthest_round', G.C.FILTER),
+					},
 				},
 			},
-			{ n = G.UIT.C, config = { minw = 0.08 } },
-			{
-				n = G.UIT.C,
-				nodes = {
-					create_UIBox_round_scores_row('furthest_ante', G.C.FILTER),
-					{ n = G.UIT.R, config = { minh = 0.08 } },
-					create_UIBox_round_scores_row('furthest_round', G.C.FILTER),
-				},
-			},
-		},
-	}
+		}
+	end
 	left_col[#left_col + 1] = { n = G.UIT.R, config = { minh = 0.01 } }
 	left_col[#left_col + 1] = { n = G.UIT.R, config = { align = 'cm', minw = 2 }, nodes = {
 		{ n = G.UIT.T, config = { text = localize('ml_mp_kofi_message')[1], scale = 0.35, colour = G.C.UI.TEXT_LIGHT, col = true } },
