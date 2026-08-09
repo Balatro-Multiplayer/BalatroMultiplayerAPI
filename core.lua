@@ -28,17 +28,14 @@ end
 
 function MPAPI.load_mpapi_file(file)
 	local chunk, err = SMODS.load_file(file, MPAPI.id)
-	if chunk then
-		local ok, func = pcall(chunk)
-		if ok then
-			return func
-		else
-			MPAPI.sendWarnMessage('Failed to process file: ' .. func)
-		end
-	else
-		MPAPI.sendWarnMessage('Failed to find or compile file: ' .. tostring(err))
+	if not chunk then
+		error('MPAPI: failed to find or compile file \'' .. file .. '\': ' .. tostring(err), 0)
 	end
-	return nil
+	local ok, result = pcall(chunk)
+	if not ok then
+		error('MPAPI: failed to execute file \'' .. file .. '\': ' .. tostring(result), 0)
+	end
+	return result
 end
 
 function MPAPI.load_mpapi_dir(directory, recursive)
@@ -136,8 +133,12 @@ MPAPI.load_mpapi_dir('lib')
 MPAPI.load_mpapi_dir('api', true)
 MPAPI.load_mpapi_dir('ui', true)
 
--- Load dev overrides if the dev/ directory exists (stripped in release builds)
-local dev_init = MPAPI.load_mpapi_file('dev/init.lua')
+-- Load dev overrides if the dev/ directory exists (stripped in release builds) --
+-- absence here is expected, so guard explicitly rather than relying on
+-- load_mpapi_file's (now-fatal) missing-file path.
+if NFS.getInfo(MPAPI.path .. '/dev/init.lua') then
+	MPAPI.load_mpapi_file('dev/init.lua')
+end
 
 G.E_MANAGER:add_event(Event({
 	blockable = false,
