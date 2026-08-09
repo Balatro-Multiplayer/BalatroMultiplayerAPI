@@ -30,9 +30,17 @@ Stripped down to only the functions needed by `ui.lua` and `console.lua`.
 **Kept:** `ctrlText`, `isMac`, `isCtrlDown`, `isShiftDown`, `trim`
 
 ### `ui.lua`
-Changed `require` paths to resolve relative to the BMP mod root:
-- `require "debugplus.util"` → `require "lib.debugplus.util"`
-- `require "debugplus.unicode"` → `require "lib.debugplus.unicode"`
+Loaded via `MPAPI.load_mpapi_file` rather than `require` for its internal
+dependencies:
+- `require "debugplus.util"` → `MPAPI.load_mpapi_file('lib/debugplus/util.lua')`
+- `require "debugplus.unicode"` → `MPAPI.load_mpapi_file('lib/debugplus/unicode.lua')`
+
+(Originally changed to `require "lib.debugplus.util"` etc., but `require`'s
+dot-to-backslash module-name substitution on Windows doesn't resolve against
+the forward-slash-only virtual filesystem Steamodded mounts a `.zip`-packaged
+mod through — this crashed on any zip-distributed install. `load_mpapi_file`
+reads by literal path with no `require`/`package.path` involved, so it works
+identically whether the mod is an extracted folder or a zip.)
 
 No other changes.
 
@@ -56,7 +64,7 @@ when DebugPlus is not installed.
 - All `logger.*` and `config.*` references
 
 **Changed:**
-- `require` paths updated to BMP mod root equivalents (`lib.debugplus.util`, `lib.debugplus.ui`)
+- `require` calls replaced with `MPAPI.load_mpapi_file('lib/debugplus/util.lua')` / `('lib/debugplus/ui.lua')` — same zip-mount reasoning as `ui.lua` above
 - `hookStuffs()` moved before the early-return guard so keybinds are registered on the first rendered frame even when there are no messages yet
 - Open key changed from `/` to `t`
 - `runCommand()` replaced with `sendMessage()`, which invokes a configurable callback

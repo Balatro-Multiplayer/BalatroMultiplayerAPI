@@ -5,8 +5,10 @@
 -- Copied from WilsontheWolf/DebugPlus on 2026-03-30. See README.md for modifications.
 -- require paths updated to resolve relative to the BMP mod root.
 
-local util = require "lib.debugplus.util"
-local Unicode = require "lib.debugplus.unicode"
+-- Loaded via MPAPI.load_mpapi_file (not require) — see console.lua's comment
+-- on why: require's dot-to-backslash substitution breaks inside a zip mount.
+local util = MPAPI.load_mpapi_file('lib/debugplus/util.lua')
+local Unicode = MPAPI.load_mpapi_file('lib/debugplus/unicode.lua')
 
 local M = {}
 
