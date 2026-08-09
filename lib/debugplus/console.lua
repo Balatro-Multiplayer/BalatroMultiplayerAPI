@@ -4,8 +4,12 @@
 --
 -- Copied from WilsontheWolf/DebugPlus on 2026-03-30. See README.md for modifications.
 
-local util = require "lib.debugplus.util"
-local ui = require "lib.debugplus.ui"
+-- Loaded via MPAPI.load_mpapi_file (not require) so this resolves correctly
+-- whether the mod is deployed as an extracted folder or as a .zip: require's
+-- dot-to-backslash module-name substitution on Windows doesn't match forward
+-- slash-only paths inside a zip mounted through LÖVE's virtual filesystem.
+local util = MPAPI.load_mpapi_file('lib/debugplus/util.lua')
+local ui = MPAPI.load_mpapi_file('lib/debugplus/ui.lua')
 
 local global = {}
 
