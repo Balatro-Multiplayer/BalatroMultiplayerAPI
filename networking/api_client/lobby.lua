@@ -45,6 +45,20 @@ function api_client:leave_lobby(token, code, callback)
 	self.mqtt:http_post_auth(self.base_url .. '/api/lobbies/' .. code .. '/leave', '{}', token)
 end
 
+-- Response is just {ok: true}, no refreshed token (unlike leave_lobby) -- uses
+-- the generic token-less JSON callback, same rationale as account.lua's
+-- mute_player/unmute_player.
+function api_client:kick_player(token, code, target_id, callback)
+	if not self:_transport_ready() then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
+		return
+	end
+
+	self:_setup_json_callback(callback)
+
+	self.mqtt:http_post_auth(self.base_url .. '/api/lobbies/' .. code .. '/kick/' .. target_id, '{}', token)
+end
+
 function api_client:set_lobby_metadata(token, code, metadata, callback)
 	if not self:_transport_ready() then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)

@@ -374,6 +374,25 @@ lobby_card_hover_override = function(self)
 
 	local badge = create_badge('Player', MPAPI.C.MP_EDITION, G.C.WHITE, 1.2)
 
+	-- No ready-check concept in public (matchmaking-made) lobbies from the
+	-- player's perspective -- never shown there at all. In private lobbies,
+	-- default an untouched (nil) ready state to Not Ready rather than hiding
+	-- the badge, since every player in a private lobby is a real ready/not-ready
+	-- candidate even before they've ever pressed the toggle.
+	local ready_badge_row = nil
+	if not _current_lobby_ref or _current_lobby_ref.type ~= 'public' then
+		local ready = player_data.ready
+		if ready == nil then
+			ready = false
+		end
+		local ready_badge = create_badge(
+			localize(ready and 'k_ready' or 'k_not_ready'),
+			ready and G.C.GREEN or G.C.RED,
+			G.C.WHITE, 1.2
+		)
+		ready_badge_row = { n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = { ready_badge } }
+	end
+
 	self.ability_UIBox_table = {
 		card_type = 'Joker',
 		name = {
@@ -395,6 +414,13 @@ lobby_card_hover_override = function(self)
 
 	-- Build popup manually to avoid rarity badge logic
 	local card_type_background = darken(G.C.BLACK, 0.1)
+	local badge_rows = {
+		name_from_rows(self.ability_UIBox_table.name),
+		{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = { badge } },
+	}
+	if ready_badge_row then
+		badge_rows[#badge_rows + 1] = ready_badge_row
+	end
 	self.config.h_popup = {
 		n = G.UIT.ROOT,
 		config = { align = 'cm', colour = G.C.CLEAR },
@@ -410,10 +436,7 @@ lobby_card_hover_override = function(self)
 							{
 								n = G.UIT.R,
 								config = { align = 'cm', padding = 0.07, r = 0.1, colour = adjust_alpha(card_type_background, 0.8) },
-								nodes = {
-									name_from_rows(self.ability_UIBox_table.name),
-									{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = { badge } },
-								},
+								nodes = badge_rows,
 							},
 						},
 					},

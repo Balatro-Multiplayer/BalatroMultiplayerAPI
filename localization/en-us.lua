@@ -116,6 +116,14 @@ return {
 			k_report_inappropriate_username = 'Inappropriate Username',
 			k_report_other = 'Other',
 			k_report_submitted = 'Report submitted',
+			-- Kick (host-only, lobby player list)
+			k_kick_player = 'Kick Player',
+			k_kicked_title = 'Removed from Lobby',
+			k_player_kicked_you = 'The host removed you from the lobby.',
+			k_ok = 'OK',
+			-- Ready-status hover badge (lobby player list)
+			k_ready = 'Ready',
+			k_not_ready = 'Not Ready',
 			k_join_lobby_cap = 'JOIN LOBBY',
 			k_lobby_code_cap = 'LOBBY CODE',
 			k_copied_cap = 'COPIED!',

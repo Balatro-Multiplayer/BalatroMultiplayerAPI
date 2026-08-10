@@ -9,6 +9,12 @@ L.create_object = function(opts)
 		code = opts.code,
 		mod_id = opts.mod_id,
 		is_host = opts.is_host or false,
+		-- 'public' only for matchmaking-created lobbies (server-authoritative, set
+		-- from the join/create/reconnect response's data.lobby.type); defaults to
+		-- 'private' so the brief window before that response lands, and any local
+		-- (offline/practice) lobby, both read as private -- gates the ready-status
+		-- badge in ui/lobby.lua (hidden entirely for public/matchmaking lobbies).
+		type = opts.type or 'private',
 		max_players = opts.max_players or 16,
 		player_id = opts.player_id,
 		_mqtt = opts.mqtt,
