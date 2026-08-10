@@ -56,6 +56,7 @@ MPAPI.create_local_lobby = function(mod_id, opts)
 		max_players = opts.max_players or 1,
 		metadata = opts.metadata or {},
 		local_mode = true,
+		type = 'private',
 	})
 
 	-- Register ourselves as the only player.
@@ -134,6 +135,7 @@ MPAPI._internal.create_reconnected_lobby = function(lobby_data)
 		mod_id = lobby_data.modId,
 		is_host = lobby_data.isHost or false,
 		max_players = lobby_data.maxPlayers,
+		type = lobby_data.type,
 		player_id = conn.player_id,
 		mqtt = mqtt,
 		api = conn.api,
@@ -163,6 +165,7 @@ join_lobby_callback = function(err, data)
 	lobby.code = data.lobby.code
 	lobby.is_host = data.lobby.isHost or false
 	lobby.max_players = data.lobby.maxPlayers or 16
+	lobby.type = data.lobby.type or 'private'
 	lobby._metadata = data.lobby.metadata or {}
 
 	MPAPI.sendDebugMessage('[mmdbg] join_lobby_callback OK code=' .. tostring(lobby.code) .. ' is_host=' .. tostring(lobby.is_host) .. ' players=' .. tostring(data.lobby.players and #data.lobby.players))
@@ -187,6 +190,7 @@ create_lobby_callback = function(err, data)
 	lobby.code = data.lobby.code
 	lobby.is_host = true
 	lobby.max_players = data.lobby.maxPlayers or 16
+	lobby.type = data.lobby.type or 'private'
 	lobby._metadata = data.lobby.metadata or {}
 
 	L.populate_initial_players(lobby, data.lobby.players)

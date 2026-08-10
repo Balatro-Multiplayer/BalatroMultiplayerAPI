@@ -123,6 +123,19 @@ MPAPI._internal.report_player = function(code, target_id, report_type, message, 
 	conn.api:report_player(conn.jwt_token, code, target_id, report_type, message, callback)
 end
 
+-- No optimistic local-state mutation needed here either -- the kicker's own
+-- roster update happens naturally when its own client receives the
+-- player_kicked broadcast back over lobby/{code}/events, same as any other
+-- lobby event.
+MPAPI._internal.kick_player = function(code, target_id, callback)
+	local conn = require_connected(callback)
+	if not conn then
+		return
+	end
+
+	conn.api:kick_player(conn.jwt_token, code, target_id, callback)
+end
+
 MPAPI._internal.unlink_discord = function(callback)
 	local conn = require_connected(callback)
 	if not conn then

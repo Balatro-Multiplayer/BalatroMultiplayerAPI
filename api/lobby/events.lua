@@ -48,6 +48,32 @@ local function on_host_changed(lobby, data)
 	lobby:_fire(MPAPI.LobbyEvent.HOST_CHANGED, data.playerId)
 end
 
+-- If this client is the one kicked, tear the lobby down the same way
+-- on_lobby_closed does (force back to the menu) and show a notice explaining
+-- why. Otherwise, just drop the removed player from the roster and reuse the
+-- existing PLAYER_LEFT event so ui/lobby.lua's roster-removal animation fires
+-- without duplicating that logic here.
+local function on_player_kicked(lobby, data)
+	local was_self = data.playerId and data.playerId == lobby.player_id
+
+	if was_self then
+		L.cleanup(lobby)
+		lobby:_fire(MPAPI.LobbyEvent.DISCONNECTED)
+		if MPAPI._internal.on_lobby_disconnected then
+			MPAPI._internal.on_lobby_disconnected()
+		end
+		if MPAPI.show_kicked_notice then
+			MPAPI.show_kicked_notice()
+		end
+		return
+	end
+
+	if data.playerId then
+		lobby._players[data.playerId] = nil
+	end
+	lobby:_fire(MPAPI.LobbyEvent.PLAYER_LEFT, data.playerId)
+end
+
 local function on_lobby_closed(lobby)
 	L.cleanup(lobby)
 	lobby:_fire(MPAPI.LobbyEvent.DISCONNECTED)
@@ -59,6 +85,7 @@ end
 local EVENT_HANDLERS = {
 	[MPAPI.LobbyEvent.PLAYER_JOINED] = on_player_joined,
 	[MPAPI.LobbyEvent.PLAYER_LEFT] = on_player_left,
+	[MPAPI.LobbyEvent.PLAYER_KICKED] = on_player_kicked,
 	[MPAPI.LobbyEvent.PLAYER_DISCONNECTED] = on_player_disconnected,
 	[MPAPI.LobbyEvent.PLAYER_RECONNECTED] = on_player_reconnected,
 	[MPAPI.LobbyEvent.METADATA_CHANGED] = on_metadata_changed,
