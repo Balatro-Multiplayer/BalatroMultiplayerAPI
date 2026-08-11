@@ -39,6 +39,25 @@ if setup.pkg_cpath then
 	package.cpath = setup.pkg_cpath
 end
 
+-- pkg_path above still points into Steamodded's virtual zip mount, which
+-- this thread's stock require()/io.open can't actually read through (see
+-- lib/thread_preload.lua's comment on the main thread) - register the
+-- pre-read source the main thread sent right after the setup table (as
+-- its own message - love.thread Channels don't support nested tables,
+-- so this couldn't just be a field on setup above), before requiring
+-- anything that lives in the mount (openssl_ffi, anticheat.crypto below).
+local preload = tx_channel:demand()
+if type(preload) == 'table' then
+	for mod_name, source in pairs(preload) do
+		if not package.preload[mod_name] then
+			package.preload[mod_name] = function(...)
+				local chunk = assert(load(source, '@' .. mod_name))
+				return chunk(...)
+			end
+		end
+	end
+end
+
 local socket = require('socket')
 require('love.timer') -- not loaded by default in Love2D threads
 
