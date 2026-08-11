@@ -43,10 +43,7 @@ local _state = {
 local TABS = {
 	{ key = 'account', label_key = 'k_account_tab_account' },
 	{ key = 'chat', label_key = 'k_account_tab_chat' },
-	-- Match History tab disabled for now (button hidden below) -- its full
-	-- implementation (build_history_tab_content and friends, further down
-	-- this file) is left intact to re-enable later by uncommenting this line.
-	-- { key = 'history', label_key = 'k_account_tab_history' },
+	{ key = 'history', label_key = 'k_account_tab_history' },
 }
 
 -----------------------------
@@ -82,12 +79,6 @@ build_account_overlay_inner = function()
 	-- own comments below).
 	local active_tab = _state.tab
 	if active_tab == 'chat' and MPAPI.connection_state.chat_blocked then
-		active_tab = 'account'
-	end
-	-- Match History tab is disabled (see TABS above) -- fall back off it the same
-	-- way a chat-blocked account falls back off the Chat tab, in case _state.tab
-	-- is left over as 'history' from before it was disabled.
-	if active_tab == 'history' then
 		active_tab = 'account'
 	end
 
@@ -440,12 +431,13 @@ match_status_label_and_colour = function(status)
 	return tostring(status), G.C.UI.TEXT_INACTIVE
 end
 
--- One row per run: date / lobby code / status, plus "View Log" (opens a
--- website link -- the target page doesn't exist yet, that's expected) and
--- "View Replay" (dispatches to whichever mod registered a launcher for this
--- run's modId, see api/playback/registry.lua's register_launcher/launch --
--- MPAPI itself doesn't know how to bootstrap a replay for any given mod's
--- gamemode). Per-run dynamic G.FUNCS names, same idiom
+-- One row per run: date / lobby code / status, plus "View Log" (opens the
+-- website's visual RLOG viewer -- apps/web's /matches/:runId page, same
+-- automatic-decode-and-render viewer the site's own "My Matches" list links
+-- to) and "View Replay" (dispatches to whichever mod registered a launcher
+-- for this run's modId, see api/playback/registry.lua's register_launcher/
+-- launch -- MPAPI itself doesn't know how to bootstrap a replay for any
+-- given mod's gamemode). Per-run dynamic G.FUNCS names, same idiom
 -- BalatroMultiplayerPvP's replay_browser.lua already uses for its own list.
 match_history_row = function(run)
 	local status_label, status_colour = match_status_label_and_colour(run.status)
@@ -455,7 +447,15 @@ match_history_row = function(run)
 		local conn = MPAPI._internal.conn and MPAPI._internal.conn.connection
 		local base_url = conn and conn.api and conn.api.base_url
 		if base_url then
-			love.system.openURL(base_url .. '/runs/' .. tostring(run.id))
+			-- Same conn.api.base_url the sibling "View Report" link
+			-- (ui/player_report_overlay.lua) already opens a website page
+			-- through -- in production the API and website share one origin
+			-- (path-routed, matching apps/web's own default `/api/proxy`
+			-- same-origin proxying), so this is the site root. In local dev
+			-- (a bare API port, no path routing to the separate web dev
+			-- server) this opens the API host directly, same known
+			-- dev-only gap the report link already has.
+			love.system.openURL(base_url .. '/matches/' .. tostring(run.id))
 		end
 	end
 

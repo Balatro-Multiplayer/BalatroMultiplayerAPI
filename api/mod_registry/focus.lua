@@ -114,10 +114,16 @@ MPAPI._internal.on_lobby_connected = function(lobby)
 		if mod and mod.lobby_ui then
 			state.current_view = MPAPI.ViewMode.LOBBY_MENU
 			-- A match formed while we were in a run (queued, then practiced): leave the run; the
-			-- post-go_to_menu rebuild shows this lobby view.
-			if G.STAGE == G.STAGES.RUN then
+			-- post-go_to_menu rebuild shows this lobby view. lobby._skip_run_exit_on_connect is a
+			-- narrow, explicit opt-out for the OPPOSITE case -- a crash-relaunch rejoin
+			-- (ui/rejoin_prompt.lua) that has just fast-forwarded local state to rebuild the SAME
+			-- run being reconnected to, and must stay in it, not exit -- set on the lobby object by
+			-- the rejoin launcher itself right after MPAPI.join_lobby returns, before this callback
+			-- can fire (confirmed live: without it, rejoin's own MPAPI.join_lobby call landed here
+			-- and silently exited the just-restored run back to the main menu).
+			if G.STAGE == G.STAGES.RUN and not lobby._skip_run_exit_on_connect then
 				MPAPI.exit_to_menu()
-			else
+			elseif G.STAGE ~= G.STAGES.RUN then
 				MPAPI._internal.mod_registry.replace_main_menu(mod.lobby_ui)
 			end
 		end

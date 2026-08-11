@@ -90,6 +90,11 @@ return {
 			k_match_status_completed = 'Completed',
 			k_match_status_abandoned = 'Abandoned',
 			k_match_status_terminated = 'Terminated',
+			-- Crash-relaunch rejoin/abandon prompt
+			k_rejoin_prompt_title = 'Match In Progress',
+			k_rejoin_prompt_body = 'You have a match still in progress. Rejoin to continue, or abandon to forfeit.',
+			b_rejoin = 'Rejoin',
+			b_abandon = 'Abandon',
 			-- Chat section in account overlay
 			k_chat_section_title = 'Chat',
 			b_chat_on = 'On',
@@ -158,6 +163,7 @@ return {
 			-- Speedrunning and PvP), kept here so consumers don't each duplicate them.
 			b_leaderboard_cap = 'LEADERBOARD',
 			b_practice_cap = 'PRACTICE',
+			b_replay_cap = 'REPLAYS',
 			b_searching_cap = 'SEARCHING...',
 			b_cancel_search_cap = 'CANCEL',
 			b_ready_cap = 'READY',

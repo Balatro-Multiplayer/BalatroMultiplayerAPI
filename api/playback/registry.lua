@@ -61,3 +61,37 @@ function MPAPI.playback.launch(mod_id, run_id)
 	end
 	return fn(run_id)
 end
+
+MPAPI.playback._rejoin_launchers = MPAPI.playback._rejoin_launchers or {}
+
+-- Registers a mod's own "rejoin this in-progress match after a crash/relaunch"
+-- entry point -- keyed the same way register_launcher is (by the mod_id a
+-- RunRow's own `modId` carries). A rejoin launcher reuses the SAME
+-- fast-forward-through-own-RLOG mechanism a replay launcher does (they're
+-- expected to share the bootstrap/driver plumbing), but ends by handing off
+-- to LIVE play (rejoining the real lobby) instead of showing a "replay
+-- finished" summary screen -- a distinct entry point from register_launcher
+-- because the ending is fundamentally different, not because the beginning
+-- is. See ui/rejoin_prompt.lua for the caller (the boot-time Rejoin/Abandon
+-- prompt).
+function MPAPI.playback.register_rejoin(mod_id, rejoin_fn)
+	MPAPI.playback._rejoin_launchers[mod_id] = rejoin_fn
+end
+
+-- fn(active) where active = {runId, lobbyCode, modId, events}, exactly
+-- MPAPI.replay.get_active_run's own response shape -- `events` is the
+-- rejoining player's OWN buffered event stream (server-side: getTail against
+-- the LIVE in-memory run buffer, not a DB-persisted replay -- an active run
+-- has no matchRunLogs row yet, so MPAPI.replay.get(run_id) 403s "not a
+-- participant" for a genuinely active run's own participant; confirmed live).
+-- Passed through whole rather than destructured, since a rejoin launcher
+-- needs every field: lobbyCode to MPAPI.join_lobby back into once the local
+-- fast-forward completes, events to actually fast-forward with.
+function MPAPI.playback.rejoin(mod_id, active)
+	local fn = mod_id and MPAPI.playback._rejoin_launchers[mod_id]
+	if not fn then
+		MPAPI.sendDebugMessage('MPAPI.playback: no rejoin launcher for ' .. tostring(mod_id) .. ' (ignored)')
+		return
+	end
+	return fn(active)
+end

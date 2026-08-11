@@ -24,6 +24,18 @@ MPAPI.replay.list_mine = function(opts, callback)
 	conn.api:get_my_runs(conn.jwt_token, opts, callback)
 end
 
+-- Crash-relaunch rejoin detection: does the player have a match still in
+-- progress right now. callback(err, data) where data is
+-- {active = {runId, lobbyCode, modId} | nil}.
+MPAPI.replay.get_active_run = function(callback)
+	local conn = MPAPI.get_connection()
+	if not conn then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
+		return
+	end
+	conn.api:get_active_run(conn.jwt_token, callback)
+end
+
 -- Phase 7: request a spectator token + one-time snapshot for a lobby.
 -- callback(err, data) where data is {token, snapshot}.
 MPAPI.replay.spectate_lobby = function(code, callback)
