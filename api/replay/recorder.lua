@@ -54,11 +54,20 @@
 --
 -- Live transport: a consuming mod is expected to also broadcast every event
 -- (including the MANIFEST/END/CHK framing lines) in real time over its own
--- MPAPI ActionType by assigning MPAPI.replay.broadcast_event (see
--- BalatroMultiplayerPvP/pvp_api/replay_log_actions.lua for the reference
--- implementation, registering the "pvp_log_event" ActionType) -- one
--- broadcast per event, not batched, so a server-side buffer (or a spectator)
--- sees each line as it happens. The local carbon/human text lines into the
+-- MPAPI ActionType by calling RLOG.register_broadcaster(mod_id, fn) (see
+-- BalatroMultiplayerPvP/pvp_api/replay_log_actions.lua or
+-- BalatroMultiplayerSpeed/objects/replay_log/actions.lua for reference
+-- implementations, registering the "pvp_log_event"/"spdrn_log_event" Action-
+-- Types respectively) -- one broadcast per event, not batched, so a
+-- server-side buffer (or a spectator) sees each line as it happens.
+-- RLOG.broadcast_event itself dispatches by the CURRENT lobby's mod_id, not a
+-- single mutable slot: MPAPI.replay is one shared singleton, so if it were a
+-- single function a second consuming mod's registration would silently
+-- clobber the first mod's (whichever mod's file happened to load last would
+-- "win" for every game afterward, regardless of which mod's lobby was
+-- actually live) -- confirmed as a real bug the first time a second consumer
+-- (SPDRN) was added alongside PvP in the same install. The local carbon/human
+-- text lines into the
 -- Lovely log are unaffected either way -- a missing broadcaster just no-ops,
 -- local logging still works (e.g. under the headless test harness).
 MPAPI.replay = MPAPI.replay or {}
@@ -185,17 +194,32 @@ local function elapsed_ms()
 	return math.floor(love.timer.getTime() * 1000 - RLOG._start_ms + 0.5)
 end
 
+-- mod_id -> broadcaster fn, populated by each consuming mod's own transport
+-- wiring via RLOG.register_broadcaster (see the "Live transport" doc comment
+-- above for why this is a registry keyed by mod_id rather than a single slot).
+RLOG._broadcasters = {}
+
+function RLOG.register_broadcaster(mod_id, fn)
+	RLOG._broadcasters[mod_id] = fn
+end
+
+-- Dispatches to whichever mod owns the CURRENT lobby. No-ops with no lobby
+-- (practice mode, headless tests) or no broadcaster registered for that mod
+-- (a consuming mod that hasn't wired transport up yet) -- local carbon/human
+-- logging is unaffected either way.
+function RLOG.broadcast_event(t, opcode, args)
+	local lobby = MPAPI.get_current_lobby()
+	local fn = lobby and RLOG._broadcasters[lobby.mod_id]
+	if fn then fn(t, opcode, args) end
+end
+
 -- Emit a carbon-stream line: tee to the Lovely log, accumulate it into the full
--- local block, AND broadcast the structured (t, opcode, args) form live over
--- whatever transport a consuming mod has wired up. RLOG.broadcast_event is
--- assigned by that mod (e.g. BalatroMultiplayerPvP/pvp_api/replay_log_actions.lua),
--- late-bound since that transport wiring loads after this file; a missing
--- broadcaster (headless tests, a mod that hasn't wired one up) just no-ops,
--- local logging is unaffected.
+-- local block, AND broadcast the structured (t, opcode, args) form live via
+-- RLOG.broadcast_event.
 local function emit_carbon(msg, t, opcode, args)
 	RLOG._carbon_full[#RLOG._carbon_full + 1] = msg
 	sendTraceMessage(msg, "MULTIPLAYER")
-	if RLOG.broadcast_event then RLOG.broadcast_event(t, opcode, args) end
+	RLOG.broadcast_event(t, opcode, args)
 end
 
 -- Encodes one {t, opcode, args} tuple as a JSON array literal, built manually

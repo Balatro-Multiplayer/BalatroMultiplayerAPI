@@ -31,6 +31,18 @@ function api_client:get_my_runs(token, opts, callback)
 	self.mqtt:http_get_auth(url, token)
 end
 
+-- Crash-relaunch rejoin detection (GET /api/runs/mine/active): does this
+-- player have a match still in progress right now. Returns
+-- {active = {runId, lobbyCode, modId} | null}.
+function api_client:get_active_run(token, callback)
+	if not self:_transport_ready() then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	self.mqtt:http_get_auth(self.base_url .. '/api/runs/mine/active', token)
+end
+
 -- Phase 7 (live spectating): request a short-lived spectator token scoped to
 -- `code`, plus a one-time best-effort state snapshot. Returns {token, snapshot}.
 -- The caller reconnects (or connects a second MQTT client) using this token as
