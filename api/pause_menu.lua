@@ -10,6 +10,10 @@
 -- Returns a list of pre-built row nodes ({ n = G.UIT.R, ... }), ready to
 -- append directly into a consumer's own `rows` table alongside its
 -- mode-specific buttons (Seed Change, Forfeit, etc.).
+--
+-- Lobby Info itself is NOT one of these rows -- it's reachable only via the
+-- in-run HUD button (see BalatroMultiplayerPvP/lovely/hud.toml), not the
+-- pause menu.
 function MPAPI.pause_menu_extra_rows()
 	return {
 		{ n = G.UIT.R, config = { align = 'cm', padding = 0.08 }, nodes = {

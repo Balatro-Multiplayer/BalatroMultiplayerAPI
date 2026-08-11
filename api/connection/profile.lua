@@ -69,6 +69,37 @@ MPAPI._internal.set_preferred_joker = function(value, callback)
 	end)
 end
 
+-- Enumerates every enabled, non-base-game SMODS mod as "ModId-version" strings
+-- (direct port of the legacy hash-handshake's enumeration, minus the hash --
+-- see BalatroMultiplayerPvP/lib/matchmaking.lua's now-superseded version).
+-- Powers MPAPI's Lobby Info overlay's Mods tab for lobby peers.
+function MPAPI.collect_installed_mods()
+	local list = {}
+	for key, mod in pairs(SMODS.Mods or {}) do
+		if not mod.disabled and key ~= 'Balatro' then
+			list[#list + 1] = key .. '-' .. tostring(mod.version or 'UNK')
+		end
+	end
+	return list
+end
+
+-- Sent once, fire-and-forget, right after a fresh CONNECTED transition (see
+-- api/connection/lifecycle.lua's connection_on_state_change) -- mods are
+-- launch-scoped, not lobby-scoped, so there's no need to resend on join.
+-- Failure just leaves that player's Mods tab empty for lobby peers; not fatal.
+MPAPI._internal.send_installed_mods = function()
+	local conn = require_connected(function() end)
+	if not conn then
+		return
+	end
+
+	conn.api:set_installed_mods(conn.jwt_token, MPAPI.collect_installed_mods(), function(err)
+		if err then
+			MPAPI.sendWarnMessage('[mods] Failed to send installed mods list: ' .. tostring(err))
+		end
+	end)
+end
+
 -- Optimistic local update (matches set_preferred_joker/enable_chat's pattern):
 -- on success, apply the change to conn.mute_list/MPAPI.connection_state.mute_list
 -- directly from the server's returned mutedPlayerIds, rather than re-fetching.

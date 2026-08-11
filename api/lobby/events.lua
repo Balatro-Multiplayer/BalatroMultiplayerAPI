@@ -164,6 +164,10 @@ L.handle_player_info = function(lobby, topic, payload)
 	lobby._players[player_id].id = player_id
 	lobby._players[player_id].displayName = data.displayName
 	lobby._players[player_id].preferredJoker = data.preferredJoker
+	-- May be nil/absent (only present once that player has hit
+	-- POST /api/auth/preferences/mods post-connect) -- the Lobby Info
+	-- overlay's Mods tab treats absence as "no mod data available yet".
+	lobby._players[player_id].mods = data.mods
 
 	if is_new then
 		lobby:_fire(MPAPI.LobbyEvent.PLAYER_JOINED, player_id)

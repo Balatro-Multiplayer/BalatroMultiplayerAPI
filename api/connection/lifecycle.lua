@@ -244,6 +244,11 @@ connection_on_state_change = function(new_state, context)
 		MPAPI._internal.create_reconnected_lobby(context.reconnected_lobby)
 	end
 
+	-- Fire-and-forget: powers the Lobby Info overlay's Mods tab for lobby peers.
+	if new_state == MPAPI.ConnectionState.CONNECTED and MPAPI._internal.send_installed_mods then
+		MPAPI._internal.send_installed_mods()
+	end
+
 	run_new_state_user_callbacks(new_state, context)
 
 	for _, fn in ipairs(C.state_change_callbacks) do
