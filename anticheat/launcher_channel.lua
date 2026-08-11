@@ -164,12 +164,53 @@ local function start_thread()
 	thread = love.thread.newThread(file_data)
 	thread:start(tx_channel, rx_channel)
 
+	-- The background thread's own require('anticheat.crypto')/
+	-- require('openssl_ffi') can't actually resolve those files when this
+	-- mod is deployed as a zip (the common case - see
+	-- lib/thread_preload.lua for the full root-cause writeup): pkg_path
+	-- below still points into Steamodded's virtual zip mount, which only
+	-- the main thread's require() can read through. Pre-read the actual
+	-- source here (this thread's NFS.read() works fine) and hand it over
+	-- the channel so launcher_thread.lua can register it into its own
+	-- package.preload before requiring it - this is why
+	-- 'authentication failed'/'OpenSSL FFI not available in launcher
+	-- thread' fired on every single Ranked launch until this fix, not
+	-- just occasionally.
+	--
+	-- Loaded via MPAPI.load_mpapi_file (not require) for the same reason
+	-- e72d5c4 fixed lib/debugplus/console.lua and ui.lua: on the MAIN
+	-- thread require() is resolved by Lua's stock package.path searcher,
+	-- which formats each package.path template as a plain OS file path
+	-- and probes it with io.open-equivalent calls - that never actually
+	-- reaches into a zip Steamodded has mounted through LÖVE's PhysFS-
+	-- backed virtual filesystem, real single-slash path or not (confirmed
+	-- live: this require('thread_preload') failed with "not found" even
+	-- after ruling out the dotted-module/backslash-substitution case
+	-- e72d5c4 hit, and even though package.path had the correct
+	-- MPAPI.path .. '/lib/?.lua' entry from core.lua by this point - the
+	-- searcher just can't read through the mount at all). NFS.read() (via
+	-- MPAPI.load_mpapi_file -> SMODS.load_file) is the one file-loading
+	-- path proven to work whether the mod is a folder or a zip - it's
+	-- what every other MPAPI.load_mpapi_file/_dir call in core.lua
+	-- already relies on.
+	local thread_preload = MPAPI.load_mpapi_file('lib/thread_preload.lua')
+	local preload = thread_preload.read_single_module('anticheat/crypto.lua', 'anticheat.crypto')
+	for name, source in pairs(thread_preload.read_single_module('networking/openssl_ffi.lua', 'openssl_ffi')) do
+		preload[name] = source
+	end
+
 	tx_channel:push({
 		port = tonumber(port),
 		secret_hex = secret_hex,
 		pkg_path = package.path or '',
 		pkg_cpath = package.cpath or '',
 	})
+	-- Sent as its own message, not nested inside the table above -
+	-- love.thread Channels only support flat tables (no nested tables)
+	-- for automatic serialization; preload's own values are plain
+	-- strings so it's flat on its own, but nesting it inside the setup
+	-- table above would not be.
+	tx_channel:push(preload)
 end
 
 -- Drains rx_channel and reacts to events pushed by launcher_thread.lua.
