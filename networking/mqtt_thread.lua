@@ -14,9 +14,39 @@ if pkg_cpath then
 	package.cpath = pkg_cpath
 end
 
+-- package.path above still points into Steamodded's virtual zip mount,
+-- which this thread's stock require()/io.open can't actually read
+-- through (see lib/thread_preload.lua's comment on the main thread) -
+-- register the pre-read source the main thread sent right after the
+-- setup message, before requiring anything that lives in the mount.
+local preload = tx_channel:demand()
+if type(preload) == 'table' then
+	for mod_name, source in pairs(preload) do
+		if not package.preload[mod_name] then
+			package.preload[mod_name] = function(...)
+				local chunk = assert(load(source, '@' .. mod_name))
+				return chunk(...)
+			end
+		end
+	end
+end
+
 local SEP = '\1'
 local socket = require('socket')
-local mqtt = require('mqtt')
+
+-- A bare (unguarded) require() here previously crashed the whole game
+-- outright on any failure (LÖVE2D's thread-error propagation treats an
+-- uncaught error in a love.thread as fatal, not just "this thread died") -
+-- the preload registration above is expected to make this succeed now,
+-- but failing closed with a clean 'error' event instead of a hard crash
+-- is worth keeping regardless. 'error' (not launcher_thread.lua's
+-- 'fatal_error' - a different file's vocabulary) since that's the type
+-- mqtt_client.lua's own update() already handles via self.on_error().
+local mqtt_ok, mqtt = pcall(require, 'mqtt')
+if not mqtt_ok then
+	rx_channel:push(table.concat({ 'error', 'failed to load mqtt: ' .. tostring(mqtt) }, SEP))
+	return
+end
 require('love.timer') -- not loaded by default in Love2D threads
 
 -- Optionally load OpenSSL connector
