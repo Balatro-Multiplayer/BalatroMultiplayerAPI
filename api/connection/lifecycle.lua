@@ -239,10 +239,17 @@ connection_on_state_change = function(new_state, context)
 		log_state_update(new_state, context)
 	end
 
-	-- Auto-create lobby object on reconnection
-	if new_state == MPAPI.ConnectionState.CONNECTED and context.reconnected_lobby and MPAPI._internal.create_reconnected_lobby then
-		MPAPI._internal.create_reconnected_lobby(context.reconnected_lobby)
-	end
+	-- No auto-create of the reconnected lobby object here anymore: doing this
+	-- unconditionally raced with (and always won against) ui/reconnect_prompt.lua's
+	-- own Rejoin/Reconnect flow -- by the time any state_change_callback (including
+	-- the prompt's) saw CONNECTED, the lobby was already silently recreated,
+	-- so MPAPI.replay-based mid-match rejoin's own "refuse if already connected
+	-- to a real lobby" guard always fired and the fast-forward-then-live-handoff
+	-- never got a chance to run (confirmed live). ui/reconnect_prompt.lua now
+	-- owns this entirely: it asks the player first, and only calls
+	-- MPAPI._internal.create_reconnected_lobby itself once they choose Reconnect
+	-- (after first checking whether there's an active RLOG run to rejoin
+	-- instead, which needs to run BEFORE the plain lobby object exists).
 
 	-- Fire-and-forget: powers the Lobby Info overlay's Mods tab for lobby peers.
 	if new_state == MPAPI.ConnectionState.CONNECTED and MPAPI._internal.send_installed_mods then

@@ -51,6 +51,15 @@ end
 --                     real input (every other player's actions are handled
 --                     as a lighter HUD-only projection -- see the mod's own
 --                     handlers, e.g. BalatroMultiplayerPvP/lib/playback_handlers.lua)
+--   schema_version -- the recording's own match_manifest.schema_version (see
+--                     api/replay/framing_codes.lua), passed through to every
+--                     dispatched handler as ctx.schema_version so each
+--                     MPAPI.RLOG_CODE's replay() can branch on it (see
+--                     codes.lua) instead of carrying a per-opcode version
+--                     field. Defaults to RLOG.SCHEMA_VERSION (the running
+--                     client's own current version) so callers that don't
+--                     pass one (e.g. live spectate, which has no recorded
+--                     manifest to read) still get a sane value.
 --   on_complete    -- called once, when the timeline is fully consumed AND
 --                     the driver was told there's no more live data coming
 --                     (see Driver:finish, used by finite post-hoc replay --
@@ -63,6 +72,7 @@ function MPAPI.playback.new_driver(timeline, opts)
 		_cursor = 1,
 		_mod_id = opts.mod_id,
 		_pov_player_id = opts.pov_player_id,
+		_schema_version = opts.schema_version or MPAPI.replay.SCHEMA_VERSION,
 		_on_complete = opts.on_complete,
 		_finished_source = false, -- true once no more entries will ever arrive
 		_playing = false,
@@ -143,6 +153,7 @@ function Driver:_tick()
 		player_id = entry.player_id,
 		is_pov = is_pov,
 		driver = self,
+		schema_version = self._schema_version,
 	})
 
 	if self._finished_source and not self:has_pending() then

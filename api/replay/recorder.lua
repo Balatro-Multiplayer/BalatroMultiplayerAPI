@@ -20,8 +20,9 @@
 --      "MP_RLOG: 5123 buy 1 2" means "at 5.123s into the run, buy shop area 1,
 --      slot 2". Indiscriminate, so modded content is just "slot N" and replays
 --      across mods for free. This is the only truly replayable stream. The
---      block is framed by a MANIFEST header and an END + CHK trailer (also
---      under the MP_RLOG: prefix).
+--      block opens with a `match_manifest` event (see framing_codes.lua --
+--      recorded like any other opcode, no special header line) and is
+--      trailered by an END + CHK trailer (also under the MP_RLOG: prefix).
 --
 --   2. Human-readable stream  -- prefix "Client sent message:" (the existing
 --      format the website parser already reads). "Client sent message: action:
@@ -76,16 +77,14 @@ local RLOG = MPAPI.replay
 RLOG.CARBON_PREFIX = "MP_RLOG:" -- positional / replay stream
 RLOG.HUMAN_PREFIX = "Client sent message:" -- human-readable stream (website-compatible)
 
--- Schema version of the MANIFEST/event format itself (bump on breaking changes
--- to what the server/replay-parser needs to understand, independent of mod_version).
--- v2: card-referencing events carry full card identity inline -- see
--- RLOG.card_ref.
-RLOG.SCHEMA_VERSION = 2
-
--- Required manifest keys; begin_run warns if any are missing. api_version/
--- mod_version/start_epoch_ms are stamped by begin_run itself (see below), not
--- required from the caller.
-RLOG.REQUIRED_MANIFEST_KEYS = { "seed", "ruleset", "gamemode", "deck", "stake" }
+-- Schema version of the whole event format (match_manifest/lobby_info/run_info
+-- framing plus every opcode's own args shape) -- NOT released yet, so this is
+-- reset to 1 rather than continuing to bump. Recorded once per match, in
+-- match_manifest's own args (api/replay/framing_codes.lua), and threaded to
+-- every playback handler as ctx.schema_version (api/playback/driver.lua) so
+-- each MPAPI.RLOG_CODE's replay() can branch on it directly instead of
+-- carrying its own per-opcode version field -- see codes.lua's header comment.
+RLOG.SCHEMA_VERSION = 1
 
 RLOG._start_ms = nil -- monotonic-clock ms at begin_run, source of truth for each event's `t`
 RLOG._fallback_seq = 0 -- ms-surrogate counter when no monotonic clock is available (e.g. tests)
@@ -100,7 +99,6 @@ RLOG._human_buffer = {} -- the "Client sent message: ..." lines, hashed at end
 -- one holds pre-formatted text lines, not the structured values a hash needs.
 RLOG._structured_events = {}
 RLOG._run_active = false
-RLOG._manifest = nil
 RLOG._force_active = false -- test hook: bypass the lobby gate
 
 -- Per-run card identity dictionary (see RLOG.card_ref below). Keyed by the
@@ -109,11 +107,6 @@ RLOG._force_active = false -- test hook: bypass the lobby gate
 -- restart at 1 each match.
 RLOG._card_ids = {}
 RLOG._next_card_id = 0
-
--- Per-run correlation id (embedded in the manifest); not used for batching
--- anymore (a consuming mod's own transport broadcasts every event live,
--- individually), just a friendly local identifier for this run instance.
-RLOG._game_id = nil -- generated in begin_run
 
 -------------------------------------------------------------------------------
 -- Gate
@@ -126,6 +119,17 @@ function RLOG.is_active()
 	local lobby = MPAPI.get_current_lobby()
 	if not (lobby and lobby.code) then return false end
 	return true
+end
+
+-- Launch-time compatibility check for a recording's own schema_version
+-- (match_manifest.schema_version, see framing_codes.lua) against this
+-- running client's own RLOG.SCHEMA_VERSION. A client can always replay
+-- equal-or-older recordings -- every MPAPI.RLOG_CODE's replay() branches on
+-- ctx.schema_version itself (see codes.lua) -- but never a NEWER format it
+-- doesn't know how to interpret. Called once, before playback starts (each
+-- mod's own _launch_replay/_launch_rejoin), not per-event.
+function RLOG.is_schema_compatible(schema_version)
+	return type(schema_version) == "number" and schema_version <= RLOG.SCHEMA_VERSION
 end
 
 -------------------------------------------------------------------------------
@@ -171,15 +175,6 @@ end
 
 local function emit(msg)
 	sendTraceMessage(msg, "MULTIPLAYER")
-end
-
--- Friendly per-run correlation id, embedded in the manifest for local
--- debugging/display -- not load-bearing for the live transport (see
--- RLOG._game_id's declaration above).
-local function new_game_id(manifest)
-	local lobby = (manifest and manifest.lobby_code) or "nolobby"
-	local who = (manifest and manifest.player) or "?"
-	return string.format("%s-%s-%d-%d", tostring(lobby), tostring(who), os.time(), math.random(100000, 999999))
 end
 
 -- Milliseconds elapsed since begin_run, for each event's `t`. Falls back to a
@@ -370,46 +365,23 @@ function RLOG.card_refs(indices, area)
 	return out
 end
 
--- Start a new game's block: reset counters/buffers and emit the manifest header.
-function RLOG.begin_run(manifest)
-	manifest = manifest or {}
-
-	for _, key in ipairs(RLOG.REQUIRED_MANIFEST_KEYS) do
-		if manifest[key] == nil then
-			sendWarnMessage("RLOG: manifest missing required key '" .. key .. "'", "MULTIPLAYER")
-		end
-	end
-
-	-- Stamped here, not required from the caller: schema/mod versions (for a
-	-- server/parser to know how to read this block) and the wall-clock epoch
-	-- each event's elapsed-ms `t` is relative to. os.time() is second-precision
-	-- (fine for a "when did this match start" record) -- per-event elapsed time
-	-- itself comes from the monotonic love.timer clock captured just below, not
-	-- from this coarser epoch stamp.
-	manifest.schema_version = manifest.schema_version or RLOG.SCHEMA_VERSION
-	if manifest.api_version == nil and SMODS and SMODS.Mods and SMODS.Mods["MultiplayerAPI"] then
-		manifest.api_version = SMODS.Mods["MultiplayerAPI"].version
-	end
-	manifest.start_epoch_ms = manifest.start_epoch_ms or (os.time() * 1000)
-
+-- Start a new match's block: reset counters/buffers and start the clock.
+-- Pure bookkeeping -- no manifest parameter, no framing line of its own.
+-- Callers immediately follow this with MPAPI.RLOGCodes.match_manifest:write(...)
+-- (see framing_codes.lua), an ordinary recorded event that becomes the
+-- block's opening marker instead. Fires once per MATCH (not per individual
+-- Balatro run) -- see run_info in framing_codes.lua for the per-run
+-- seed/deck/stake record.
+function RLOG.begin_run()
 	RLOG._start_ms = (love and love.timer and love.timer.getTime) and (love.timer.getTime() * 1000) or nil
 	RLOG._fallback_seq = 0
 	RLOG._carbon_buffer = {}
 	RLOG._carbon_full = {}
 	RLOG._human_buffer = {}
 	RLOG._structured_events = {}
-	RLOG._manifest = manifest
 	RLOG._run_active = true
 	RLOG._card_ids = {}
 	RLOG._next_card_id = 0
-
-	-- Friendly local correlation id for this run instance (see the RLOG._game_id
-	-- declaration above -- no longer used for batching).
-	RLOG._game_id = new_game_id(manifest)
-	manifest.game_id = RLOG._game_id
-
-	local json = require("json")
-	emit_carbon(RLOG.CARBON_PREFIX .. " MANIFEST " .. json.encode(manifest), 0, "manifest", manifest)
 end
 
 -- Close the current game's block: emit the END line, hash each stream, and emit
