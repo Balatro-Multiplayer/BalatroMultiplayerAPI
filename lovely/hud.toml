@@ -1,0 +1,38 @@
+[manifest]
+version = "1.0.0"
+dump_lua = true
+priority = 2147483600
+
+# In-run HUD "Lobby Info" button, shared by every MPAPI-based mod (not
+# duplicated per-mod -- this used to live only in BalatroMultiplayerPvP's own
+# lovely/hud.toml, which left SPDRN with no in-run entry point at all).
+# Gated on MPAPI.get_current_lobby() -- the mod-agnostic "am I in an active
+# multiplayer lobby" signal -- rather than any one mod's own tracking global.
+# Landed between the Run Info and Options buttons.
+#
+# minh is fixed at 1.2 (the SHRUNK size PvP's own separate minh-shrink patch
+# uses for Run Info/Options in practice/lobby contexts) rather than 1.75 --
+# the button row's container sizes to its tallest child, so a 1.75 button
+# sitting next to two 1.2-shrunk neighbors would inflate the whole row's
+# height back up to 1.75, undoing that patch's compacting for anyone who
+# also has this button showing. 1.2 never exceeds either of Run Info/
+# Options' two possible sizes (1.2 shrunk, 1.75 default), so the row is
+# never taller than it would already be without this button.
+[[patches]]
+[patches.pattern]
+target = "functions/UI_definitions.lua"
+pattern = '''{n=G.UIT.T, config={text = localize('b_run_info_2'), scale = 1*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true, focus_args = {button = G.F_GUIDE and 'guide' or 'back', orientation = 'bm'}, func = 'set_button_pip'}}
+            }}
+          }},'''
+position = 'after'
+payload = '''
+MPAPI.get_current_lobby() and {n=G.UIT.R, config={id = 'mpapi_lobby_info_button', align = "cm", minh = 1.2, minw = 1.5,padding = 0.05, r = 0.1, hover = true, colour = G.C.BLUE, button = "mpapi_show_lobby_info", shadow = true}, nodes={
+    {n=G.UIT.R, config={align = "cm", padding = 0, maxw = 1.4}, nodes={
+        {n=G.UIT.T, config={text = localize("b_lobby_info_1"), scale = 1.2*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true}}
+    }},
+    {n=G.UIT.R, config={align = "cm", padding = 0, maxw = 1.4}, nodes={
+        {n=G.UIT.T, config={text = localize("b_lobby_info_2"), scale = 1*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true, focus_args = {button = G.F_GUIDE and 'guide' or 'back', orientation = 'bm'}, func = 'set_button_pip'}}
+    }}
+}} or nil,'''
+match_indent = true
+times = 1

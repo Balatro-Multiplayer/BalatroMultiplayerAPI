@@ -168,14 +168,18 @@ MPAPI.matchmaking.queue_group = function(opts)
 	return MPAPI.matchmaking.queue(opts)
 end
 
--- Fetch own rating for a given mode. season may be nil to use the active season.
-MPAPI.matchmaking.get_rating = function(mod_id, game_mode, season, callback)
+-- Fetch a rating for a given mode. season may be nil to use the active
+-- season. player_id may be nil to fetch the local player's own rating
+-- (ratings are already fully public via get_leaderboard's entries array, so
+-- fetching an arbitrary other player's -- e.g. a current lobby opponent's --
+-- is just as unrestricted server-side).
+MPAPI.matchmaking.get_rating = function(mod_id, game_mode, season, player_id, callback)
 	local conn = MPAPI.get_connection()
 	if not conn then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
 		return
 	end
-	conn.api:get_matchmaking_rating(conn.jwt_token, mod_id, game_mode, season, callback)
+	conn.api:get_matchmaking_rating(conn.jwt_token, mod_id, game_mode, season, player_id, callback)
 end
 
 -- Fetch leaderboard for a given mode. season may be nil to use the active season.

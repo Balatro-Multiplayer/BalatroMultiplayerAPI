@@ -59,7 +59,7 @@ function api_client:mark_run_start(token, match_id, callback)
 	self.mqtt:http_post_auth(self.base_url .. '/api/matchmaking/matches/' .. match_id .. '/start', '{}', token)
 end
 
-function api_client:get_matchmaking_rating(token, mod_id, game_mode, season, callback)
+function api_client:get_matchmaking_rating(token, mod_id, game_mode, season, player_id, callback)
 	if not self:_transport_ready() then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
 		return
@@ -69,6 +69,9 @@ function api_client:get_matchmaking_rating(token, mod_id, game_mode, season, cal
 		'&gameMode=' .. game_mode
 	if season ~= nil then
 		url = url .. '&season=' .. tostring(season)
+	end
+	if player_id ~= nil then
+		url = url .. '&playerId=' .. player_id
 	end
 	self.mqtt:http_get_auth(url, token)
 end

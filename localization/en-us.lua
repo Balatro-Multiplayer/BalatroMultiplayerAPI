@@ -60,6 +60,17 @@ return {
 			k_account_tab_account = 'Account',
 			k_account_tab_chat = 'Chat',
 			k_account_tab_history = 'Match History',
+			-- Lobby Info overlay
+			k_lobby_info_title = 'Lobby Info',
+			k_lobby_info_no_lobby = 'Not currently in a lobby.',
+			k_lobby_info_no_mods = 'No mod data available yet.',
+			-- Lobby-card hover popup description areas
+			k_lobby_card_mods_loading = 'Mods: ...',
+			k_mods_word = 'Mods',
+			k_muted_label = 'Muted',
+			-- Player overlay tab strip (opened from a lobby info / lobby card click)
+			k_player_overlay_tab_actions = 'Actions',
+			k_player_overlay_tab_mods = 'Mods',
 			-- Chat tab: respectful-use blurb
 			k_chat_respectful_use_title = 'Chatting Respectfully',
 			k_chat_respectful_use_1 = 'Messages are filtered automatically and can be reviewed if reported.',
@@ -135,6 +146,12 @@ return {
 			b_find_game_cap = 'FIND GAME',
 			b_open_lobby_cap = { 'OPEN', 'LOBBY' },
 			b_lobby_options_cap = { 'LOBBY', 'OPTIONS' },
+			b_lobby_info_cap = { 'LOBBY', 'INFO' },
+			-- In-run HUD button (lovely/hud.toml) -- matches vanilla's own
+			-- b_run_info_1/b_run_info_2 mixed-case convention for this style
+			-- of button, not the true-uppercase "_cap" buttons above.
+			b_lobby_info_1 = 'Lobby',
+			b_lobby_info_2 = 'Info',
 			b_leave_lobby_cap = { 'LEAVE', 'LOBBY' },
 			b_start_game_cap = { 'START', 'GAME' },
 			-- Shared matchmaking / lobby menu strings (used by all consumer mods, e.g.

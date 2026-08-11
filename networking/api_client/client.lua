@@ -133,8 +133,12 @@ function api_client:_setup_json_callback(callback)
 			return
 		end
 
+		-- Only a genuine decode failure (pcall raising) is a parse error --
+		-- valid JSON `null` decodes to Lua `nil`, which is a legitimate
+		-- successful result (e.g. GET /matchmaking/ratings returns `null`
+		-- for "no rating record yet"), not a transport failure.
 		local ok, data = pcall(api_client.json_decode, body)
-		if not ok or not data then
+		if not ok then
 			callback(MPAPI.make_error(MPAPI.ErrorKind.TRANSPORT, 'Failed to parse server response'), nil)
 			return
 		end
