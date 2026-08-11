@@ -217,13 +217,6 @@ connection_on_state_change = function(new_state, context)
 		MPAPI.connection_state.mute_list = C.connection.mute_list or {}
 	end
 
-	-- Hand our own server session to the launcher over its (Ranked-only)
-	-- supervision channel, if one is active - see
-	-- anticheat/launcher_channel.lua's notify_session(). A no-op in Casual
-	-- or when the game wasn't launched via BET at all.
-	if new_state == MPAPI.ConnectionState.CONNECTED and MPAPI.anticheat and MPAPI.anticheat.notify_session then
-		MPAPI.anticheat.notify_session(C.connection.jwt_token, C.connection.player_id)
-	end
 	C.set_status_text()
 
 	C.update_display_name()

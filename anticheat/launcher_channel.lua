@@ -11,6 +11,18 @@
     makes Casual a zero-behavior-change no-op, not a special case handled
     here.
 
+    IMPORTANT ordering note: MPAPI.on_launcher_supervision_lost,
+    MPAPI.on_launcher_challenge_answered, and A.answer_challenge are all
+    defined ABOVE the env-var early-return below, and thread/tx_channel/
+    rx_channel are forward-declared as locals above that point too (Lua
+    locals aren't hoisted - a function defined before a `local` of the same
+    name would otherwise close over an unrelated global). This matters
+    because the server issues a login challenge to every fresh MQTT
+    connection regardless of game mode (see launcher-integrity.service.ts's
+    handleClientConnected) - a Casual player, or anyone who started the game
+    without BET at all, still needs A.answer_challenge to exist and safely
+    self-refuse, not be nil.
+
     The actual network/crypto work happens on anticheat/launcher_thread.lua,
     a dedicated love.thread, following networking/mqtt_client.lua's own
     thread-spawn/tx_channel/rx_channel convention exactly (see that file).
@@ -26,6 +38,22 @@ A.launcher_supervision_lost_at = nil
 
 A._internal = A._internal or {}
 A._internal.supervision_lost_callbacks = A._internal.supervision_lost_callbacks or {}
+A._internal.challenge_answered_callbacks = A._internal.challenge_answered_callbacks or {}
+-- Challenges relayed via A.answer_challenge() before this channel's own
+-- handshake with the launcher has finished yet - flushed once the
+-- 'authenticated' event lands (see A.update() below). In practice this list
+-- holds at most one entry (the server only ever keeps one challenge
+-- outstanding per player at a time - see launcher-integrity.service.ts's
+-- issueChallenge), but it's a list rather than a single slot so a challenge
+-- that's reissued (e.g. the first one timed out server-side) before the
+-- handshake finishes doesn't get dropped.
+A._internal.pending_challenges = A._internal.pending_challenges or {}
+
+-- See this file's header comment on why these are forward-declared here
+-- rather than where they're first assigned, further down.
+local thread = nil
+local tx_channel = nil
+local rx_channel = nil
 
 -- Registers fn to run whenever the mod detects the launcher's heartbeat
 -- has gone silent mid-Ranked-run (see anticheat/launcher_thread.lua's
@@ -55,26 +83,76 @@ local function run_supervision_lost_callbacks()
 	end
 end
 
--- Set by notify_session() when it arrives before A.launcher_connected is
--- true yet (the mod's own server login can finish before or after this
--- channel's handshake with the launcher - no guaranteed ordering) - flushed
--- once the 'authenticated' event below actually lands.
-A._internal.pending_session = nil
+-- Registers fn(result) to run whenever a launcher-integrity challenge relayed
+-- via A.answer_challenge() gets an answer - either from the launcher itself
+-- (result = {challenge_id, signature, hardware_fingerprint}, the last field
+-- only present for a login-kind challenge), or an immediate refusal when
+-- there's no launcher to ask at all, or the launcher reported an error
+-- (result = {challenge_id, refused = true}). Unlike
+-- on_launcher_supervision_lost, there's no "fire immediately" case here - an
+-- answer is always the result of one specific request, never a standing
+-- condition. See networking/connection.lua for the one real consumer
+-- (publishing the result to the server).
+function MPAPI.on_launcher_challenge_answered(fn)
+	A._internal.challenge_answered_callbacks[#A._internal.challenge_answered_callbacks + 1] = fn
+end
+
+local function run_challenge_answered_callbacks(result)
+	for _, fn in ipairs(A._internal.challenge_answered_callbacks) do
+		local ok, err = pcall(fn, result)
+		if not ok then
+			MPAPI.sendWarnMessage('on_launcher_challenge_answered callback error: ' .. tostring(err))
+		end
+	end
+end
+
+-- Relays a launcher-integrity challenge (issued by the server over MQTT -
+-- see networking/connection.lua) to the launcher for it to sign, and reports
+-- the result via MPAPI.on_launcher_challenge_answered(). This module never
+-- computes a signature itself - it has no secret to compute one with - it's
+-- pure relay in both directions.
+--
+-- Must be safely callable unconditionally, even when this channel is
+-- entirely inactive (Casual, or the game wasn't started via BET at all) -
+-- see this file's header comment on why that case matters here. A game with
+-- no launcher to ask can never produce a valid answer by construction - this
+-- fails fast with an explicit refusal instead of leaving the caller to wait
+-- out the server's own challenge timeout.
+function A.answer_challenge(challenge_id, kind, nonce, player_id)
+	if not A.active then
+		run_challenge_answered_callbacks({ challenge_id = challenge_id, refused = true })
+		return
+	end
+
+	if A.launcher_connected then
+		tx_channel:push({
+			cmd = 'answer_challenge',
+			challenge_id = challenge_id,
+			kind = kind,
+			nonce = nonce,
+			player_id = player_id,
+		})
+	else
+		A._internal.pending_challenges[#A._internal.pending_challenges + 1] = {
+			challenge_id = challenge_id,
+			kind = kind,
+			nonce = nonce,
+			player_id = player_id,
+		}
+	end
+end
 
 local port = os.getenv('BET_RANKED_SUPERVISOR_PORT')
 local secret_hex = os.getenv('BET_RANKED_SUPERVISOR_SECRET')
 
 if not port or not secret_hex or port == '' or secret_hex == '' then
 	-- Not launched via BET in Ranked mode - nothing more to do. A.active
-	-- stays false; no thread is ever spawned.
+	-- stays false; no thread is ever spawned. A.answer_challenge above
+	-- already handles this case (immediate refusal) regardless.
 	return A
 end
 
 A.active = true
-
-local thread = nil
-local tx_channel = nil
-local rx_channel = nil
 
 local function start_thread()
 	tx_channel = love.thread.newChannel()
@@ -112,13 +190,17 @@ function A.update()
 		if event.type == 'authenticated' then
 			A.launcher_connected = true
 			MPAPI.sendDebugMessage('Ranked anti-cheat supervision channel authenticated.')
-			if A._internal.pending_session then
-				tx_channel:push({
-					cmd = 'send_session_token',
-					token = A._internal.pending_session.token,
-					player_id = A._internal.pending_session.player_id,
-				})
-				A._internal.pending_session = nil
+			if #A._internal.pending_challenges > 0 then
+				for _, pending in ipairs(A._internal.pending_challenges) do
+					tx_channel:push({
+						cmd = 'answer_challenge',
+						challenge_id = pending.challenge_id,
+						kind = pending.kind,
+						nonce = pending.nonce,
+						player_id = pending.player_id,
+					})
+				end
+				A._internal.pending_challenges = {}
 			end
 		elseif event.type == 'supervision_lost' then
 			A.launcher_supervision_lost = true
@@ -145,9 +227,26 @@ function A.update()
 			-- kills the game process if the mod never authenticates - see
 			-- rankedsupervisor.h) - this side doesn't need its own retry
 			-- loop or self-destructive fallback, just to stop trying and
-			-- log why.
+			-- log why. Any challenges still queued for this now-dead channel
+			-- can only ever be answered with a refusal.
 			MPAPI.sendWarnMessage('Ranked anti-cheat supervision channel failed: ' .. tostring(event.message))
 			A.launcher_connected = false
+			if #A._internal.pending_challenges > 0 then
+				for _, pending in ipairs(A._internal.pending_challenges) do
+					run_challenge_answered_callbacks({ challenge_id = pending.challenge_id, refused = true })
+				end
+				A._internal.pending_challenges = {}
+			end
+		elseif event.type == 'challenge_answered' then
+			if event.error then
+				run_challenge_answered_callbacks({ challenge_id = event.challenge_id, refused = true })
+			else
+				run_challenge_answered_callbacks({
+					challenge_id = event.challenge_id,
+					signature = event.signature,
+					hardware_fingerprint = event.hardware_fingerprint,
+				})
+			end
 		elseif event.type == 'log' then
 			MPAPI.sendDebugMessage(tostring(event.message))
 		end
@@ -160,36 +259,6 @@ function A.update()
 			thread = nil
 			A.launcher_connected = false
 		end
-	end
-end
-
--- Hands the mod's own server session (token + player id) to the launcher
--- over this already-authenticated channel, once the mod itself reaches
--- MPAPI.ConnectionState.CONNECTED (see api/connection/lifecycle.lua's
--- connection_on_state_change). The launcher uses this to open its own
--- direct connection to the server as the same player
--- (LauncherIntegrityClient) rather than independently re-authenticating via
--- Steam - one Steam auth ticket per Ranked run instead of two.
---
--- A no-op if this channel isn't active at all (Casual, or the game started
--- outside BET - A.active stays false, see the top of this file). If it IS
--- active but hasn't finished its own handshake with the launcher yet, the
--- session is queued (pending_session above) and flushed as soon as the
--- 'authenticated' event arrives - there's no guaranteed ordering between
--- "mod logs into the game server" and "this channel's own handshake
--- completes".
-function A.notify_session(token, player_id)
-	if not A.active then
-		return
-	end
-	if not token or token == '' or not player_id or player_id == '' then
-		return
-	end
-
-	if A.launcher_connected then
-		tx_channel:push({ cmd = 'send_session_token', token = token, player_id = tostring(player_id) })
-	else
-		A._internal.pending_session = { token = token, player_id = tostring(player_id) }
 	end
 end
 
