@@ -26,7 +26,21 @@ function MPAPI.sendWarnMessage(msg)
 	sendWarnMessage(msg, MPAPI.id)
 end
 
+-- Dedups by path: NFS.getDirectoryItemsInfo's item order within a directory
+-- is not guaranteed (confirmed live -- see
+-- BalatroMultiplayerSpeed/objects/replay_log/record.lua's own comment on the
+-- same hazard within a SINGLE mod's directory scan), so a handful of
+-- api/replay/*.lua files with a real load-order dependency (codes.lua must
+-- run before generic_codes.lua/framing_codes.lua, which call MPAPI.RLOG_CODE(...)
+-- at file-load time) are explicitly preloaded in order below, before the
+-- general recursive api/ scan. This guard makes that scan's later re-visit of
+-- the same paths a silent no-op instead of re-running (and, for codes.lua,
+-- wiping MPAPI.RLOGCodes out from under the codes already registered into it).
+MPAPI._loaded_files = {}
+
 function MPAPI.load_mpapi_file(file)
+	if MPAPI._loaded_files[file] then return end
+	MPAPI._loaded_files[file] = true
 	local chunk, err = SMODS.load_file(file, MPAPI.id)
 	if not chunk then
 		error('MPAPI: failed to find or compile file \'' .. file .. '\': ' .. tostring(err), 0)
@@ -130,6 +144,14 @@ MPAPI.load_mpapi_file('anticheat/crypto.lua')
 MPAPI.load_mpapi_file('anticheat/launcher_channel.lua')
 
 MPAPI.load_mpapi_dir('lib')
+
+-- Ordered preload for api/replay's load-order-sensitive files (see
+-- load_mpapi_file's dedup comment above) -- everything else under api/ has no
+-- such dependency and is fine left to the general recursive scan below.
+MPAPI.load_mpapi_file('api/replay/recorder.lua')
+MPAPI.load_mpapi_file('api/replay/codes.lua')
+MPAPI.load_mpapi_file('api/replay/area_utils.lua')
+
 MPAPI.load_mpapi_dir('api', true)
 MPAPI.load_mpapi_dir('ui', true)
 

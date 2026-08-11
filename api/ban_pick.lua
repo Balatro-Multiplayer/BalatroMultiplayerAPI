@@ -620,6 +620,23 @@ function BP.broadcast_state(lobby)
 		return
 	end
 	lobby:action(action_type):broadcast({ state = lobby._ban_pick })
+
+	-- Also mirror the state into lobby metadata (persisted server-side,
+	-- returned again in context.reconnected_lobby.metadata on a crash-relaunch
+	-- reconnect -- see ui/reconnect_prompt.lua). The live broadcast above only
+	-- reaches clients who are actually connected at the moment it fires; a
+	-- player who crashes mid-draft (host or guest) has no other way to
+	-- recover the CURRENT draft state, since it only ever lived in the
+	-- crashed process's own memory (this file's module-level state + each
+	-- lobby object's _ban_pick field) -- nothing persisted it before now.
+	-- Every field here is plain keys/strings/numbers/nested tables (pool
+	-- items, ban maps, schedules), never a live Card/game object, so this is
+	-- safe to serialize as-is. Host-only, same as this function's only
+	-- callers (BP.request_ban's host branch, on_receive ban handlers, and
+	-- BP.start itself) -- set_metadata already rejects a non-host caller.
+	if lobby.is_host then
+		lobby:set_metadata({ _mp_ban_pick_state = lobby._ban_pick })
+	end
 end
 
 -- Host authority: apply `from_player_id`'s action (ban or pick, per the current schedule
@@ -781,6 +798,51 @@ function BP.start(lobby, config, on_complete)
 
 	if lobby.is_host then
 		BP.broadcast_state(lobby)
+	end
+end
+
+-- Crash-relaunch reconnect into a draft that was ALREADY IN PROGRESS (see
+-- ui/reconnect_prompt.lua / api/lobby/reconnect.lua) -- re-establishes this
+-- module's own local state (_config/_render/_overlay/etc, all lost when the
+-- process restarted) so is_active()/build_contents work again, WITHOUT
+-- touching lobby._ban_pick or re-broadcasting: unlike BP.start, this must be
+-- safe to call on a draft that's already mid-way through, for host and guest
+-- alike -- rebuilding the pool/schedule from scratch (what BP.start does)
+-- would silently restart the whole draft out from under whichever player(s)
+-- are still connected to it.
+--
+-- `config` is the exact same shape BP.start takes -- the caller (each
+-- consuming mod's own lobby-reconnect handler) rebuilds it the same way it
+-- would for a fresh BP.start call (from the gamemode's own ban_pick config),
+-- since nothing about the schedule/pool-building/tile-decoration/action-key
+-- shape differs between starting and resuming.
+--
+-- Requires lobby._ban_pick to already be populated -- either because this
+-- client reconnected fast enough to still have it (host, if the crash didn't
+-- lose the object) or, the common case, because it was restored from
+-- context.reconnected_lobby.metadata._mp_ban_pick_state (BP.broadcast_state's
+-- own mirror -- see that function's comment) before this is called. Silently
+-- does nothing if there's no state to resume into -- the lobby screen just
+-- falls back to its normal (non-draft) view, same as it would for a lobby
+-- that was never drafting at all.
+function BP.resume(lobby, config, on_complete)
+	if not (lobby and lobby._ban_pick) or lobby._ban_pick.complete then
+		return
+	end
+
+	_config = config
+	_on_complete = on_complete
+	_fired = false
+	_selected = {}
+	_areas = {}
+
+	_render = config.on_refresh
+	_overlay = nil
+	if _render then
+		_render()
+	else
+		_overlay = MPAPI.ui_element(build_banpick_uibox)
+		_overlay:as_overlay({ no_esc = true })
 	end
 end
 

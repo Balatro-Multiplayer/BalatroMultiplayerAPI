@@ -90,11 +90,14 @@ return {
 			k_match_status_completed = 'Completed',
 			k_match_status_abandoned = 'Abandoned',
 			k_match_status_terminated = 'Terminated',
-			-- Crash-relaunch rejoin/abandon prompt
-			k_rejoin_prompt_title = 'Match In Progress',
-			k_rejoin_prompt_body = 'You have a match still in progress. Rejoin to continue, or abandon to forfeit.',
-			b_rejoin = 'Rejoin',
+			-- Crash-relaunch reconnect/abandon-or-leave prompt. Generic: fires whenever
+			-- the server says we're still a lobby member, regardless of whether a match
+			-- has actually started yet (waiting room, mid-ban-pick draft, or mid-match).
+			k_reconnect_prompt_title = 'Reconnect?',
+			k_reconnect_prompt_body = 'You are still connected to a lobby. Reconnect to pick up where you left off, or leave to forfeit your spot.',
+			b_reconnect = 'Reconnect',
 			b_abandon = 'Abandon',
+			b_leave = 'Leave',
 			-- Chat section in account overlay
 			k_chat_section_title = 'Chat',
 			b_chat_on = 'On',
