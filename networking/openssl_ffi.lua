@@ -194,9 +194,10 @@ local function load_openssl()
 		-- OS (.dll / .dylib / .so) but every binding below is identical.
 		local ssl_names, crypto_names
 		if ffi.os == 'OSX' then
-			-- macOS: we ship OpenSSL 3 as versioned .dylib files in the mod and
-			-- load them by absolute path (see the search-dir block below). Apple's
-			-- own /usr/lib/libssl.dylib is LibreSSL (deprecated, missing symbols),
+			-- macOS: versioned .dylib filenames, always loaded by absolute path
+			-- (see the search-dir block below - BET supplies these from its own
+			-- app bundle, with a mod-folder copy as a fallback). Apple's own
+			-- /usr/lib/libssl.dylib is LibreSSL (deprecated, missing symbols),
 			-- so we never load by bare name.
 			ssl_names = { 'libssl.3.dylib' }
 			crypto_names = { 'libcrypto.3.dylib' }
@@ -257,16 +258,32 @@ local function load_openssl()
 		local search_dirs = {}
 
 		if ffi.os == 'OSX' then
-			-- We ship libssl.3.dylib + libcrypto.3.dylib in the mod's networking/
-			-- folder and load them by ABSOLUTE path. A bare name is not an option
-			-- on macOS: it resolves to Apple's /usr/lib LibreSSL and aborts the
-			-- process with "loading libcrypto in an unsafe way" (Abort trap: 6).
+			-- A bare name is not an option on macOS: it resolves to Apple's
+			-- /usr/lib LibreSSL and aborts the process with "loading libcrypto
+			-- in an unsafe way" (Abort trap: 6) - every candidate here is
+			-- always a full ABSOLUTE path, never a bare search-path entry.
 			--
-			-- We can't read the mod path from MPAPI here (the MQTT worker runs in
-			-- its own Lua state with no MPAPI), but we don't need to: core.lua
-			-- adds "<mod>/networking/?.lua" to package.path, and that string is
-			-- forwarded to the worker's setup, so the absolute networking/ dir is
-			-- already available wherever this runs. Pull it back out of there.
+			-- BET (the launcher) is the primary source now: it stages
+			-- libssl.3.dylib/libcrypto.3.dylib inside its own app bundle and
+			-- points us at that directory via BET_OPENSSL_DYLIB_DIR, set on
+			-- the game process's environment right before launch (see
+			-- IntroScreen::launchGame() in new-launcher) - env vars are
+			-- process-wide, so this works the same in the MQTT worker's own
+			-- Lua state as it does on the main thread.
+			local env_dir = os.getenv('BET_OPENSSL_DYLIB_DIR')
+			if env_dir then
+				search_dirs[#search_dirs + 1] = env_dir:gsub('/*$', '') .. '/'
+			end
+
+			-- Defensive fallback for anyone running this mod without BET (or
+			-- an older BET that doesn't set the env var yet): the mod's own
+			-- networking/ folder, if libssl.3.dylib/libcrypto.3.dylib happen
+			-- to be sitting there. We can't read the mod path from MPAPI here
+			-- (the MQTT worker runs in its own Lua state with no MPAPI), but
+			-- we don't need to: core.lua adds "<mod>/networking/?.lua" to
+			-- package.path, and that string is forwarded to the worker's
+			-- setup, so the absolute networking/ dir is already available
+			-- wherever this runs. Pull it back out of there.
 			local dir
 			for entry in (package.path or ''):gmatch('[^;]+') do
 				dir = entry:match('^(.-[/\\]networking[/\\])%?')
