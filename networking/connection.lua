@@ -5,6 +5,15 @@ local connection = {}
 -- layer agree on the values.
 local STATES = MPAPI.ConnectionState
 
+-- Always the most recently constructed instance (connection.new() can run
+-- more than once per session - e.g. MPAPI.reconnect() - each call replacing
+-- the previous instance). The launcher-integrity challenge-answered callback
+-- below is only ever registered once (challenge_callback_registered), but
+-- needs to keep publishing through whichever connection is actually live
+-- right now, not whichever one happened to be live when it was registered.
+local current_instance = nil
+local challenge_callback_registered = false
+
 function connection.new(opts)
 	local self = {
 		mqtt = opts.mqtt_client,
@@ -39,6 +48,22 @@ function connection.new(opts)
 	}
 
 	setmetatable(self, { __index = connection })
+	current_instance = self
+
+	-- Deferred to here (runtime, first construction) rather than this file's
+	-- own top level - core.lua loads networking/connection.lua before
+	-- anticheat/launcher_channel.lua, so MPAPI.on_launcher_challenge_answered
+	-- doesn't exist yet at this file's load time. By the time any
+	-- connection.new() call happens, every mod file has already loaded.
+	if not challenge_callback_registered and MPAPI.on_launcher_challenge_answered then
+		challenge_callback_registered = true
+		MPAPI.on_launcher_challenge_answered(function(result)
+			if current_instance then
+				current_instance:_publish_challenge_response(result)
+			end
+		end)
+	end
+
 	return self
 end
 
@@ -304,6 +329,22 @@ function connection:_handle_player_notification(topic, payload)
 		return
 	end
 
+	-- Launcher-integrity challenge (see launcher-integrity.service.ts) --
+	-- issued on every fresh MQTT connect regardless of game mode, so this
+	-- always relays to MPAPI.anticheat.answer_challenge(), which is always
+	-- safely callable (see anticheat/launcher_channel.lua) and self-refuses
+	-- immediately for Casual / non-BET launches rather than needing a mode
+	-- check here.
+	if full_subtopic == 'challenge' then
+		local data = decode_payload()
+		if data and data.type == 'issued' and data.challengeId then
+			self:_answer_launcher_challenge(data.challengeId, data.kind, data.nonce)
+		else
+			MPAPI.sendWarnMessage('challenge: failed to parse payload')
+		end
+		return
+	end
+
 	local subtopic = full_subtopic:match('^account/(.+)$')
 	if not subtopic then
 		return
@@ -342,6 +383,51 @@ function connection:_handle_player_notification(topic, payload)
 			fire(self, self.state, { player_update = true })
 		end
 	end
+end
+
+-- Relays a launcher-integrity challenge to the launcher via
+-- MPAPI.anticheat.answer_challenge() - see anticheat/launcher_channel.lua.
+-- Always safely callable: for Casual or a non-BET launch, that function
+-- self-refuses immediately (no mode check needed here). The eventual answer
+-- arrives asynchronously via the connection.new()-registered
+-- on_launcher_challenge_answered callback, not a return value from here.
+function connection:_answer_launcher_challenge(challenge_id, kind, nonce)
+	if not MPAPI.anticheat or not MPAPI.anticheat.answer_challenge then
+		return
+	end
+	MPAPI.anticheat.answer_challenge(challenge_id, kind, nonce, self.player_id)
+end
+
+-- Publishes a launcher-integrity challenge result to the one topic the
+-- server's EMQX ACL lets this client publish to besides its own account
+-- topics - see emqx-auth.service.ts's authorizePlayerNotificationTopic().
+-- `result` is whatever anticheat/launcher_channel.lua's
+-- run_challenge_answered_callbacks() produced: either
+-- {challenge_id, refused = true} or
+-- {challenge_id, signature, hardware_fingerprint}. hardware_fingerprint is
+-- only ever present on a login-kind challenge's answer (see
+-- rankedsupervisor.cpp) - nests as-is under hardwareFingerprint; its own
+-- keys stay whatever hardwarefingerprint.cpp already shaped them as, this
+-- layer doesn't touch them.
+function connection:_publish_challenge_response(result)
+	if not self.player_id then
+		return
+	end
+
+	local body = { challengeId = result.challenge_id }
+	if result.refused then
+		body.refused = true
+	elseif result.hardware_fingerprint then
+		body.response = {
+			signature = result.signature,
+			hardwareFingerprint = result.hardware_fingerprint,
+		}
+	else
+		body.response = result.signature
+	end
+
+	local topic = 'player/' .. self.player_id .. '/challenge-response'
+	self.mqtt:publish(topic, MPAPI.json_encode(body), 1, false)
 end
 
 function connection:disconnect()

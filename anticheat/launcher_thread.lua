@@ -39,6 +39,25 @@ if setup.pkg_cpath then
 	package.cpath = setup.pkg_cpath
 end
 
+-- pkg_path above still points into Steamodded's virtual zip mount, which
+-- this thread's stock require()/io.open can't actually read through (see
+-- lib/thread_preload.lua's comment on the main thread) - register the
+-- pre-read source the main thread sent right after the setup table (as
+-- its own message - love.thread Channels don't support nested tables,
+-- so this couldn't just be a field on setup above), before requiring
+-- anything that lives in the mount (openssl_ffi, anticheat.crypto below).
+local preload = tx_channel:demand()
+if type(preload) == 'table' then
+	for mod_name, source in pairs(preload) do
+		if not package.preload[mod_name] then
+			package.preload[mod_name] = function(...)
+				local chunk = assert(load(source, '@' .. mod_name))
+				return chunk(...)
+			end
+		end
+	end
+end
+
 local socket = require('socket')
 require('love.timer') -- not loaded by default in Love2D threads
 
@@ -86,6 +105,121 @@ local function encode_json(tbl)
 		parts[#parts + 1] = '"' .. tostring(k) .. '":' .. encoded
 	end
 	return '{' .. table.concat(parts, ',') .. '}'
+end
+
+-- Minimal recursive-descent JSON decoder used only as a fallback when
+-- json_lib.decode isn't available in this isolated thread Lua state (see
+-- encode_json's own comment above on why that's possible at all, even
+-- though json_lib is expected to always resolve in the real Steamodded
+-- runtime). Only implements what this channel's own messages ever need:
+-- objects, strings (with the same handful of escapes encode_json emits),
+-- numbers, booleans, null, and nested objects (the launcher's
+-- challenge_response frame nests hardware_fingerprint one level deep) - no
+-- arrays, since nothing on this channel ever sends one.
+local function decode_json_fallback(str)
+	local pos = 1
+	local parse_value
+
+	local function skip_ws()
+		while pos <= #str and str:sub(pos, pos):match('%s') do
+			pos = pos + 1
+		end
+	end
+
+	local function parse_string()
+		pos = pos + 1 -- opening quote
+		local buf = {}
+		while pos <= #str do
+			local c = str:sub(pos, pos)
+			if c == '"' then
+				pos = pos + 1
+				return table.concat(buf)
+			elseif c == '\\' then
+				local nextc = str:sub(pos + 1, pos + 1)
+				local escapes = { ['"'] = '"', ['\\'] = '\\', ['/'] = '/', n = '\n', t = '\t', r = '\r' }
+				buf[#buf + 1] = escapes[nextc] or nextc
+				pos = pos + 2
+			else
+				buf[#buf + 1] = c
+				pos = pos + 1
+			end
+		end
+		error('decode_json_fallback: unterminated string')
+	end
+
+	local function parse_number()
+		local start = pos
+		while pos <= #str and str:sub(pos, pos):match('[%d%.%-%+eE]') do
+			pos = pos + 1
+		end
+		return tonumber(str:sub(start, pos - 1))
+	end
+
+	local function parse_object()
+		pos = pos + 1 -- opening brace
+		local obj = {}
+		skip_ws()
+		if str:sub(pos, pos) == '}' then
+			pos = pos + 1
+			return obj
+		end
+		while true do
+			skip_ws()
+			local key = parse_string()
+			skip_ws()
+			pos = pos + 1 -- colon
+			skip_ws()
+			obj[key] = parse_value()
+			skip_ws()
+			local c = str:sub(pos, pos)
+			if c == ',' then
+				pos = pos + 1
+			elseif c == '}' then
+				pos = pos + 1
+				break
+			else
+				error('decode_json_fallback: malformed object near position ' .. pos)
+			end
+		end
+		return obj
+	end
+
+	parse_value = function()
+		skip_ws()
+		local c = str:sub(pos, pos)
+		if c == '{' then
+			return parse_object()
+		elseif c == '"' then
+			return parse_string()
+		elseif str:sub(pos, pos + 3) == 'true' then
+			pos = pos + 4
+			return true
+		elseif str:sub(pos, pos + 4) == 'false' then
+			pos = pos + 5
+			return false
+		elseif str:sub(pos, pos + 3) == 'null' then
+			pos = pos + 4
+			return nil
+		else
+			return parse_number()
+		end
+	end
+
+	local ok, result = pcall(parse_value)
+	if not ok then
+		return nil
+	end
+	return result
+end
+
+local function decode_json(str)
+	if json_lib_ok and json_lib and json_lib.decode then
+		local ok, result = pcall(json_lib.decode, str)
+		if ok then
+			return result
+		end
+	end
+	return decode_json_fallback(str)
 end
 
 local function hex_decode(hex)
@@ -250,17 +384,21 @@ while running do
 		end
 		if cmd.cmd == 'shutdown' then
 			running = false
-		elseif cmd.cmd == 'send_session_token' then
-			-- Only meaningful post-handshake (see launcher_channel.lua's
-			-- notify_session(), which queues on the main-thread side until
-			-- A.launcher_connected is true - by the time that's true, this
-			-- side's own `authenticated` below is already true too, since
-			-- A.launcher_connected only ever becomes true in reaction to the
-			-- 'authenticated' event this thread pushes after a successful
-			-- handshake). The check here is just a defensive backstop, not
-			-- something expected to actually trigger.
+		elseif cmd.cmd == 'answer_challenge' then
+			-- Pure relay - this thread never computes a signature itself, it
+			-- only forwards what the server issued (via MQTT, on the main
+			-- thread) to the launcher, which is the only party holding the
+			-- secret needed to answer it. Defensive check: only meaningful
+			-- post-handshake, though launcher_channel.lua's own pending-
+			-- challenge queue means this shouldn't actually trigger.
 			if authenticated then
-				send_frame({ type = 'session_token', token = cmd.token, player_id = cmd.player_id })
+				send_frame({
+					type = 'challenge_request',
+					challenge_id = cmd.challenge_id,
+					kind = cmd.kind,
+					nonce = cmd.nonce,
+					player_id = cmd.player_id,
+				})
 			end
 		end
 	end
@@ -303,6 +441,21 @@ while running do
 			if not authenticated then
 				authenticated = true
 				push_event({ type = 'authenticated' })
+			else
+				-- Every post-auth frame needs decoding to find out what it is
+				-- (heartbeat vs challenge_response) - a plain heartbeat's
+				-- content is otherwise unused, last_received above is already
+				-- all it needed to trigger.
+				local decode_ok, frame = pcall(decode_json, plaintext)
+				if decode_ok and type(frame) == 'table' and frame.type == 'challenge_response' then
+					push_event({
+						type = 'challenge_answered',
+						challenge_id = frame.challenge_id,
+						signature = frame.signature,
+						hardware_fingerprint = frame.hardware_fingerprint,
+						error = frame.error,
+					})
+				end
 			end
 		end
 	end
