@@ -116,6 +116,32 @@ function mqtt_client:start_thread()
 	local setup_msg = 'setup' .. SEP .. (package.path or '') .. SEP .. (package.cpath or '')
 	self.tx_channel:push(setup_msg)
 
+	-- The background thread's own require('mqtt')/require('openssl_ffi')
+	-- can't actually resolve those files when this mod is deployed as a
+	-- zip (the common case - see lib/thread_preload.lua for the full
+	-- root-cause writeup): package.path's entries point into Steamodded's
+	-- virtual zip mount, which only the main thread's require() can read
+	-- through. Pre-read the actual source here (this thread's NFS.read()
+	-- works fine) and hand it over the channel so mqtt_thread.lua can
+	-- register it into its own package.preload before requiring it.
+	--
+	-- Loaded via MPAPI.load_mpapi_file (not require) for the same reason
+	-- e72d5c4 fixed lib/debugplus/console.lua and ui.lua: on the MAIN
+	-- thread, require() is resolved by Lua's stock package.path searcher,
+	-- which just can't read through a zip Steamodded has mounted via
+	-- LÖVE's PhysFS-backed virtual filesystem at all - confirmed live,
+	-- this require('thread_preload') failed with "not found" even with a
+	-- correct package.path and a non-dotted (so not e72d5c4's backslash-
+	-- substitution case) module name. NFS.read() (via MPAPI.load_mpapi_file
+	-- -> SMODS.load_file) is the one file-loading path proven to work
+	-- whether the mod is a folder or a zip.
+	local thread_preload = MPAPI.load_mpapi_file('lib/thread_preload.lua')
+	local preload = thread_preload.build_preload_table('lib/mqtt', 'mqtt')
+	for name, source in pairs(thread_preload.read_single_module('networking/openssl_ffi.lua', 'openssl_ffi')) do
+		preload[name] = source
+	end
+	self.tx_channel:push(preload)
+
 	return true
 end
 
