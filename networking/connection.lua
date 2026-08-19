@@ -348,12 +348,15 @@ function connection:_handle_player_notification(topic, payload)
 				MPAPI.anticheat.mark_server_verified()
 			end
 		elseif data and data.type == 'failed' then
-			-- Nothing to do here beyond not warning - the server's own
-			-- kickClient() call (see launcher-integrity.service.ts's
+			-- The server's own kickClient() call (see launcher-integrity.service.ts's
 			-- failIntegrity()) tears down this connection right behind this
-			-- message for anyone who'd already passed a challenge before;
-			-- for a login refusal/failure the session just never becomes
-			-- server_verified in the first place.
+			-- message - surface it as a real notice (ui/anticheat_failed_overlay.lua)
+			-- rather than a silent drop, so the player has a reason to go
+			-- relaunch their launcher and reconnect instead of assuming a
+			-- random network blip.
+			if MPAPI.show_anticheat_failed_notice then
+				MPAPI.show_anticheat_failed_notice(data.message)
+			end
 		else
 			MPAPI.sendWarnMessage('challenge: failed to parse payload')
 		end
