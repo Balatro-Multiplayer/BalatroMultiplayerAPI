@@ -37,9 +37,20 @@ end
 -- the same paths a silent no-op instead of re-running (and, for codes.lua,
 -- wiping MPAPI.RLOGCodes out from under the codes already registered into it).
 MPAPI._loaded_files = {}
+MPAPI._loaded_file_results = {}
 
+-- Returns the same result every time, including on a dedup-skipped repeat
+-- call (previously returned nil on any call after the first, which is safe
+-- for a callsite that only cares about the load side effect but crashes one
+-- that needs the module table on every call, e.g. networking/mqtt_client.lua
+-- and anticheat/launcher_channel.lua both calling this for
+-- lib/thread_preload.lua after core.lua's own load_mpapi_dir('lib') already
+-- loaded it once during bootstrap - confirmed live: 'attempt to index local
+-- thread_preload (a nil value)' crashing mqtt_client.lua:start_thread() and
+-- the launcher-integrity relay thread setup identically, every time, since
+-- neither ever gets a first, non-deduped call).
 function MPAPI.load_mpapi_file(file)
-	if MPAPI._loaded_files[file] then return end
+	if MPAPI._loaded_files[file] then return MPAPI._loaded_file_results[file] end
 	MPAPI._loaded_files[file] = true
 	local chunk, err = SMODS.load_file(file, MPAPI.id)
 	if not chunk then
@@ -49,6 +60,7 @@ function MPAPI.load_mpapi_file(file)
 	if not ok then
 		error('MPAPI: failed to execute file \'' .. file .. '\': ' .. tostring(result), 0)
 	end
+	MPAPI._loaded_file_results[file] = result
 	return result
 end
 
