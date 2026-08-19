@@ -26,4 +26,25 @@ if imp_id or imp_name then
 	MPAPI.sendDebugMessage('Dev impersonation auth enabled for ' .. tostring(imp_id or imp_name))
 end
 
+-- Ranked anti-cheat, local-supervision half: api/matchmaking/api.lua's
+-- MPAPI.matchmaking.queue() refuses any ranked=true queue attempt unless
+-- MPAPI.anticheat.active/launcher_connected are true (anticheat/
+-- launcher_channel.lua) -- normally only set by a real BET launch via
+-- BET_RANKED_SUPERVISOR_PORT/_SECRET, since that's the local IPC socket a
+-- real launcher keeps open to this game process. A ClaudeControl-driven
+-- instance never has one. This flag forces those fields true so a queue
+-- attempt actually reaches the server instead of refusing locally.
+--
+-- This is only one half of "queue and play a real ranked match" -- the
+-- server has its own, independent launcher-integrity check over MQTT
+-- (server-side login challenge/response) that this doesn't touch at all;
+-- pair with the server's own DEV_AUTO_VERIFY_LAUNCHER env flag
+-- (BalatroMultiplayerServer's launcher-integrity.service.ts) for that half.
+if os.getenv('BMP_DEV_SKIP_RANKED_ANTICHEAT') then
+	MPAPI.anticheat.active = true
+	MPAPI.anticheat.launcher_connected = true
+	MPAPI.anticheat.launcher_supervision_lost = false
+	MPAPI.sendDebugMessage('Dev bypass: local ranked anti-cheat supervision forced active.')
+end
+
 MPAPI.sendDebugMessage('Dev auth overrides applied')

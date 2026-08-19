@@ -1,14 +1,12 @@
--- Shown when the server's launcher-integrity anti-cheat check fails and
--- disconnects this client (see networking/connection.lua's handling of a
--- 'challenge'/type='failed' notification, and launcher-integrity.service.ts's
--- failIntegrity() on the server side). Deliberately explicit, not a silent
--- kick: a player who gets caught off guard by an unexplained disconnect has
--- no way to tell "my launcher closed" apart from "the server fell over", so
--- they'd have no reason to go relaunch and reconnect - which the server-side
--- grace period (see grace-period.service.ts) exists specifically to let them
--- do. Body text comes from the server (see below) rather than a fixed
--- localized string, since it's the server's own reason to explain. Twin of
--- ui/kicked_notice_overlay.lua's small modal pattern.
+-- Shown when the server's launcher-integrity anti-cheat check fails (see
+-- networking/connection.lua's handling of a 'challenge'/type='failed'
+-- notification, and launcher-integrity.service.ts's failIntegrity() on the
+-- server side). This does NOT disconnect the client - it only costs Ranked
+-- eligibility (MPAPI.is_launcher_verified()) - so the notice is purely
+-- informational, not an explanation for a kick. Body text comes from the
+-- server (see below) rather than a fixed localized string, since it's the
+-- server's own reason to explain. Twin of ui/kicked_notice_overlay.lua's
+-- small modal pattern.
 local function build_anticheat_failed_uibox(message)
 	local contents = {
 		{
@@ -66,7 +64,7 @@ end
 -- rather than showing a blank body.
 function MPAPI.show_anticheat_failed_notice(message)
 	local overlay = MPAPI.ui_element(function()
-		return build_anticheat_failed_uibox(message or 'Your launcher could not be verified. Relaunch and reconnect to keep playing.')
+		return build_anticheat_failed_uibox(message or "Your launcher could not be verified. You'll need to pass this check to queue for Ranked.")
 	end)
 	overlay:as_overlay()
 end
