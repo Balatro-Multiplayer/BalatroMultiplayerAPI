@@ -36,6 +36,24 @@ A.launcher_connected = false
 A.launcher_supervision_lost = false
 A.launcher_supervision_lost_at = nil
 
+-- Whether the *server* has confirmed our most recent challenge response was
+-- actually correct - distinct from A.active/A.launcher_connected, which only
+-- describe the local mod<->launcher socket and say nothing about whether the
+-- server accepted what BET signed. Set by networking/connection.lua's
+-- 'challenge' topic handler on a {type='verified'} message (see
+-- launcher-integrity.service.ts's handleChallengeResponse) - never set
+-- optimistically just because a response was sent. Starts false on every
+-- fresh load (a new MQTT connection means a fresh login challenge is coming
+-- regardless), and is the one flag safe for other mods to gate a Ranked
+-- queue button on - see MPAPI.is_launcher_verified() in
+-- api/connection/lifecycle.lua.
+A.server_verified = false
+
+-- Called only from networking/connection.lua's challenge-topic handler.
+function A.mark_server_verified()
+	A.server_verified = true
+end
+
 A._internal = A._internal or {}
 A._internal.supervision_lost_callbacks = A._internal.supervision_lost_callbacks or {}
 A._internal.challenge_answered_callbacks = A._internal.challenge_answered_callbacks or {}

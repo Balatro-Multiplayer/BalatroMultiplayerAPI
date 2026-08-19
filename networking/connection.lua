@@ -339,6 +339,21 @@ function connection:_handle_player_notification(topic, payload)
 		local data = decode_payload()
 		if data and data.type == 'issued' and data.challengeId then
 			self:_answer_launcher_challenge(data.challengeId, data.kind, data.nonce)
+		elseif data and data.type == 'verified' then
+			-- The server's actual verdict on our last response, not just
+			-- confirmation BET answered - see anticheat/launcher_channel.lua's
+			-- A.server_verified doc comment for why this is the one flag
+			-- safe to gate a Ranked queue button on.
+			if MPAPI.anticheat and MPAPI.anticheat.mark_server_verified then
+				MPAPI.anticheat.mark_server_verified()
+			end
+		elseif data and data.type == 'failed' then
+			-- Nothing to do here beyond not warning - the server's own
+			-- kickClient() call (see launcher-integrity.service.ts's
+			-- failIntegrity()) tears down this connection right behind this
+			-- message for anyone who'd already passed a challenge before;
+			-- for a login refusal/failure the session just never becomes
+			-- server_verified in the first place.
 		else
 			MPAPI.sendWarnMessage('challenge: failed to parse payload')
 		end
