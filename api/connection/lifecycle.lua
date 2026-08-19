@@ -166,6 +166,16 @@ MPAPI.is_connected = function()
 	return false
 end
 
+-- The one launcher-integrity flag safe for another mod to gate a Ranked
+-- queue button on - reflects the *server's* verdict on the most recent
+-- challenge response (see anticheat/launcher_channel.lua's A.server_verified
+-- doc comment), not just "BET answered something". False for Casual, a
+-- non-BET launch, or before the server's first login-challenge response has
+-- landed - none of those should ever show an enabled Ranked queue button.
+MPAPI.is_launcher_verified = function()
+	return MPAPI.anticheat ~= nil and MPAPI.anticheat.server_verified == true
+end
+
 MPAPI.get_mqtt = function()
 	return C.mqtt_instance
 end
