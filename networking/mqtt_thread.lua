@@ -198,13 +198,38 @@ local function do_https_request(method, url, body, extra_headers)
 	while socket.gettime() < deadline do
 		local pending = ossl.pending(ssl)
 		if pending > 0 then
-			local data = ossl.read(ssl, pending)
-			if data then table.insert(parts, data) end
+			local data, read_err = ossl.read(ssl, pending)
+			if data then
+				table.insert(parts, data)
+			elseif read_err ~= 'timeout' then
+				break
+			end
 		else
 			local readable = socket.select({ sock }, nil, 0.5)
 			if readable and #readable > 0 then
-				local data = ossl.read(ssl, 8192)
-				if data then table.insert(parts, data) else break end
+				local data, read_err = ossl.read(ssl, 8192)
+				if data then
+					table.insert(parts, data)
+				elseif read_err ~= 'timeout' then
+					-- 'timeout' here means SSL_read returned WANT_READ/WANT_WRITE
+					-- (openssl_ffi.lua's M.read()) - the raw TCP socket had bytes
+					-- ready (that's why socket.select() above woke up), but OpenSSL
+					-- needs a full TLS record before it can hand back any
+					-- application data, and a record can legitimately span more
+					-- than one TCP read under real internet latency/fragmentation
+					-- (never observed locally - Docker-internal round-trips are
+					-- fast enough a whole record always arrived in one shot).
+					-- Treating that identically to 'closed'/a real SSL error and
+					-- bailing out here truncated the response mid-flight - see
+					-- do_request()'s 'bad http response' (a status line that
+					-- never fully arrived), confirmed live against production's
+					-- real network latency, never reproduced against a
+					-- near-zero-latency local server. Only a genuine terminal
+					-- condition should stop the loop; a transient one just means
+					-- try again next iteration, same as the pending-bytes branch
+					-- above already does.
+					break
+				end
 			end
 		end
 		-- Stop early once Content-Length bytes are in hand
