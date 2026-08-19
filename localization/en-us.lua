@@ -7,12 +7,10 @@ return {
 			k_status_signing_in = 'Signing In...',
 			k_status_connected = 'Connected',
 			k_status_queueing = 'Queueing',
-			-- Main menu account panel: shown only when MPAPI.anticheat.active
-			-- (game launched via BET in Ranked mode) - see ui/main_menu.lua's
-			-- ranked_badge_node and anticheat/launcher_channel.lua. Reuses
-			-- k_ranked_cap (below, shared matchmaking strings) for the
-			-- healthy case so the label text matches the rest of the app.
-			k_ranked_supervision_lost_cap = 'RANKED (!)',
+			-- Main menu account panel: shown only once MPAPI.is_launcher_verified()
+			-- is true (Ranked integrity handshake completed) - see
+			-- ui/main_menu.lua's verified_node and api/connection/lifecycle.lua.
+			k_verified_cap = 'VERIFIED',
 			k_your_avatar_cap_1 = 'YOUR',
 			k_your_avatar_cap_2 = 'AVATAR',
 			k_click_to_change = 'Click to Change',

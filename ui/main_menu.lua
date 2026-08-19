@@ -22,39 +22,6 @@ local create_UIBox_account_button = function()
 		{ n = G.UIT.T, config = { text = localize('k_multiplayer'), scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 	} }
 
-	-- Small "RANKED" pill under the title, shown only while
-	-- MPAPI.anticheat.active (the game was launched via BET in Ranked mode -
-	-- see anticheat/launcher_channel.lua). Casual play, or the game started
-	-- outside BET entirely, never sets .active, so this stays hidden with no
-	-- extra check needed here. Turns red with a "(!)" suffix if the
-	-- launcher's heartbeat is currently lost mid-run (still a flag-and-
-	-- continue signal, not something that blocks play - see
-	-- MPAPI.on_launcher_supervision_lost) so the player has some visibility
-	-- into anti-cheat health without gameplay being interrupted for it.
-	local ranked_badge_node = nil
-	if MPAPI.anticheat and MPAPI.anticheat.active then
-		local supervision_lost = MPAPI.anticheat.launcher_supervision_lost
-		ranked_badge_node = {
-			n = G.UIT.R,
-			config = { align = 'cm', padding = 0.02 },
-			nodes = {
-				{
-					n = G.UIT.C,
-					config = {
-						align = 'cm', padding = 0.05, minw = 1.4, maxw = inner_width, r = 0.1, shadow = true,
-						colour = supervision_lost and G.C.RED or G.C.GOLD,
-					},
-					nodes = {
-						{ n = G.UIT.T, config = {
-							text = localize(supervision_lost and 'k_ranked_supervision_lost_cap' or 'k_ranked_cap'),
-							scale = 0.25, colour = G.C.UI.TEXT_LIGHT, shadow = true,
-						} },
-					},
-				},
-			},
-		}
-	end
-
 	local is_busy = MPAPI.connection_state.state == MPAPI.ConnectionState.CONNECTING or MPAPI.connection_state.state == MPAPI.ConnectionState.AUTHENTICATING
 	local account_button_config = {
 		align = 'cm', padding = 0.1, minw = inner_width, minh = 0.8, maxw = inner_width, r = 0.1,
@@ -130,12 +97,21 @@ local create_UIBox_account_button = function()
 		{ n = G.UIT.T, config = { ref_table = MPAPI.connection_state, ref_value = 'status_text', scale = 0.3, colour = status_colour, shadow = true } },
 	} }
 
+	-- Shown under the connection status once the launcher has completed the
+	-- Ranked integrity handshake (see MPAPI.is_launcher_verified in
+	-- api/connection/lifecycle.lua). Plain gold text, not a badge/pill -
+	-- casual play or a game started outside BET never verifies, so this
+	-- stays hidden with no extra check needed here.
+	local verified_node = nil
+	if MPAPI.is_launcher_verified and MPAPI.is_launcher_verified() then
+		verified_node = { n = G.UIT.R, config = { align = 'cm', minw = inner_width }, nodes = {
+			{ n = G.UIT.T, config = { text = localize('k_verified_cap'), scale = 0.3, colour = G.C.GOLD, shadow = true } },
+		} }
+	end
+
 	local account_button_nodes = {
 		title_node,
 	}
-	if ranked_badge_node then
-		account_button_nodes[#account_button_nodes + 1] = ranked_badge_node
-	end
 	account_button_nodes[#account_button_nodes + 1] = account_button_node
 
 	if MPAPI.get_focused_mod() then
@@ -153,6 +129,9 @@ local create_UIBox_account_button = function()
 	end
 
 	account_button_nodes[#account_button_nodes + 1] = connection_state
+	if verified_node then
+		account_button_nodes[#account_button_nodes + 1] = verified_node
+	end
 
 	return {
 		n = G.UIT.ROOT,
