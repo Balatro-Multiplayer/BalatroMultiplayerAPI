@@ -192,6 +192,17 @@ local function _check_pending_menu_teardown()
 	end
 	MPAPI._pending_menu_teardown = false
 	MPAPI.teardown_menu()
+	-- Skip rebuilding the account button's UIBox over an active run - same
+	-- hazard on_lobby_disconnected already guards against above (see its own
+	-- comment): the button is in uibox mode from the main menu, so
+	-- update_account_button() would recreate/redraw it on top of the game.
+	-- This path fires for any flow that drops straight into a run without
+	-- the normal lobby-menu screens (SPDRN/PvP practice, replay playback),
+	-- which is exactly when G.STAGE is already G.STAGES.RUN by the time this
+	-- runs on the next Game:update tick.
+	if G.STAGE == G.STAGES.RUN then
+		return
+	end
 	MPAPI._internal.mod_registry.update_account_button()
 end
 
