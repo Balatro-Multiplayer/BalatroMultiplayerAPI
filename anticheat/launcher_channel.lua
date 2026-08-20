@@ -63,12 +63,17 @@ function A.mark_server_verified()
 	-- handshake can complete after the player has already left for a run
 	-- (server round-trip racing the menu-to-queue transition), and there's
 	-- nothing urgent enough about a VERIFIED badge to justify popping the
-	-- account panel up over live gameplay -- same G.STATE == G.STATES.MENU
-	-- guard ui/tos.lua's show_tos_overlay uses for the same reason. No
+	-- account panel up over live gameplay. Gate on G.STAGE, not G.STATE:
+	-- delete_run() sets G.STATE to a transient -1 (neither MENU nor a run
+	-- state), but some flows -- SPDRN/PvP practice, replay playback -- drop
+	-- straight into a run without a Game:main_menu() call in between, so
+	-- G.STATE can still read MENU (its last real value) after G.STAGE has
+	-- already flipped to RUN. G.STAGE only ever changes via prep_stage,
+	-- atomically with G.STATE, so it can't be stale the same way. No
 	-- pending-flush needed on return to the menu: set_main_menu_UI's own
 	-- attach_account_button already rebuilds fresh from
 	-- MPAPI.is_launcher_verified() every time.
-	if MPAPI.account_button and G.STATE == G.STATES.MENU then
+	if MPAPI.account_button and G.STAGE == G.STAGES.MAIN_MENU then
 		MPAPI.account_button:update()
 	end
 end

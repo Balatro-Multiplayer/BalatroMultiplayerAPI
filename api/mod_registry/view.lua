@@ -152,6 +152,20 @@ MPAPI.teardown_menu = function()
 			G[key] = nil
 		end
 	end
+	-- account_button is a separate 'uibox'-mode ui_element (ui/main_menu.lua),
+	-- weakly bonded to G.ROOM_ATTACH rather than tracked as one of the keys
+	-- above, so it isn't guaranteed to be torn down by the base game's own
+	-- remove_all(G.STAGE_OBJECTS[...]) when a run starts. Remove its UIBox
+	-- directly; the ui_element wrapper safely no-ops a stale reference on its
+	-- next as_uibox()/update() call (see api/ui_element.lua), so nothing else
+	-- needs to be reset here -- set_main_menu_UI's attach_account_button
+	-- recreates it fresh on return to the menu.
+	if MPAPI.account_button then
+		local uibox = MPAPI.account_button:get_uibox()
+		if uibox then
+			pcall(function() uibox:remove() end)
+		end
+	end
 	-- The version display is an anonymous top-right ('tri') UIBox among the menu's stage objects.
 	local menu_objects = G.STAGE_OBJECTS and G.STAGES and G.STAGE_OBJECTS[G.STAGES.MAIN_MENU]
 	for i = menu_objects and #menu_objects or 0, 1, -1 do
