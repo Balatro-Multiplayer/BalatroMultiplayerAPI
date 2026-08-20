@@ -10,14 +10,14 @@ priority = 2147483600
 # multiplayer lobby" signal -- rather than any one mod's own tracking global.
 # Landed between the Run Info and Options buttons.
 #
-# minh is fixed at 1.2 (the SHRUNK size PvP's own separate minh-shrink patch
-# uses for Run Info/Options in practice/lobby contexts) rather than 1.75 --
-# the button row's container sizes to its tallest child, so a 1.75 button
-# sitting next to two 1.2-shrunk neighbors would inflate the whole row's
-# height back up to 1.75, undoing that patch's compacting for anyone who
-# also has this button showing. 1.2 never exceeds either of Run Info/
-# Options' two possible sizes (1.2 shrunk, 1.75 default), so the row is
-# never taller than it would already be without this button.
+# minh is fixed at 1.2 (the SHRUNK size the patch below uses for Run Info/
+# Options whenever this button is showing) rather than 1.75 -- the button
+# row's container sizes to its tallest child, so a 1.75 button sitting next
+# to two 1.2-shrunk neighbors would inflate the whole row's height back up
+# to 1.75, undoing that patch's compacting for anyone who also has this
+# button showing. 1.2 never exceeds either of Run Info/Options' two possible
+# sizes (1.2 shrunk, 1.75 default), so the row is never taller than it would
+# already be without this button.
 [[patches]]
 [patches.pattern]
 target = "functions/UI_definitions.lua"
@@ -35,4 +35,23 @@ MPAPI.get_current_lobby() and {n=G.UIT.R, config={id = 'mpapi_lobby_info_button'
     }}
 }} or nil,'''
 match_indent = true
+times = 1
+
+# Shrinks the Run Info/Options buttons (vanilla, both minh = 1.75) to match
+# the Lobby Info button above whenever it's showing -- generalized here from
+# a PvP-only patch (BalatroMultiplayerPvP's old lovely/hud.toml, removed in
+# favor of this one) the same way the Lobby Info button itself was, so SPDRN
+# gets consistent HUD button heights too instead of only PvP. Condition is
+# MPAPI.get_current_lobby() (real lobby of any kind, any mod, matching Lobby
+# Info's own gate exactly) OR PVP.is_practice_mode() specifically (guarded on
+# `PVP and` so this stays a no-op if PvP isn't loaded) -- PvP's own practice
+# mode doesn't go through MPAPI.create_local_lobby the way SPDRN's does, so
+# it needs that extra check; SPDRN's practice mode is already covered by
+# get_current_lobby() alone.
+[[patches]]
+[patches.regex]
+target = "functions/UI_definitions.lua"
+pattern = '''contents\.buttons = \{(?<pre>[\s\S]*?)minh = 1\.75(?<between>[\s\S]*?)minh = 1\.75'''
+position = 'at'
+payload = '''contents.buttons = {$pre minh = (MPAPI.get_current_lobby() or (PVP and PVP.is_practice_mode and PVP.is_practice_mode())) and 1.2 or 1.75$between minh = (MPAPI.get_current_lobby() or (PVP and PVP.is_practice_mode and PVP.is_practice_mode())) and 1.2 or 1.75'''
 times = 1
