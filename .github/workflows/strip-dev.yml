@@ -3,7 +3,7 @@ name: Strip dev files for release
 on:
   push:
     branches:
-      - mqtt-main
+      - main
 
 jobs:
   strip-dev:
@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: mqtt-main
+          ref: main
 
       - name: Strip dev/ directory
         run: |
