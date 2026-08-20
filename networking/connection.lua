@@ -348,12 +348,13 @@ function connection:_handle_player_notification(topic, payload)
 				MPAPI.anticheat.mark_server_verified()
 			end
 		elseif data and data.type == 'failed' then
-			-- Nothing to do here beyond not warning - the server's own
-			-- kickClient() call (see launcher-integrity.service.ts's
-			-- failIntegrity()) tears down this connection right behind this
-			-- message for anyone who'd already passed a challenge before;
-			-- for a login refusal/failure the session just never becomes
-			-- server_verified in the first place.
+			-- Deliberately silent - failing this challenge is the expected,
+			-- normal outcome for any non-BET launch (Casual, private lobbies,
+			-- or just not using the launcher at all), not something worth
+			-- surfacing to the player. It doesn't disconnect either (see
+			-- launcher-integrity.service.ts's failIntegrity()) - the only
+			-- consequence is staying unverified, which the Ranked queue
+			-- button(s) already reflect via MPAPI.is_launcher_verified().
 		else
 			MPAPI.sendWarnMessage('challenge: failed to parse payload')
 		end

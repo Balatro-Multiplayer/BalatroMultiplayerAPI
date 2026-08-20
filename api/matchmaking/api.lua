@@ -200,3 +200,17 @@ MPAPI.matchmaking.get_leaderboard = function(mod_id, game_mode, season, opts, ca
 		callback
 	)
 end
+
+-- Live "N queued / M in game" counts per gameMode for mod_id. callback(err, data)
+-- where data = { modId, gameModes = { [game_mode] = { queued, inMatch }, ... } }
+-- (a gameMode absent from gameModes means 0/0). Most callers want
+-- MPAPI.matchmaking.create_queue_counts_poller (queue_counts_poller.lua)
+-- instead of calling this directly on a timer themselves.
+MPAPI.matchmaking.get_queue_counts = function(mod_id, callback)
+	local conn = MPAPI.get_connection()
+	if not conn then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
+		return
+	end
+	conn.api:get_matchmaking_queue_counts(conn.jwt_token, mod_id, callback)
+end
