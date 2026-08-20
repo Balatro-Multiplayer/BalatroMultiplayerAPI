@@ -54,10 +54,21 @@ function A.mark_server_verified()
 	A.server_verified = true
 	-- Repaint the main-menu VERIFIED text (ui/main_menu.lua) so it appears as
 	-- soon as the handshake actually completes, not just next time the
-	-- account panel happens to rebuild for some unrelated reason -- same
-	-- nil-checked repaint the supervision_lost/supervision_restored handlers
-	-- below already do for the same button.
-	if MPAPI.account_button then
+	-- account panel happens to rebuild for some unrelated reason. Only safe
+	-- while actually on the main menu, though -- account_button is a
+	-- 'uibox'-mode ui_element, so :update() unconditionally destroys and
+	-- recreates its UIBox reattached via major=G.ROOM_ATTACH regardless of
+	-- game state. Unlike supervision_lost/supervision_restored below (an
+	-- urgent mid-run notification, intentionally interruptive), this
+	-- handshake can complete after the player has already left for a run
+	-- (server round-trip racing the menu-to-queue transition), and there's
+	-- nothing urgent enough about a VERIFIED badge to justify popping the
+	-- account panel up over live gameplay -- same G.STATE == G.STATES.MENU
+	-- guard ui/tos.lua's show_tos_overlay uses for the same reason. No
+	-- pending-flush needed on return to the menu: set_main_menu_UI's own
+	-- attach_account_button already rebuilds fresh from
+	-- MPAPI.is_launcher_verified() every time.
+	if MPAPI.account_button and G.STATE == G.STATES.MENU then
 		MPAPI.account_button:update()
 	end
 end
