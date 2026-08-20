@@ -52,6 +52,14 @@ A.server_verified = false
 -- Called only from networking/connection.lua's challenge-topic handler.
 function A.mark_server_verified()
 	A.server_verified = true
+	-- Repaint the main-menu VERIFIED text (ui/main_menu.lua) so it appears as
+	-- soon as the handshake actually completes, not just next time the
+	-- account panel happens to rebuild for some unrelated reason -- same
+	-- nil-checked repaint the supervision_lost/supervision_restored handlers
+	-- below already do for the same button.
+	if MPAPI.account_button then
+		MPAPI.account_button:update()
+	end
 end
 
 A._internal = A._internal or {}
