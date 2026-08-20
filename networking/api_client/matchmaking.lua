@@ -90,3 +90,23 @@ function api_client:get_matchmaking_leaderboard(token, mod_id, game_mode, season
 	url = url .. '&limit=' .. tostring(limit or 100) .. '&offset=' .. tostring(offset or 0)
 	self.mqtt:http_get_auth(url, token)
 end
+
+-- Live "N queued / M in game" counts per gameMode for mod_id, e.g. to
+-- render on a Find Game menu's buttons -- see matchmaking/queue_counts_poller.lua
+-- for the polling wrapper most callers actually want. Deliberately hits
+-- /api/stats/... (not /api/matchmaking/...) even though this lives
+-- alongside this file's other matchmaking-domain calls: unlike everything
+-- else here, the server route is intentionally public/unauthenticated (see
+-- that route's own comment) -- grouping here is by data domain, not URL
+-- prefix. Still sent with a token like every other call in this file, since
+-- by the time a mod can show a Find Game menu it's already connected; the
+-- server simply ignores it.
+function api_client:get_matchmaking_queue_counts(token, mod_id, callback)
+	if not self:_transport_ready() then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
+		return
+	end
+	self:_setup_json_callback(callback)
+	local url = self.base_url .. '/api/stats/queue-counts?modId=' .. mod_id
+	self.mqtt:http_get_auth(url, token)
+end
