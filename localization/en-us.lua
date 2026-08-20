@@ -138,10 +138,6 @@ return {
 			k_kicked_title = 'Removed from Lobby',
 			k_player_kicked_you = 'The host removed you from the lobby.',
 			k_ok = 'OK',
-			-- Launcher-integrity anti-cheat check failed (see
-			-- networking/connection.lua's handling of a 'challenge'/type='failed'
-			-- notification, and ui/anticheat_failed_overlay.lua)
-			k_anticheat_failed_title = 'Anti-Cheat Check Failed',
 			-- Ready-status hover badge (lobby player list)
 			k_ready = 'Ready',
 			k_not_ready = 'Not Ready',
