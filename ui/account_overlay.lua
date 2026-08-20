@@ -656,6 +656,14 @@ MPAPI.account_overlay = MPAPI.ui_element(create_UIBox_account_overlay)
 -- connection-state changes -- see those call sites below), so the reset lives
 -- here instead, in the one place that's ONLY ever called on a real open.
 function MPAPI.open_account_overlay()
+	-- Defense in depth: the account button that calls this is only supposed to
+	-- exist on the main menu, but nothing structurally prevents a stray call
+	-- (a stale button reference, a future caller) from reaching this while a
+	-- run is live -- see the G.STAGE guard on MPAPI.anticheat.mark_server_verified
+	-- (anticheat/launcher_channel.lua) for the race this class of bug came from.
+	if G.STAGE ~= G.STAGES.MAIN_MENU then
+		return
+	end
 	_state.tab = 'account'
 	_state.history = { page = 1, page_size = 10, loading = false, error = nil, runs = {}, total = 0 }
 	MPAPI.account_overlay:as_overlay()
