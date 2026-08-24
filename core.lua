@@ -164,6 +164,13 @@ MPAPI.load_mpapi_file('api/replay/recorder.lua')
 MPAPI.load_mpapi_file('api/replay/codes.lua')
 MPAPI.load_mpapi_file('api/replay/area_utils.lua')
 
+-- api/page/vanilla.lua registers a page (MPAPI.Page:extend{...}) at file-load time rather than
+-- inside MPAPI.on_loaded like every mod's own pages -- it must exist before anything can ever
+-- navigate back to the vanilla main menu, which can happen as soon as the account button is
+-- clickable. That means MPAPI.Page (api/page/definition.lua) must be preloaded first, same
+-- load-order hazard and same fix as the api/replay files above.
+MPAPI.load_mpapi_file('api/page/definition.lua')
+
 MPAPI.load_mpapi_dir('api', true)
 MPAPI.load_mpapi_dir('ui', true)
 

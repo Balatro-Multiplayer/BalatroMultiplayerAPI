@@ -1,19 +1,22 @@
--- Focus/engage tracking and view transitions. `focused_mod` is whose menu is shown
--- (nil = game main menu); `engaged_mod` is whose lobby is active (nil = no lobby);
--- `current_view` is a MPAPI.ViewMode value or nil (no mod view shown).
+-- Focus/engage tracking. `focused_mod` is whose menu is shown (nil = game main menu);
+-- `engaged_mod` is whose lobby is active (nil = no lobby). Which PAGE is actually on screen
+-- (mod menu vs. lobby vs. vanilla) is owned by api/page/manager.lua (MPAPI.pages.*); this file
+-- decides WHEN to switch pages and keeps focused_mod/engaged_mod in sync with that choice.
 MPAPI._internal.mod_registry = MPAPI._internal.mod_registry or {}
 local state = MPAPI._internal.mod_registry
 state.registered_mods = state.registered_mods or {}
 
--- Returns a MPAPI.ViewMode value, or nil (game main menu).
+-- Returns the current page's category ('mod_menu' | 'lobby_menu' | 'vanilla'), or nil (no
+-- page shown -- i.e. before MPAPI has ever navigated, or mid-teardown into a run).
 MPAPI.get_current_view = function()
-	return state.current_view
+	local current = MPAPI.pages.current()
+	return current and current.category
 end
 
--- Rebuilds the currently displayed mod/lobby menu in place (no animation). Mods call
--- this when lobby state that the view reads at build time changes (deck, host) and the
--- view must re-render structurally. Guarded to the main menu so it never rebuilds the
--- menu over an active run (current_view stays LOBBY_MENU during a run).
+-- Rebuilds the currently displayed mod/lobby menu in place (no animation). Mods call this
+-- when lobby state that the view reads at build time changes (deck, host) and the view must
+-- re-render structurally. Guarded to the main menu so it never rebuilds the menu over an
+-- active run (a lobby page stays "current" in the page manager's own state during a run).
 MPAPI.refresh_current_view = function()
 	if G.STAGE ~= G.STAGES.MAIN_MENU then
 		return false
@@ -46,20 +49,17 @@ MPAPI._internal.activate_mod = function(id)
 	end
 
 	-- Re-entering an engaged lobby from the game main menu: skip mod menu
-	-- and go straight to the lobby view.
+	-- and go straight to the lobby page.
 	if id == state.engaged_mod and mod.lobby_ui then
 		state.focused_mod = id
-		state.current_view = MPAPI.ViewMode.LOBBY_MENU
-		state.pending_cleanup = nil
-		MPAPI._internal.mod_registry.replace_main_menu(mod.lobby_ui)
+		MPAPI.pages.show(mod.lobby_ui, { mod = mod })
 		MPAPI._internal.mod_registry.update_account_button()
 		return
 	end
 
 	MPAPI._internal.mod_registry.connect_to_active_mod_server(mod)
 	state.focused_mod = id
-	state.current_view = MPAPI.ViewMode.MOD_MENU
-	MPAPI._internal.mod_registry.replace_main_menu(mod.main_menu_ui)
+	MPAPI.pages.show(mod.main_menu_ui, { mod = mod })
 	MPAPI._internal.mod_registry.update_account_button()
 end
 
@@ -74,9 +74,7 @@ MPAPI._internal.deactivate_mod = function()
 	end
 
 	state.focused_mod = nil
-	state.current_view = nil
-	state.pending_cleanup = nil
-	MPAPI._internal.mod_registry.restore_main_menu()
+	MPAPI.pages.show('vanilla_main_menu')
 	MPAPI._internal.mod_registry.update_account_button()
 end
 
@@ -84,47 +82,33 @@ end
 MPAPI._internal.on_lobby_connected = function(lobby)
 	state.engaged_mod = lobby.mod_id
 
-	-- A lobby can opt out of the lobby-menu view (e.g. SPDRN practice drops straight into a run).
-	-- Tear the whole menu down so nothing shows behind the run; current_view is cleared so the
-	-- post-run rebuild does not restore a lobby view that was never shown.
-	--
-	-- teardown_menu is deferred to the next clean Game:update tick (see
-	-- MPAPI._check_pending_menu_teardown below) rather than run here: this handler is itself
-	-- called from inside an Event's func, mid-way through EventManager:update()'s own event-queue
-	-- loop for this frame. teardown_menu's title_top:remove() nils title_top.cards *before*
-	-- deregistering it from G.I.CARDAREA a few lines later (see cardarea.lua's CardArea:remove) --
-	-- calling it from here left a window, still within this same frame, where the base engine's
-	-- own per-frame G.I.CARDAREA move loop (game.lua, later in Game:update than EventManager:
-	-- update()) could visit title_top with cards already nil, crashing on cardarea.lua's
-	-- `ipairs(self.cards)`. Reliably reproduced going through the real practice deck-select UI
-	-- (SPDRN practice's overlay -> confirm -> begin_run); never hit calling SPDRN._start_practice
-	-- directly, which skips the overlay entirely. A flag polled after the frame's own Game:update
-	-- (and therefore after that frame's EventManager:update() and CardArea move loop) both have
-	-- already returned avoids the window, matching SPDRN's own run_start.lua
-	-- request_run_transition/_check_pending_run_transition pattern for the identical class of
-	-- hazard.
+	-- A lobby can opt out of the lobby page (e.g. SPDRN practice drops straight into a run).
+	-- Tear the whole menu down so nothing shows behind the run. Deferred -- see the long
+	-- comment on MPAPI.pages.teardown_deferred in api/page/manager.lua for why this specific
+	-- case (and only this one; the ordinary page swap below is not affected) cannot run here
+	-- synchronously.
 	if lobby.suppress_lobby_view then
-		state.current_view = nil
-		MPAPI._pending_menu_teardown = true
+		MPAPI.pages.teardown_deferred()
+		MPAPI._internal.mod_registry.update_account_button()
 		return
 	end
 
 	if state.focused_mod == lobby.mod_id then
 		local mod = state.registered_mods[state.engaged_mod]
 		if mod and mod.lobby_ui then
-			state.current_view = MPAPI.ViewMode.LOBBY_MENU
-			-- A match formed while we were in a run (queued, then practiced): leave the run; the
-			-- post-go_to_menu rebuild shows this lobby view. lobby._skip_run_exit_on_connect is a
-			-- narrow, explicit opt-out for the OPPOSITE case -- a crash-relaunch rejoin
-			-- (ui/rejoin_prompt.lua) that has just fast-forwarded local state to rebuild the SAME
-			-- run being reconnected to, and must stay in it, not exit -- set on the lobby object by
-			-- the rejoin launcher itself right after MPAPI.join_lobby returns, before this callback
-			-- can fire (confirmed live: without it, rejoin's own MPAPI.join_lobby call landed here
-			-- and silently exited the just-restored run back to the main menu).
+			-- A match formed while we were in a run (queued, then practiced): leave the
+			-- run; the post-go_to_menu rebuild shows this lobby page. lobby._skip_run_exit_on_
+			-- connect is a narrow, explicit opt-out for the OPPOSITE case -- a crash-relaunch
+			-- rejoin (ui/rejoin_prompt.lua) that has just fast-forwarded local state to
+			-- rebuild the SAME run being reconnected to, and must stay in it, not exit -- set
+			-- on the lobby object by the rejoin launcher itself right after MPAPI.join_lobby
+			-- returns, before this callback can fire (confirmed live: without it, rejoin's own
+			-- MPAPI.join_lobby call landed here and silently exited the just-restored run
+			-- back to the main menu).
 			if G.STAGE == G.STAGES.RUN and not lobby._skip_run_exit_on_connect then
 				MPAPI.exit_to_menu()
 			elseif G.STAGE ~= G.STAGES.RUN then
-				MPAPI._internal.mod_registry.replace_main_menu(mod.lobby_ui)
+				MPAPI.pages.show(mod.lobby_ui, { mod = mod, lobby = lobby })
 			end
 		end
 	end
@@ -134,83 +118,45 @@ end
 
 -- Called by lobby.lua after a lobby fires its 'disconnected' event.
 MPAPI._internal.on_lobby_disconnected = function()
-	local was_in_lobby_view = state.current_view == MPAPI.ViewMode.LOBBY_MENU
+	local current = MPAPI.pages.current()
+	local was_in_lobby_view = current and current.category == 'lobby_menu'
 	state.engaged_mod = nil
-	state.pending_cleanup = nil
 
-	-- If disconnecting while in a run (e.g. "Continue in Singleplayer"),
-	-- clear focused state so the game returns to the vanilla main menu
-	-- when the run ends. Skip update_account_button() to avoid recreating
-	-- the UIBox (which is in uibox mode from the main menu) over the game.
+	-- If disconnecting while in a run (e.g. "Continue in Singleplayer"), clear focused_mod so
+	-- the game returns to the vanilla main menu when the run ends: with focused_mod nil,
+	-- rebuild_current_menu below declines to rebuild a mod page and set_main_menu_UI's rehook
+	-- falls back to the base game's own menu build. Skip update_account_button() to avoid
+	-- recreating the UIBox (which is in uibox mode from the main menu) over the game.
 	if G.STAGE == G.STAGES.RUN then
 		state.focused_mod = nil
-		state.current_view = nil
 		return
 	end
 
 	if was_in_lobby_view and state.focused_mod then
 		local mod = state.registered_mods[state.focused_mod]
 		if mod and mod.main_menu_ui then
-			state.current_view = MPAPI.ViewMode.MOD_MENU
-			MPAPI._internal.mod_registry.replace_main_menu(mod.main_menu_ui)
+			MPAPI.pages.show(mod.main_menu_ui, { mod = mod })
 		end
 	end
 
 	MPAPI._internal.mod_registry.update_account_button()
 end
 
--- Rebuilds the current view without animation. Used by set_main_menu_UI
--- when the game engine recreates the main menu (e.g. returning from a run).
--- Returns true if it handled the rebuild, false if the caller should fall
--- back to the original game menu.
+-- Rebuilds whatever page is current without animation. Used by set_main_menu_UI's rehook
+-- (ui/main_menu.lua) when the game engine recreates the main menu (e.g. returning from a run).
+-- Gated on focused_mod (not the page manager's own state) so the "disconnected mid-run"
+-- case above -- which clears focused_mod but leaves the page manager's last-known page alone
+-- -- correctly falls through to the base game's own menu build. Returns true if it handled the
+-- rebuild, false if the caller should fall back to the original game menu.
 MPAPI._internal.rebuild_current_menu = function()
-	state.pending_cleanup = nil
-	if state.focused_mod and state.current_view == MPAPI.ViewMode.LOBBY_MENU then
-		local mod = state.registered_mods[state.focused_mod]
-		if mod and mod.lobby_ui then
-			MPAPI._internal.mod_registry.replace_main_menu(mod.lobby_ui)
-			return true
-		end
+	if not state.focused_mod then
+		return false
 	end
-	if state.focused_mod and state.current_view == MPAPI.ViewMode.MOD_MENU then
-		local mod = state.registered_mods[state.focused_mod]
-		if mod and mod.main_menu_ui then
-			MPAPI._internal.mod_registry.replace_main_menu(mod.main_menu_ui)
-			return true
-		end
+	local mod = state.registered_mods[state.focused_mod]
+	local current = MPAPI.pages.current()
+	if not mod or not current then
+		return false
 	end
-	return false
-end
-
--- See the long comment in on_lobby_connected above for why this is deferred rather than run
--- inline there.
-MPAPI._pending_menu_teardown = false
-
-local function _check_pending_menu_teardown()
-	if not MPAPI._pending_menu_teardown then
-		return
-	end
-	MPAPI._pending_menu_teardown = false
-	MPAPI.teardown_menu()
-	-- Skip rebuilding the account button's UIBox over an active run - same
-	-- hazard on_lobby_disconnected already guards against above (see its own
-	-- comment): the button is in uibox mode from the main menu, so
-	-- update_account_button() would recreate/redraw it on top of the game.
-	-- This path fires for any flow that drops straight into a run without
-	-- the normal lobby-menu screens (SPDRN/PvP practice, replay playback),
-	-- which is exactly when G.STAGE is already G.STAGES.RUN by the time this
-	-- runs on the next Game:update tick.
-	if G.STAGE == G.STAGES.RUN then
-		return
-	end
-	MPAPI._internal.mod_registry.update_account_button()
-end
-
-if not MPAPI._menu_teardown_hooked then
-	MPAPI._menu_teardown_hooked = true
-	local _ref = Game.update
-	function Game:update(dt)
-		_ref(self, dt)
-		pcall(_check_pending_menu_teardown)
-	end
+	MPAPI.pages.show(current.key, current.params)
+	return true
 end
