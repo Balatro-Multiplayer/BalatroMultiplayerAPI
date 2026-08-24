@@ -4,6 +4,7 @@ return {
 			k_multiplayer = 'Multiplayer',
 			k_status_offline = 'Offline',
 			k_status_connecting = 'Connecting...',
+			k_status_reconnecting = 'Reconnecting...',
 			k_status_signing_in = 'Signing In...',
 			k_status_connected = 'Connected',
 			k_status_queueing = 'Queueing',
@@ -138,6 +139,11 @@ return {
 			k_kicked_title = 'Removed from Lobby',
 			k_player_kicked_you = 'The host removed you from the lobby.',
 			k_ok = 'OK',
+			-- Ranked queue cancelled overlay (post-queue-join ranked_readiness
+			-- challenge refused/failed - see api/matchmaking/dispatch.lua)
+			k_ranked_queue_cancelled_title = 'Ranked Queue Cancelled',
+			k_ranked_launcher_outdated_body = 'A new version of Balatro Essentials Toolkit is required to continue playing Ranked. Update BET to keep playing.',
+			k_ranked_mods_outdated_body = 'Your Ranked mods are out of date. Relaunch through BET to update them, then queue again.',
 			-- Ready-status hover badge (lobby player list)
 			k_ready = 'Ready',
 			k_not_ready = 'Not Ready',

@@ -5,6 +5,17 @@ local connection = {}
 -- layer agree on the values.
 local STATES = MPAPI.ConnectionState
 
+-- Backoff for a lightweight, HTTP-free MQTT-only reconnect after an
+-- unsolicited drop (see connection:_attempt_mqtt_reconnect below) -- mirrors
+-- the cadence networking/mqtt_thread.lua's request_with_retry already uses
+-- for HTTP retries, kept as separate constants since that runs on a
+-- different LÖVE thread with no shared state. After MQTT_RECONNECT_MAX_ATTEMPTS
+-- silent attempts (or an explicit auth deny -- an expired/revoked JWT,
+-- changed ToS, a new ban -- none of which a retry can fix), falls back to a
+-- full connect() (fresh Steam ticket + HTTP re-auth).
+local MQTT_RECONNECT_BACKOFF = { 0.3, 0.8, 1.5 }
+local MQTT_RECONNECT_MAX_ATTEMPTS = 4
+
 -- Always the most recently constructed instance (connection.new() can run
 -- more than once per session - e.g. MPAPI.reconnect() - each call replacing
 -- the previous instance). The launcher-integrity challenge-answered callback
@@ -250,6 +261,12 @@ function connection:_mqtt_connect_with_credentials()
 	local cfg = self.config
 
 	self.mqtt.on_connect = function()
+		-- Fully back online -- reset the lightweight-reconnect attempt
+		-- counter so a *later*, unrelated drop starts its own retry budget
+		-- fresh rather than continuing to erode whatever attempt count this
+		-- connect happened to succeed on (see _attempt_mqtt_reconnect).
+		self._mqtt_reconnect_attempt = nil
+
 		set_state(self, STATES.CONNECTED)
 
 		if self.lobby_data then
@@ -270,8 +287,17 @@ function connection:_mqtt_connect_with_credentials()
 		end
 	end
 
+	-- A failed CONNECT can surface as either on_error or on_disconnect
+	-- depending on exactly how/where it fails (bad auth, network refusal,
+	-- etc.) -- both branches below route a failure during an in-flight
+	-- lightweight-reconnect attempt (self._mqtt_reconnect_attempt set by
+	-- _attempt_mqtt_reconnect) through the same _handle_mqtt_reconnect_failure,
+	-- so the backoff/max-attempts/fallback logic lives in exactly one place
+	-- regardless of which signal actually fires.
 	self.mqtt.on_error = function(msg)
-		if self.state == STATES.CONNECTING then
+		if self._mqtt_reconnect_attempt then
+			self:_handle_mqtt_reconnect_failure(msg)
+		elseif self.state == STATES.CONNECTING then
 			set_state(self, STATES.DISCONNECTED, { error = 'MQTT connection failed: ' .. tostring(msg) })
 		else
 			fire(self, self.state, { error = tostring(msg) })
@@ -279,7 +305,24 @@ function connection:_mqtt_connect_with_credentials()
 	end
 
 	self.mqtt.on_disconnect = function()
-		set_state(self, STATES.DISCONNECTED)
+		if self._mqtt_reconnect_attempt then
+			self:_handle_mqtt_reconnect_failure('disconnected before CONNACK')
+			return
+		end
+
+		-- An unsolicited drop doesn't clear player_id/jwt_token (only the
+		-- explicit connection:disconnect() method does, below) -- so if we
+		-- still have both, this is a real mid-session mqtt reconnect
+		-- opportunity: redial with the same cached credentials instead of
+		-- just sitting DISCONNECTED until the player notices and manually
+		-- reconnects from the main menu. This is what closes the race that
+		-- let a legitimately-reconnected-but-still-mid-match player get
+		-- auto-forfeited by the server's grace-period timer anyway.
+		if self.player_id and self.jwt_token then
+			self:_attempt_mqtt_reconnect(1)
+		else
+			set_state(self, STATES.DISCONNECTED)
+		end
 	end
 
 	local connect_msg = table.concat({
@@ -295,6 +338,52 @@ function connection:_mqtt_connect_with_credentials()
 	}, SEP)
 
 	self.mqtt.tx_channel:push(connect_msg)
+end
+
+-- Lightweight, HTTP-free MQTT-only reconnect after an unsolicited drop, using
+-- the still-cached player_id/jwt_token. Server-side, the same JWT is valid
+-- for a fresh MQTT CONNECT within its normal expiry (the session isn't torn
+-- down on a plain disconnect while still mid-lobby -- see
+-- emqx-auth.service.ts's authenticateClient/hasActiveSession), so no Steam
+-- ticket or HTTP round trip is needed unless this keeps failing.
+function connection:_attempt_mqtt_reconnect(attempt)
+	self._mqtt_reconnect_attempt = attempt
+	set_state(self, STATES.RECONNECTING, { attempt = attempt })
+	self:_mqtt_connect_with_credentials()
+end
+
+-- Shared failure path for a lightweight reconnect attempt, regardless of
+-- whether it surfaced via on_error or on_disconnect (see
+-- _mqtt_connect_with_credentials). Retries with backoff up to
+-- MQTT_RECONNECT_MAX_ATTEMPTS times; beyond that (or if the server explicitly
+-- denies the fresh CONNECT -- an expired/revoked JWT, changed ToS, a new ban,
+-- none of which a retry can fix), falls back to a full connect() (fresh Steam
+-- ticket + HTTP re-auth).
+function connection:_handle_mqtt_reconnect_failure(msg)
+	local attempt = self._mqtt_reconnect_attempt or 1
+
+	if attempt >= MQTT_RECONNECT_MAX_ATTEMPTS then
+		self._mqtt_reconnect_attempt = nil
+		set_state(self, STATES.DISCONNECTED, { error = 'MQTT reconnect failed: ' .. tostring(msg) })
+		self:connect()
+		return
+	end
+
+	set_state(self, STATES.RECONNECTING, { attempt = attempt, error = tostring(msg) })
+
+	local delay = MQTT_RECONNECT_BACKOFF[attempt] or MQTT_RECONNECT_BACKOFF[#MQTT_RECONNECT_BACKOFF]
+	G.E_MANAGER:add_event(Event({
+		trigger = 'after',
+		delay = delay,
+		blockable = false,
+		blocking = false,
+		func = function()
+			if self.player_id and self.jwt_token then
+				self:_attempt_mqtt_reconnect(attempt + 1)
+			end
+			return true
+		end,
+	}))
 end
 
 function connection:_handle_player_notification(topic, payload)
@@ -419,12 +508,16 @@ end
 -- topics - see emqx-auth.service.ts's authorizePlayerNotificationTopic().
 -- `result` is whatever anticheat/launcher_channel.lua's
 -- run_challenge_answered_callbacks() produced: either
--- {challenge_id, refused = true} or
--- {challenge_id, signature, hardware_fingerprint}. hardware_fingerprint is
--- only ever present on a login-kind challenge's answer (see
+-- {challenge_id, refused = true}, {challenge_id, signature,
+-- hardware_fingerprint}, or {challenge_id, signature, launcher_current,
+-- mods_current, stale_mod_ids} (ranked_readiness only - see
+-- RankedSupervisor::sendReadinessChallengeResponse()). hardware_fingerprint
+-- is only ever present on a login-kind challenge's answer (see
 -- rankedsupervisor.cpp) - nests as-is under hardwareFingerprint; its own
 -- keys stay whatever hardwarefingerprint.cpp already shaped them as, this
--- layer doesn't touch them.
+-- layer doesn't touch them. launcher_current can legitimately be `false`,
+-- so its presence (not truthiness) is what selects that shape - see
+-- RANKED_READINESS_SPEC.md in the server repo for the exact wire contract.
 function connection:_publish_challenge_response(result)
 	if not self.player_id then
 		return
@@ -433,6 +526,13 @@ function connection:_publish_challenge_response(result)
 	local body = { challengeId = result.challenge_id }
 	if result.refused then
 		body.refused = true
+	elseif result.launcher_current ~= nil then
+		body.response = {
+			signature = result.signature,
+			launcherCurrent = result.launcher_current,
+			modsCurrent = result.mods_current,
+			staleModIds = result.stale_mod_ids,
+		}
 	elseif result.hardware_fingerprint then
 		body.response = {
 			signature = result.signature,
