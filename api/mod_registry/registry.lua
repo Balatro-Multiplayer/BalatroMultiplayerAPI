@@ -1,6 +1,11 @@
 -- Registered-mod records and their accessors. The shared state table is the single
--- source of truth for mod records, focus/engage ids, and the current view; every file
--- in this folder reaches it through MPAPI._internal.mod_registry so load order is irrelevant.
+-- source of truth for mod records and focus/engage ids; every file in this folder reaches it
+-- through MPAPI._internal.mod_registry so load order is irrelevant.
+--
+-- opts.main_menu_ui / opts.lobby_ui are PAGE KEYS (strings) referencing pages registered via
+-- MPAPI.Page:extend{...} (api/page/definition.lua), not builder functions -- api/page/manager.lua
+-- (MPAPI.pages.show(key, params)) is what actually renders them. See BalatroMultiplayerSpeed/
+-- core.lua or BalatroMultiplayerPvP/core.lua for the registration pattern.
 MPAPI._internal.mod_registry = MPAPI._internal.mod_registry or {}
 local state = MPAPI._internal.mod_registry
 state.registered_mods = state.registered_mods or {}
