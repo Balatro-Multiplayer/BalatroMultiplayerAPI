@@ -15,4 +15,17 @@ MPAPI.ErrorKind = {
 	-- supervision channel isn't active/healthy (see
 	-- api/matchmaking/api.lua's queue() and anticheat/launcher_channel.lua).
 	ANTICHEAT_REQUIRED = 'anticheat_required',
+	-- Already-queued Ranked player got dequeued because the server's
+	-- post-join ranked_readiness challenge came back (or timed out)
+	-- reporting BET itself isn't on the latest version. Takes priority
+	-- over RANKED_MODS_OUTDATED when both are true, since updating BET
+	-- also resolves stale mods on the next launch - see
+	-- api/matchmaking/dispatch.lua.
+	RANKED_LAUNCHER_OUTDATED = 'ranked_launcher_outdated',
+	-- Same challenge, but BET itself was current - one or more active
+	-- Ranked-legal mods' on-disk hash didn't match what's currently
+	-- ranked-legal. Fixed by relaunching through BET (RunController's
+	-- pre-launch pipeline redeploys automatically), not by updating BET
+	-- itself.
+	RANKED_MODS_OUTDATED = 'ranked_mods_outdated',
 }

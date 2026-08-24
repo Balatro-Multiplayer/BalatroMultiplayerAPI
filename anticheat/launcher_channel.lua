@@ -328,6 +328,9 @@ function A.update()
 					challenge_id = event.challenge_id,
 					signature = event.signature,
 					hardware_fingerprint = event.hardware_fingerprint,
+					launcher_current = event.launcher_current,
+					mods_current = event.mods_current,
+					stale_mod_ids = event.stale_mod_ids,
 				})
 			end
 		elseif event.type == 'log' then
