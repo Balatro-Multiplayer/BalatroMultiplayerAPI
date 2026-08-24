@@ -73,6 +73,35 @@ local function on_match_resolved(mm, msg)
 	end
 end
 
+-- The server already dequeued the player by the time this arrives (see
+-- launcher-integrity.service.ts's handleChallengeResponse). Two things
+-- happen: the handle still gets a MatchmakingEvent.ERROR (same path
+-- client-side prechecks and a synchronous queue-join rejection already
+-- use, so PvP's/SPDRN's existing handle:on("error", ...) listeners stop
+-- their own "Queueing..." UI with no separate event type to wire up), and
+-- - since neither of those listeners shows anything user-facing today,
+-- just logs - MPAPI shows the actual explanation itself via
+-- ui/ranked_queue_cancelled_overlay.lua, centrally, once, rather than
+-- needing the same message-box code duplicated into every ranked-
+-- queueing mod.
+local function on_queue_cancelled(mm, msg)
+	local handle = mm.find_handle_by_mode(msg.modId, msg.gameMode)
+	if not handle then
+		MPAPI.sendWarnMessage('[mmdbg] queue_cancelled DROPPED: no handle for ' .. tostring(msg.modId) .. '/' .. tostring(msg.gameMode))
+		return
+	end
+
+	local kind = msg.reason == 'launcher_outdated'
+		and MPAPI.ErrorKind.RANKED_LAUNCHER_OUTDATED
+		or MPAPI.ErrorKind.RANKED_MODS_OUTDATED
+	handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(kind, 'Ranked queue cancelled: ' .. tostring(msg.reason)))
+	mm.remove_handle(handle)
+
+	if MPAPI.show_ranked_queue_cancelled_notice then
+		MPAPI.show_ranked_queue_cancelled_notice(msg.reason)
+	end
+end
+
 function MPAPI._internal.mm.dispatch(msg)
 	local mm = MPAPI._internal.mm
 	local msg_type = msg.type
@@ -85,5 +114,7 @@ function MPAPI._internal.mm.dispatch(msg)
 		on_match_reconnect(mm, msg)
 	elseif msg_type == MPAPI.MatchmakingMessage.MATCH_RESOLVED then
 		on_match_resolved(mm, msg)
+	elseif msg_type == MPAPI.MatchmakingMessage.QUEUE_CANCELLED then
+		on_queue_cancelled(mm, msg)
 	end
 end

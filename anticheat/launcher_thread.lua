@@ -453,6 +453,13 @@ while running do
 						challenge_id = frame.challenge_id,
 						signature = frame.signature,
 						hardware_fingerprint = frame.hardware_fingerprint,
+						-- Only ever present for a ranked_readiness response
+						-- (see RankedSupervisor::sendReadinessChallengeResponse())
+						-- - nil for every other kind, same as
+						-- hardware_fingerprint being nil for a non-login one.
+						launcher_current = frame.launcher_current,
+						mods_current = frame.mods_current,
+						stale_mod_ids = frame.stale_mod_ids,
 						error = frame.error,
 					})
 				end
