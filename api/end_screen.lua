@@ -30,28 +30,36 @@ MPAPI.end_screen_buttons = function(specs)
 	return btns
 end
 
--- Builds the shared win / game-over UIBox shell used by consumer mods: the eased
--- green/red background, the ph_you_win / ph_game_over DynaText title (rotating +
--- spaced on a win), and the two-column wrap that reserves the 'jimbo_spot'. The caller
--- supplies the body (stats / buttons / mod-specific content) via config.body(won).
+-- Builds the shared win / game-over / draw UIBox shell used by consumer mods: the
+-- eased green/red/blue background, the ph_you_win / ph_game_over / k_draw_title
+-- DynaText title (rotating + spaced on a win or draw), and the two-column wrap
+-- that reserves the 'jimbo_spot'. The caller supplies the body (stats / buttons /
+-- mod-specific content) via config.body(won).
 -- config = {
---   won        (bool)                          -- win vs game-over,
+--   won        (bool)                          -- win vs game-over (ignored if draw),
+--   draw?      (bool)                           -- drawn match; takes priority over won,
 --   body       = function(won) -> UIT node,    -- appended after the title,
---   title_key?, title_colour?,                 -- default ph_you_win/ph_game_over + EDITION/RED,
---   bg_colour?, bg_alpha?,                      -- default GREEN/RED + 0.5/0.8,
---   win_fill?  (default G.C.BLACK),             -- generic-options fill, win only,
---   win_outline? (default G.C.EDITION),        -- generic-options outline, win only,
---   no_esc?    (default = won),                 -- allow ESC on a loss by default,
+--   title_key?, title_colour?,                 -- default ph_you_win/ph_game_over/k_draw_title
+--                                                  + EDITION/RED/BLUE,
+--   bg_colour?, bg_alpha?,                      -- default GREEN/RED/BLUE + 0.5/0.8/0.65,
+--   win_fill?  (default G.C.BLACK),             -- generic-options fill, win/draw only,
+--   win_outline? (default G.C.EDITION),        -- generic-options outline, win/draw only,
+--   no_esc?    (default = won or draw),         -- allow ESC on a loss by default,
 --   id?,                                        -- t.config.id (e.g. 'you_win_UI'),
 -- }
 MPAPI.end_screen_uibox = function(config)
 	local won = config.won
-	local bg = copy_table(config.bg_colour or (won and G.C.GREEN or G.C.RED))
+	local draw = config.draw
+	local bg_default = draw and G.C.BLUE or won and G.C.GREEN or G.C.RED
+	local bg = copy_table(config.bg_colour or bg_default)
 	bg[4] = 0
-	ease_value(bg, 4, config.bg_alpha or (won and 0.5 or 0.8), nil, nil, true)
+	ease_value(bg, 4, config.bg_alpha or (draw and 0.65 or won and 0.5 or 0.8), nil, nil, true)
 
 	local no_esc = config.no_esc
-	if no_esc == nil then no_esc = won end
+	if no_esc == nil then no_esc = won or draw end
+
+	local title_key = config.title_key or (draw and 'k_draw_title' or won and 'ph_you_win' or 'ph_game_over')
+	local title_colour = config.title_colour or (draw and G.C.BLUE or won and G.C.EDITION or G.C.RED)
 
 	local contents = {
 		{
@@ -59,12 +67,12 @@ MPAPI.end_screen_uibox = function(config)
 			config = { align = 'cm' },
 			nodes = {
 				{ n = G.UIT.O, config = { object = DynaText({
-					string = { localize(config.title_key or (won and 'ph_you_win' or 'ph_game_over')) },
-					colours = { config.title_colour or (won and G.C.EDITION or G.C.RED) },
+					string = { localize(title_key) },
+					colours = { title_colour },
 					shadow = true,
 					float = true,
-					spacing = won and 10 or nil,
-					rotate = won or nil,
+					spacing = (won or draw) and 10 or nil,
+					rotate = (won or draw) or nil,
 					scale = 1.5,
 					pop_in = 0.4,
 					maxw = 6.5,
@@ -80,8 +88,8 @@ MPAPI.end_screen_uibox = function(config)
 	local t = create_UIBox_generic_options({
 		padding = 0,
 		bg_colour = bg,
-		colour = won and (config.win_fill or G.C.BLACK) or nil,
-		outline_colour = won and (config.win_outline or G.C.EDITION) or nil,
+		colour = (won or draw) and (config.win_fill or G.C.BLACK) or nil,
+		outline_colour = (won or draw) and (config.win_outline or G.C.EDITION) or nil,
 		no_back = true,
 		no_esc = no_esc,
 		contents = contents,
@@ -132,7 +140,7 @@ MPAPI.end_screen_show = function(config)
 	end
 	G.SETTINGS.paused = true
 	local no_esc = config.no_esc
-	if no_esc == nil then no_esc = config.won end
+	if no_esc == nil then no_esc = config.won or config.draw end
 	local overlay_config = { no_esc = no_esc }
 	-- Register this as the currently-pending "restorable" overlay BEFORE showing
 	-- it, so if the pause/options menu (mod_registry/view.lua's G.FUNCS.options,
