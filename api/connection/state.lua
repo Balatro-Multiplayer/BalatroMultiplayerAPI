@@ -70,6 +70,8 @@ C.set_status_text = function()
 		MPAPI.connection_state.status_text = localize('k_status_signing_in')
 	elseif MPAPI.connection_state.state == MPAPI.ConnectionState.CONNECTING then
 		MPAPI.connection_state.status_text = localize('k_status_connecting')
+	elseif MPAPI.connection_state.state == MPAPI.ConnectionState.RECONNECTING then
+		MPAPI.connection_state.status_text = localize('k_status_reconnecting')
 	else
 		MPAPI.connection_state.status_text = localize('k_status_offline')
 	end
