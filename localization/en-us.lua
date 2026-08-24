@@ -204,6 +204,10 @@ return {
 				'consider',
 			},
 			b_mp_kofi_button = 'Supporting me on Ko-fi',
+			-- End-screen "draw" title (MPAPI.end_screen_uibox draw branch) -- vanilla
+			-- only ships ph_you_win/ph_game_over, no draw equivalent.
+			k_draw_title = 'DRAW!',
+			k_draw_vote = 'Vote for Draw',
 		},
 	},
 	descriptions = {

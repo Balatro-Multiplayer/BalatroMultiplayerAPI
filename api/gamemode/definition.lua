@@ -11,6 +11,9 @@ MPAPI.GameMode = SMODS.GameObject:extend({
 	-- set this false to hide the seed-change button entirely (e.g. best-of-N modes
 	-- where re-rolling the seed would undermine the format).
 	seed_change_allowed = true,
+	-- Whether the in-run "Vote for Draw" control is offered for this mode. Modes can
+	-- set this false to hide the draw-vote button entirely.
+	draw_vote_allowed = true,
 	-- Whether this mode supports the match duration cap (§16.7) at all. Modes that opt in
 	-- must also set duration_cap_seconds; modes that don't are never capped, and the
 	-- private-lobby Duration Cap toggle is hidden for them (see ui/lobby/options.lua).
