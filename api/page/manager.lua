@@ -48,6 +48,23 @@ local function _build_and_show(def, instance)
 	G.MAIN_MENU_UI:align_to_major()
 end
 
+-- Releases resources an instance created for itself (pollers, manually-tracked Sprite/
+-- AnimatedSprite objects, etc.) that Balatro's own UI teardown does not know about. Node:
+-- remove() (engine/node.lua) does NOT cascade into a G.UIT.O node's config.object -- only
+-- Sprite/AnimatedSprite's OWN :remove() unregisters them from the global G.ANIMATIONS/
+-- G.I.SPRITE lists (engine/sprite.lua) -- so a page that embeds one directly (rather than
+-- through a helper that already manages this, like MPAPI.ui_element) must dispose of it
+-- itself or it keeps animating/drawing against a torn-down parent next frame, which crashes
+-- natively with no catchable Lua error (confirmed live building SPDRN's gamemode-select
+-- page). Unlike cleanup(instance, uibox) below, dispose runs on EVERY way of leaving a page,
+-- including MPAPI.pages.teardown() (going into a run) -- resource release must not depend on
+-- there being a next page to animate into.
+local function _dispose_instance(instance)
+	if instance and instance.dispose then
+		instance:dispose()
+	end
+end
+
 -- Changes the active page immediately. cleanup(instance, uibox) on the OUTGOING page may
 -- return (delay, on_enter) to animate the transition (e.g. SPDRN's slide between its main menu
 -- and lobby -- see BalatroMultiplayerSpeed/core.lua's page registrations).
@@ -57,6 +74,8 @@ MPAPI.pages.show = function(key, params)
 		MPAPI.sendWarnMessage('MPAPI.pages.show: unknown page \'' .. tostring(key) .. '\'')
 		return
 	end
+
+	_dispose_instance(pm.current_instance)
 
 	-- Gated on G.MAIN_MENU_UI (not just on having a tracked instance): cleanup(instance, uibox)
 	-- unconditionally dereferences uibox to animate it, so it must only run when there is
@@ -135,8 +154,11 @@ end
 -- Tears the current page down to nothing (no page takes its place -- used going into a run).
 -- Deliberately does NOT invoke a page's cleanup(instance, uibox): that hook exists to animate
 -- into a NEXT page, which doesn't apply here, and calling it against a UIBox mid-removal risks
--- erroring against elements already gone. Mirrors the old MPAPI.teardown_menu exactly.
+-- erroring against elements already gone (mirrors the old MPAPI.teardown_menu exactly). It DOES
+-- still dispose() the outgoing instance -- see _dispose_instance above -- since resource release
+-- must happen regardless of whether anything is animating in next.
 MPAPI.pages.teardown = function()
+	_dispose_instance(pm.current_instance)
 	pm.pending_cleanup = nil
 	pm.current_key = nil
 	pm.current_params = nil
@@ -195,6 +217,19 @@ MPAPI.pages.teardown_deferred = function()
 	pm.pending_transition = { teardown = true }
 end
 
+-- Same deferral, for a normal page swap instead of a full teardown. Needed for account-panel
+-- button clicks (mpapi_back_button) leaving a large, node-heavy sub-page (e.g. SPDRN's
+-- gamemode-select page, api/gamemode chip sprites and all): tearing that much down and
+-- rebuilding a whole new page synchronously, from inside the click's own G.FUNCS handler,
+-- intermittently crashed natively with no catchable Lua error -- the same class of mid-frame
+-- hazard as the teardown case above (something the engine's own per-frame bookkeeping is still
+-- iterating this frame gets mutated out from under it), just triggered by button-click
+-- dispatch instead of an Event callback. Deferring to the next tick, after this frame's own
+-- processing has fully returned, avoids it the same way.
+MPAPI.pages.show_deferred = function(key, params)
+	pm.pending_transition = { key = key, params = params }
+end
+
 local function _flush_pending_transition()
 	if not pm.pending_transition then
 		return
@@ -212,6 +247,11 @@ local function _flush_pending_transition()
 		if G.STAGE == G.STAGES.RUN then
 			return
 		end
+		if MPAPI._internal.mod_registry and MPAPI._internal.mod_registry.update_account_button then
+			MPAPI._internal.mod_registry.update_account_button()
+		end
+	else
+		MPAPI.pages.show(t.key, t.params)
 		if MPAPI._internal.mod_registry and MPAPI._internal.mod_registry.update_account_button then
 			MPAPI._internal.mod_registry.update_account_button()
 		end
