@@ -63,11 +63,26 @@ MPAPI._internal.activate_mod = function(id)
 	MPAPI._internal.mod_registry.update_account_button()
 end
 
--- Returns to the game main menu. Does NOT leave an active lobby.
+-- The account panel's Back button. On a mod's own top-level page (its main menu or lobby),
+-- this leaves the mod entirely, back to the game main menu. On a sub-page reached FROM within
+-- a mod's menu (category outside 'mod_menu'/'lobby_menu'/'vanilla' -- e.g. a gamemode-select
+-- page like SPDRN's spdrn_game_select), it instead pops back up to that mod's own main menu,
+-- one level at a time, the same way pressing Back on a sub-screen normally would rather than
+-- exiting the whole mod. Does NOT leave an active lobby either way.
 MPAPI._internal.deactivate_mod = function()
 	if not state.focused_mod then return end
 
 	local mod = state.registered_mods[state.focused_mod]
+	local current = MPAPI.pages.current()
+	local on_sub_page = current and current.category ~= 'mod_menu' and current.category ~= 'lobby_menu' and current.category ~= 'vanilla'
+	if on_sub_page and mod and mod.main_menu_ui then
+		-- Deferred, not immediate: see MPAPI.pages.show_deferred's comment (api/page/manager.lua)
+		-- -- tearing down a large sub-page and rebuilding a new one synchronously from inside
+		-- this button click's own G.FUNCS handler intermittently crashed natively.
+		MPAPI.pages.show_deferred(mod.main_menu_ui, { mod = mod })
+		return
+	end
+
 	-- Only switch back to the default server if there is no active lobby.
 	if not state.engaged_mod and mod then
 		MPAPI._internal.mod_registry.connect_to_default_server(mod)
