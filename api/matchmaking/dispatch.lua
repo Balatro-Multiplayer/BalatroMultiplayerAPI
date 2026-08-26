@@ -36,14 +36,22 @@ local function on_match_found(mm, msg)
 		MPAPI.sendDebugMessage('[mmdbg] join_lobby returned a lobby object, waiting for connected...')
 		lobby:on(MPAPI.LobbyEvent.CONNECTED, function()
 			MPAPI.sendDebugMessage('[mmdbg] lobby connected fired, firing lobby_ready (code=' .. tostring(lobby.code) .. ' is_host=' .. tostring(lobby.is_host) .. ')')
+			-- Closes the is_committed() window (queue_timer.lua) -- from here on the player is
+			-- actually inside the matched lobby, not just "matched but still joining", so a
+			-- guard checking is_committed() correctly stops blocking new singleplayer actions.
+			matched._lobby_ready = true
 			matched:_fire(MPAPI.MatchmakingEvent.LOBBY_READY, lobby)
 		end)
 		lobby:on(MPAPI.LobbyEvent.ERROR, function(err)
 			MPAPI.sendWarnMessage('[mmdbg] auto-join lobby ERROR for code=' .. tostring(msg.lobbyCode) .. ': ' .. tostring(err) .. ' -- propagating to handle')
+			-- The join attempt is over (failed) -- same reasoning as the CONNECTED branch above,
+			-- don't leave is_committed() stuck true forever over a match that will never join.
+			matched._lobby_ready = true
 			matched:_fire(MPAPI.MatchmakingEvent.ERROR, 'lobby join failed: ' .. tostring(err))
 		end)
 	else
 		MPAPI.sendWarnMessage('[mmdbg] join_lobby returned NIL for code=' .. tostring(msg.lobbyCode) .. ' -- lobby_ready will never fire')
+		matched._lobby_ready = true
 		matched:_fire(MPAPI.MatchmakingEvent.ERROR, 'join_lobby returned nil for code ' .. tostring(msg.lobbyCode))
 	end
 end
@@ -60,6 +68,7 @@ local function on_match_reconnect(mm, msg)
 	if lobby then
 		local h = handle
 		lobby:on(MPAPI.LobbyEvent.CONNECTED, function()
+			h._lobby_ready = true
 			h:_fire(MPAPI.MatchmakingEvent.LOBBY_READY, lobby)
 		end)
 	end

@@ -10,6 +10,12 @@ MPAPI.matchmaking._make_handle = function(mod_id, game_mode)
 		match_id = nil,
 		_left = false,
 		_reconnected = false,
+		-- Set true once this handle's matched lobby has finished joining (LOBBY_READY fired)
+		-- or the join attempt has failed (ERROR fired) -- see dispatch.lua's on_match_found.
+		-- Lets MPAPI.matchmaking.is_committed() (queue_timer.lua) distinguish "matched, still
+		-- joining" from "already searching" and from "already in the match", since match_id
+		-- alone is set for the whole match duration, not just the brief join window.
+		_lobby_ready = false,
 		_event_handlers = {},
 	}
 
