@@ -53,6 +53,9 @@ MPAPI.register_mod = function(opts)
 		existing.prevent_pause = opts.prevent_pause or false
 		existing.options_builder = opts.options_builder or nil
 		existing.title = opts.title or nil
+		-- Unlocked-everything overlay (api/unlock_overlay/) while this mod is focused -- on by
+		-- default for every registrant; a mod can opt out with `unlock_overlay = false`.
+		existing.unlock_overlay = opts.unlock_overlay ~= false
 		if opts.name then existing.name = opts.name end
 		if opts.colour then existing.colour = opts.colour end
 	else
@@ -67,6 +70,7 @@ MPAPI.register_mod = function(opts)
 			prevent_pause = opts.prevent_pause or false,
 			options_builder = opts.options_builder or nil,
 			title = opts.title or nil,
+			unlock_overlay = opts.unlock_overlay ~= false,
 			is_official = false,
 		}
 		state.mod_order[#state.mod_order + 1] = opts.id
