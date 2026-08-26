@@ -84,3 +84,33 @@ end
 function MPAPI.matchmaking.is_queued()
 	return any_searching()
 end
+
+-- True while any handle has been matched (server assigned a match_id) but its lobby hasn't
+-- finished joining yet. is_queued() alone flips false the instant match_id is stamped
+-- (dispatch.lua's on_match_found) -- well before MPAPI.join_lobby's own network round trip
+-- actually completes -- so code relying on is_queued() alone to mean "not yet committed to a
+-- match" has a real window where the player IS already committed but nothing says so.
+-- Deliberately scoped to "still joining" via handle._lobby_ready (set once CONNECTED/ERROR
+-- resolves the join attempt, dispatch.lua), not the whole match duration -- match_id stays
+-- set for as long as the match exists, so checking it alone here would keep blocking long
+-- after the player is legitimately inside the matched lobby playing.
+local function any_matched_not_joined()
+	for _, h in ipairs(mm.handles or {}) do
+		if not h._left and h.match_id and not h._lobby_ready then
+			return true
+		end
+	end
+	return false
+end
+
+-- Public: is the local player either still searching, or already matched but not yet inside
+-- the matched lobby? Use this (not is_queued()) for anything that needs to know "would
+-- starting something else right now conflict with an in-flight matchmaking commitment" -- see
+-- api/matchmaking/queue_guard.lua, which blocks G.FUNCS.start_run on exactly this question.
+-- Confirmed live: without this, a practice run started in the match_found-to-lobby_ready gap
+-- could get forcibly abandoned moments later when the matched lobby connected, leaving
+-- SPDRN-side per-run state (e.g. Seed Scout's scouting-phase dollars override) stale and
+-- liable to bleed into the real match's own first run.
+function MPAPI.matchmaking.is_committed()
+	return any_searching() or any_matched_not_joined()
+end

@@ -9,10 +9,12 @@ MPAPI._internal.mm = MPAPI._internal.mm or {}
 local mm = MPAPI._internal.mm
 
 -- Shared gate for any queue-conflicting entry point. If the local player is
--- searching, stash the blocked call as a replay closure and show the leave-or-
--- stay overlay instead of running it; returns true so the caller aborts.
--- Otherwise returns false and the caller proceeds normally. The overlay's
--- "Leave Queue & Continue" leaves every handle and invokes the stashed closure.
+-- searching -- or already matched but still joining that match's lobby, see
+-- is_committed()'s own comment for why that extra window matters -- stash the
+-- blocked call as a replay closure and show the leave-or-stay overlay instead of
+-- running it; returns true so the caller aborts. Otherwise returns false and the
+-- caller proceeds normally. The overlay's "Leave Queue & Continue" leaves every
+-- handle and invokes the stashed closure.
 --
 -- IMPORTANT: `replay` must re-enter the caller's OWN complete entry point, not a
 -- lower-level primitive. The start_run wrap below replays the wrapped
@@ -20,10 +22,10 @@ local mm = MPAPI._internal.mm
 -- must replay its own MP.pvp_join_lobby / create function -- NOT MPAPI.join_lobby
 -- directly, which would join server-side but skip the consumer's post-join setup
 -- (lobby mirror + UI transition), stranding the player outside the lobby. Since
--- the replay re-enters a guarded entry point, is_queued() is false by then so it
--- proceeds; if the leave somehow didn't take, it re-blocks.
+-- the replay re-enters a guarded entry point, is_committed() is false by then so
+-- it proceeds; if the leave somehow didn't take, it re-blocks.
 function MPAPI.matchmaking.guard_queued(replay)
-	if not MPAPI.matchmaking.is_queued() then
+	if not MPAPI.matchmaking.is_committed() then
 		return false
 	end
 	mm.pending_action = replay
