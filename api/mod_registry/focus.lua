@@ -52,6 +52,7 @@ MPAPI._internal.activate_mod = function(id)
 	-- and go straight to the lobby page.
 	if id == state.engaged_mod and mod.lobby_ui then
 		state.focused_mod = id
+		MPAPI._internal.unlock_overlay.enable_for_mod(id)
 		MPAPI.pages.show(mod.lobby_ui, { mod = mod })
 		MPAPI._internal.mod_registry.update_account_button()
 		return
@@ -59,6 +60,7 @@ MPAPI._internal.activate_mod = function(id)
 
 	MPAPI._internal.mod_registry.connect_to_active_mod_server(mod)
 	state.focused_mod = id
+	MPAPI._internal.unlock_overlay.enable_for_mod(id)
 	MPAPI.pages.show(mod.main_menu_ui, { mod = mod })
 	MPAPI._internal.mod_registry.update_account_button()
 end
@@ -89,6 +91,7 @@ MPAPI._internal.deactivate_mod = function()
 	end
 
 	state.focused_mod = nil
+	MPAPI._internal.unlock_overlay.disable()
 	MPAPI.pages.show('vanilla_main_menu')
 	MPAPI._internal.mod_registry.update_account_button()
 end
@@ -144,6 +147,7 @@ MPAPI._internal.on_lobby_disconnected = function()
 	-- recreating the UIBox (which is in uibox mode from the main menu) over the game.
 	if G.STAGE == G.STAGES.RUN then
 		state.focused_mod = nil
+		MPAPI._internal.unlock_overlay.disable()
 		return
 	end
 
