@@ -84,6 +84,23 @@ local function manage_title()
 	local cfg = MPAPI._internal.get_active_title and MPAPI._internal.get_active_title()
 	if cfg then
 		if G.SPLASH_LOGO._mpapi_title ~= cfg then apply_title(cfg) end
+		-- Vanilla's own main-menu boot/reveal sequence (Game:main_menu, game.lua) schedules a
+		-- ONE-TIME delayed ease_value(G.SPLASH_LOGO, 'dissolve', -1, ...) every time it runs
+		-- (cold boot AND every return from a run, not just first launch) to dissolve out its
+		-- own intro splash sprite a fraction of a second to ~2s later. That event looks up
+		-- G.SPLASH_LOGO fresh at fire time, not by a reference captured when it was scheduled
+		-- -- if our custom title has already been swapped in by then (which happens almost
+		-- immediately, since this function runs every frame), the event dissolves OUR base
+		-- logo to invisible instead of vanilla's, while the separately-tracked `extra` sprite
+		-- (vanilla's code has no idea it exists) is left alone. Confirmed live, on both cold
+		-- boot and returning from a practice run: G.SPLASH_LOGO.dissolve reads -1 (fully
+		-- dissolved) afterward, with the correct atlas/tag still attached -- only this one
+		-- field is wrong. Re-asserting it every frame is simpler and more robust than racing
+		-- or cancelling that vanilla event, whose delay differs depending on how the main menu
+		-- was reached and isn't something MPAPI has a clean hook into.
+		if G.SPLASH_LOGO._mpapi_title == cfg and G.SPLASH_LOGO.dissolve ~= 0 then
+			G.SPLASH_LOGO.dissolve = 0
+		end
 		hide_title_cards()
 	elseif G.SPLASH_LOGO._mpapi_title then
 		restore_vanilla()
