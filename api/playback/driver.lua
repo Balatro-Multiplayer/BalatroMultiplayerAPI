@@ -76,6 +76,10 @@ function MPAPI.playback.new_driver(timeline, opts)
 		_on_complete = opts.on_complete,
 		_finished_source = false, -- true once no more entries will ever arrive
 		_playing = false,
+		-- One RLOG.new_resolver_state() per recorded player_id, lazily created in
+		-- _tick below -- see resolve_card_ref's own comment for why these can
+		-- never be shared across players or reused for a different playback.
+		_card_resolvers = {},
 	}, Driver)
 end
 
@@ -148,12 +152,18 @@ function Driver:_tick()
 	self._cursor = self._cursor + 1
 
 	local is_pov = (self._pov_player_id ~= nil) and (entry.player_id == self._pov_player_id)
+	local card_resolver = self._card_resolvers[entry.player_id]
+	if not card_resolver then
+		card_resolver = MPAPI.replay.new_resolver_state()
+		self._card_resolvers[entry.player_id] = card_resolver
+	end
 	MPAPI.playback.dispatch(self._mod_id, entry.opcode, entry.args, {
 		t = entry.t,
 		player_id = entry.player_id,
 		is_pov = is_pov,
 		driver = self,
 		schema_version = self._schema_version,
+		card_resolver = card_resolver,
 	})
 
 	if self._finished_source and not self:has_pending() then

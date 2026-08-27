@@ -365,6 +365,62 @@ function RLOG.card_refs(indices, area)
 	return out
 end
 
+-- Playback-side counterpart to RLOG.card_ref. `id`s are assigned independently
+-- by each RECORDING client (RLOG._card_ids above, scoped to that client's own
+-- match), so they're only meaningful within one recorded player's own event
+-- stream -- callers must keep one `state` table per (playback session,
+-- recorded player), never share it across players or reuse it for a second
+-- replay. See RLOG.new_resolver_state.
+--
+-- `candidates` is searched only for a first-seen ref (id < 0): the list of
+-- live Card objects a match could plausibly come from right now (typically
+-- G.hand.cards for play/discard/use-targets). An already-seen ref (id > 0)
+-- MUST already be in state.by_id -- there is no candidate list to search,
+-- by design (see card_ref's own comment: only first-seen refs carry type
+-- info at all).
+--
+-- Returns nil if resolution fails -- either an already-seen id this playback
+-- session never saw first-seen (impossible in a correctly-ordered replay of
+-- a self-consistent recording), or no unclaimed candidate matches a
+-- first-seen ref's type signature. Both mean this replay has desynced from
+-- the recording (e.g. an RNG-affecting action wasn't replayed in the same
+-- order/count as it was recorded, so G.hand no longer holds what the
+-- recording expects) -- callers MUST treat a nil return as "skip this card,
+-- don't guess", never fall back to the very position that just desynced.
+function RLOG.resolve_card_ref(state, ref, candidates)
+	if not ref then return nil end
+	local id = ref[1]
+	if id > 0 then
+		return state.by_id[id]
+	end
+	id = -id
+	if state.by_id[id] then return state.by_id[id] end
+
+	local kind = ref[2]
+	for _, card in ipairs(candidates or {}) do
+		if not state.assigned[card] then
+			local matches
+			if kind == "pc" then
+				matches = card.base and card.base.suit == ref[3] and card.base.value == ref[4]
+			elseif card.config and card.config.center then
+				matches = card.config.center.key == ref[3]
+			end
+			if matches then
+				state.by_id[id] = card
+				state.assigned[card] = true
+				return card
+			end
+		end
+	end
+	return nil
+end
+
+-- Fresh state for RLOG.resolve_card_ref -- one per (playback session, recorded
+-- player); see that function's own comment for why these can never be shared.
+function RLOG.new_resolver_state()
+	return { by_id = {}, assigned = {} }
+end
+
 -- Start a new match's block: reset counters/buffers and start the clock.
 -- Pure bookkeeping -- no manifest parameter, no framing line of its own.
 -- Callers immediately follow this with MPAPI.RLOGCodes.match_manifest:write(...)
