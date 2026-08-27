@@ -39,6 +39,43 @@ local function highlight_hand_indices(indices)
 	end
 end
 
+-- Resolves recorded hand-card references back to live Card objects via
+-- RLOG.resolve_card_ref (identity, immune to reordering/reshuffling) when
+-- `refs` was recorded, falling back to the plain positional lookup above only
+-- when there IS no ref for a given slot (recordings made before played_refs/
+-- discarded_refs/target_refs existed). Confirmed live: without this, a replay
+-- that's drifted even slightly out of sync with the recording (e.g. an extra
+-- RNG draw upstream reshuffling G.hand differently than the original run) can
+-- silently highlight the WRONG cards or drop some entirely, then crash deep in
+-- vanilla's evaluate_play (functions/state_events.lua:589, "attempt to index a
+-- nil value" in the retrigger loop) once play_cards_from_highlighted runs on a
+-- malformed selection -- reproduced against a real flagged (hash_mismatch)
+-- production match log. A ref that fails to resolve means this replay has
+-- ALREADY desynced -- silently falling back to the very position that just
+-- proved unreliable would compound the error, so a resolution failure is
+-- loudly warned and that card is skipped, never guessed via position.
+local function highlight_resolved_hand_indices(indices, refs, ctx, opcode)
+	local resolver = ctx and ctx.card_resolver
+	for i, idx in ipairs(indices or {}) do
+		local ref = refs and refs[i]
+		local card
+		if ref then
+			if resolver then
+				card = RLOG.resolve_card_ref(resolver, ref, G.hand.cards)
+			end
+			if not card then
+				MPAPI.sendWarnMessage(
+					'[replay] ' .. tostring(opcode) .. ': could not resolve hand card ref for index '
+						.. tostring(idx) .. ' -- replay has desynced from the recording, skipping this card'
+				)
+			end
+		else
+			card = G.hand.cards[idx]
+		end
+		if card then G.hand:add_to_highlighted(card) end
+	end
+end
+
 -------------------------------------------------------------------------------
 -- RLOG_CODE definitions
 -------------------------------------------------------------------------------
@@ -152,10 +189,10 @@ MPAPI.RLOG_CODE {
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
-			local idx, targets = args and args[1], args and args[2]
+			local idx, targets, _ref, target_refs = args and args[1], args and args[2], args and args[3], args and args[4]
 			local card = G.consumeables and G.consumeables.cards and G.consumeables.cards[idx]
 			if not card then return end
-			if targets then highlight_hand_indices(targets) end
+			if targets then highlight_resolved_hand_indices(targets, target_refs, ctx, 'use') end
 			G.FUNCS.use_card({ config = { ref_table = card } })
 		end
 	end,
@@ -167,10 +204,10 @@ MPAPI.RLOG_CODE {
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
-			local idx, targets = args and args[1], args and args[2]
+			local idx, targets, _ref, target_refs = args and args[1], args and args[2], args and args[3], args and args[4]
 			local card = G.pack_cards and G.pack_cards.cards and G.pack_cards.cards[idx]
 			if not card then return end
-			if targets then highlight_hand_indices(targets) end
+			if targets then highlight_resolved_hand_indices(targets, target_refs, ctx, 'pack_pick') end
 			G.FUNCS.use_card({ config = { ref_table = card } })
 		end
 	end,
@@ -223,9 +260,9 @@ MPAPI.RLOG_CODE {
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
-			local indices = args and args[1]
+			local indices, refs = args and args[1], args and args[2]
 			if not indices then return end
-			highlight_hand_indices(indices)
+			highlight_resolved_hand_indices(indices, refs, ctx, 'play')
 			G.FUNCS.play_cards_from_highlighted()
 		end
 	end,
@@ -240,9 +277,9 @@ MPAPI.RLOG_CODE {
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
-			local indices = args and args[1]
+			local indices, refs = args and args[1], args and args[2]
 			if not indices then return end
-			highlight_hand_indices(indices)
+			highlight_resolved_hand_indices(indices, refs, ctx, 'discard')
 			G.FUNCS.discard_cards_from_highlighted(nil, false)
 		end
 	end,

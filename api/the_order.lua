@@ -442,10 +442,28 @@ local function give_shufflevals(tbl, seed, joker)
 	end
 end
 
--- Rework shuffle RNG to be more consistent between players.
+-- Rework shuffle RNG to be more consistent between players. Only takes over when
+-- the CALLER passed an explicit seed: give_shufflevals' whole point is deriving
+-- a shared, keyed seed (pseudoseed(seed)) so host and guest land on the same
+-- shuffle order despite each having their own hand/joker list state -- with no
+-- seed given, that guarantee doesn't apply anyway, and falling through to
+-- _orig_pseudoshuffle here means it gets vanilla's OWN default RNG advance
+-- (a deterministic continuation of the shared anonymous pseudorandom stream),
+-- not a substitute we have to invent. Confirmed live: this used to fall back to
+-- `seed or math.random()` -- genuinely non-deterministic, process-local entropy
+-- with no relation to the match seed at all -- firing hundreds of times in the
+-- first round alone. That silently made every ORDER-ruleset match's own joker/
+-- card selection non-reproducible even in real gameplay (host and guest could
+-- diverge on exactly the "more consistent between players" selections this
+-- file exists to synchronize), and made replaying any such match from its
+-- recorded seed impossible in principle, not just buggy -- confirmed by
+-- replaying a real production match log, which desynced from its own
+-- recording within the first round and eventually crashed deep in vanilla
+-- scoring code once a replayed play/discard fed it a hand that no longer
+-- matched what was actually dealt.
 local _orig_pseudoshuffle = pseudoshuffle
 function pseudoshuffle(list, seed)
-	if MPAPI.should_use_the_order() then
+	if seed and MPAPI.should_use_the_order() then
 		local is_p_card = true
 		for k, v in pairs(list) do
 			if is_p_card and not (type(v) == 'table' and v.ability
@@ -455,7 +473,7 @@ function pseudoshuffle(list, seed)
 			end
 		end
 		if is_p_card then
-			give_shufflevals(list, seed or math.random())
+			give_shufflevals(list, seed)
 			table.sort(list, function(a, b) return a.mp_shuffleval > b.mp_shuffleval end)
 			return
 		end
@@ -463,10 +481,12 @@ function pseudoshuffle(list, seed)
 	return _orig_pseudoshuffle(list, seed)
 end
 
--- Make pseudorandom_element selecting a joker or playing card more consistent between players.
+-- Make pseudorandom_element selecting a joker or playing card more consistent
+-- between players -- see pseudoshuffle above for why this only takes over when
+-- an explicit seed was actually given.
 local _orig_pseudorandom_element = pseudorandom_element
 function pseudorandom_element(_t, seed, args)
-	if MPAPI.should_use_the_order() then
+	if seed and MPAPI.should_use_the_order() then
 		local is_joker, is_p_card = true, true
 		for k, v in pairs(_t) do
 			if is_joker and not (type(v) == 'table' and v.ability and v.ability.set == 'Joker') then
@@ -481,7 +501,7 @@ function pseudorandom_element(_t, seed, args)
 		if is_joker or is_p_card then
 			local keys = {}
 			for k, v in pairs(_t) do keys[#keys + 1] = { k = k, v = v } end
-			give_shufflevals(_t, seed or math.random(), is_joker)
+			give_shufflevals(_t, seed, is_joker)
 			table.sort(keys, function(a, b) return a.v.mp_shuffleval > b.v.mp_shuffleval end)
 			local key = keys[1].k
 			return _t[key], key
