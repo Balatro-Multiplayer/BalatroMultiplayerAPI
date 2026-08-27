@@ -32,13 +32,6 @@
 local RLOG = MPAPI.replay
 local AREA = RLOG.AREA
 
-local function highlight_hand_indices(indices)
-	for _, i in ipairs(indices or {}) do
-		local card = G.hand.cards[i]
-		if card then G.hand:add_to_highlighted(card) end
-	end
-end
-
 -- Resolves recorded hand-card references back to live Card objects via
 -- RLOG.resolve_card_ref (identity, immune to reordering/reshuffling) when
 -- `refs` was recorded, falling back to the plain positional lookup above only
@@ -98,6 +91,20 @@ MPAPI.RLOG_CODE {
 	end,
 }
 
+-- Registers a card's OWN identity ref (not a hand-target ref) into the shared
+-- resolver -- sell/buy/use/pack_pick all record one (previously unused on
+-- replay) for the specific card being acted on. RLOG.card_ref's id counter is
+-- shared across every opcode that ever references a card, so a card first-
+-- referenced here (e.g. a Standard Pack's playing-card pick, or a joker later
+-- sold/discarded elsewhere) must be learned here too, or a later "already-
+-- seen" reference to it elsewhere permanently fails to resolve -- same
+-- rationale as reorder's own registration below.
+local function register_own_ref(ctx, ref, card)
+	if ctx.card_resolver and ref and card then
+		RLOG.resolve_card_ref(ctx.card_resolver, ref, { card })
+	end
+end
+
 MPAPI.RLOG_CODE {
 	key = 'sell',
 	mods = { 'pvp', 'spdrn' },
@@ -107,10 +114,11 @@ MPAPI.RLOG_CODE {
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
-			local area_id, idx = args and args[1], args and args[2]
+			local area_id, idx, ref = args and args[1], args and args[2], args and args[3]
 			local area = RLOG.area_object(area_id)
 			local card = area and area.cards and area.cards[idx]
 			if card then
+				register_own_ref(ctx, ref, card)
 				card:sell_card()
 				SMODS.calculate_context({ selling_card = true, card = card })
 			end
@@ -156,10 +164,13 @@ end
 local function shop_purchase_replay(self, args, ctx)
 	if ctx.schema_version >= 1 then
 		if not ctx.is_pov then return end
-		local area_id, idx = args and args[1], args and args[2]
+		local area_id, idx, ref = args and args[1], args and args[2], args and args[3]
 		local area = RLOG.area_object(area_id)
 		local card = area and area.cards and area.cards[idx]
-		if card then G.FUNCS.buy_from_shop({ config = { ref_table = card } }) end
+		if card then
+			register_own_ref(ctx, ref, card)
+			G.FUNCS.buy_from_shop({ config = { ref_table = card } })
+		end
 	end
 end
 
@@ -189,9 +200,10 @@ MPAPI.RLOG_CODE {
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
-			local idx, targets, _ref, target_refs = args and args[1], args and args[2], args and args[3], args and args[4]
+			local idx, targets, ref, target_refs = args and args[1], args and args[2], args and args[3], args and args[4]
 			local card = G.consumeables and G.consumeables.cards and G.consumeables.cards[idx]
 			if not card then return end
+			register_own_ref(ctx, ref, card)
 			if targets then highlight_resolved_hand_indices(targets, target_refs, ctx, 'use') end
 			G.FUNCS.use_card({ config = { ref_table = card } })
 		end
@@ -204,9 +216,10 @@ MPAPI.RLOG_CODE {
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
-			local idx, targets, _ref, target_refs = args and args[1], args and args[2], args and args[3], args and args[4]
+			local idx, targets, ref, target_refs = args and args[1], args and args[2], args and args[3], args and args[4]
 			local card = G.pack_cards and G.pack_cards.cards and G.pack_cards.cards[idx]
 			if not card then return end
+			register_own_ref(ctx, ref, card)
 			if targets then highlight_resolved_hand_indices(targets, target_refs, ctx, 'pack_pick') end
 			G.FUNCS.use_card({ config = { ref_table = card } })
 		end
@@ -233,20 +246,43 @@ MPAPI.RLOG_CODE {
 		self:record({ area_id, perm, moved }, human)
 	end,
 	-- perm is "new-position -> old-index": new_cards[j] = old_cards[perm[j]].
-	-- Direct-splice, mirrors vanilla's own sort-button pattern.
+	-- Direct-splice, mirrors vanilla's own sort-button pattern. `moved` entries
+	-- are {ref, old_pos, new_pos} -- registered into ctx.card_resolver (see
+	-- register_own_ref's comment above) even though the splice itself doesn't
+	-- need identity resolution, since a card can be first-referenced here
+	-- rather than in a play/discard/use-target.
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
-			local area_id, perm = args and args[1], args and args[2]
+			local area_id, perm, moved = args and args[1], args and args[2], args and args[3]
 			local area = RLOG.area_object(area_id)
 			if not (area and perm) then return end
 			local old_cards = area.cards
+			-- A recorded hand reorder can legitimately fire while browsing the shop
+			-- (vanilla doesn't clear leftover hand cards on cash_out). If replay's own
+			-- area doesn't have enough cards to match perm (e.g. an earlier, unrelated
+			-- divergence left nothing behind this round), skip rather than splice nils
+			-- into area.cards -- see SPDRN's own reorder handler for the fuller
+			-- rationale (playback_handlers.lua, the one actually used for SPDRN
+			-- dispatch; this baseline never runs for it).
+			if not old_cards or #old_cards < #perm then return end
 			local new_cards = {}
 			for j = 1, #perm do
 				new_cards[j] = old_cards[perm[j]]
 			end
 			area.cards = new_cards
 			if area.set_ranks then area:set_ranks() end
+
+			local resolver = ctx.card_resolver
+			if resolver and moved then
+				for _, entry in ipairs(moved) do
+					local ref, new_pos = entry[1], entry[3]
+					local card = new_pos and new_cards[new_pos]
+					if ref and card then
+						RLOG.resolve_card_ref(resolver, ref, { card })
+					end
+				end
+			end
 		end
 	end,
 }
