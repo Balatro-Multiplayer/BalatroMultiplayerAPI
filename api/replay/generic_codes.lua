@@ -47,7 +47,20 @@ local AREA = RLOG.AREA
 -- ALREADY desynced -- silently falling back to the very position that just
 -- proved unreliable would compound the error, so a resolution failure is
 -- loudly warned and that card is skipped, never guessed via position.
+-- Confirmed live (via SPDRN's own copy of this same fix -- see that file's
+-- comment for the reproduced crash trace): a card area can be nil, not just
+-- empty, at the moment a recorded opcode fires (G.hand is torn down and
+-- rebuilt across round/run transitions) -- indexing G.hand.cards below
+-- crashed outright before any per-card resolution even started. Guarded the
+-- same way RLOG.area_object already treats "area doesn't exist right now" as
+-- a normal, expected case elsewhere in this codebase.
 local function highlight_resolved_hand_indices(indices, refs, ctx, opcode)
+	if not (G.hand and G.hand.cards) then
+		MPAPI.sendWarnMessage(
+			'[replay] ' .. tostring(opcode) .. ': G.hand is not available -- replay has desynced from the recording, skipping this action entirely'
+		)
+		return
+	end
 	local resolver = ctx and ctx.card_resolver
 	for i, idx in ipairs(indices or {}) do
 		local ref = refs and refs[i]
@@ -179,13 +192,24 @@ local function shop_purchase_write(self, area, idx, ref, cost, human)
 	-- unaffected by its presence.
 	self:record({ area, idx, ref, cost }, human)
 end
+-- Confirmed live: vanilla's own G.FUNCS.buy_from_shop calls
+-- G.FUNCS.check_for_buy_space(c1) unless e.config.id == 'buy_and_use' -- and
+-- that check ONLY recognizes Voucher/Enhanced/Default/Joker/consumeable
+-- cards as things it knows how to validate space for. A Booster Pack is none
+-- of those (card.ability.set == 'Booster', card.ability.consumeable is nil),
+-- so the check unconditionally fails and buy_from_shop silently returns
+-- false -- no error, nothing added anywhere -- UNLESS the buy_and_use id is
+-- set, which is how the real "BUY" button on a pack card is actually wired
+-- (functions/UI_definitions.lua). Every replayed open_pack was therefore
+-- silently failing to buy anything at all.
 local function shop_purchase_replay(self, args, ctx)
 	if ctx.schema_version >= 1 then
 		if not ctx.is_pov then return end
 		local area_id, idx, ref = args and args[1], args and args[2], args and args[3]
 		local card = resolve_own_card(ctx, ref, RLOG.area_object(area_id), idx, 'buy')
 		if card then
-			G.FUNCS.buy_from_shop({ config = { ref_table = card } })
+			local id = card.ability and card.ability.set == 'Booster' and 'buy_and_use' or nil
+			G.FUNCS.buy_from_shop({ config = { id = id, ref_table = card } })
 		end
 	end
 end
@@ -274,12 +298,37 @@ MPAPI.RLOG_CODE {
 			local old_cards = area.cards
 			-- A recorded hand reorder can legitimately fire while browsing the shop
 			-- (vanilla doesn't clear leftover hand cards on cash_out). If replay's own
-			-- area doesn't have enough cards to match perm (e.g. an earlier, unrelated
-			-- divergence left nothing behind this round), skip rather than splice nils
-			-- into area.cards -- see SPDRN's own reorder handler for the fuller
-			-- rationale (playback_handlers.lua, the one actually used for SPDRN
-			-- dispatch; this baseline never runs for it).
-			if not old_cards or #old_cards < #perm then return end
+			-- area doesn't have exactly as many cards as perm expects (e.g. an earlier,
+			-- unrelated divergence left nothing behind this round, OR an earlier skipped
+			-- opcode -- a sell/discard/play that failed to resolve its own card ref --
+			-- left extra cards behind that the original recording no longer had), skip
+			-- rather than splice: RLOG.reorder_permutation (area_utils.lua) only ever
+			-- produces a perm when the recorder's own old/new card counts matched
+			-- exactly, so ANY mismatch here -- short OR long -- means this replay has
+			-- already desynced from the recording. Splicing anyway when old_cards is
+			-- LONGER than perm silently drops every card beyond #perm from area.cards
+			-- (new_cards below is only ever built out to #perm) -- same class of data
+			-- loss as writing nils for the too-short case, just silent instead of
+			-- crashing -- see SPDRN's own reorder handler for the fuller rationale
+			-- (playback_handlers.lua, the one actually used for SPDRN dispatch; this
+			-- baseline never runs for it).
+			if not old_cards or #old_cards ~= #perm then
+				-- Every other skip-and-recover path in this file (resolve_own_card,
+				-- highlight_resolved_hand_indices) warns loudly when it gives up
+				-- rather than acting -- this guard used to be a silent exception,
+				-- which would leave a real desync invisible in the log until a
+				-- LATER, unrelated-looking "could not resolve" surfaces (the
+				-- card(s) this skipped reorder should have registered into
+				-- ctx.card_resolver never get learned). Warn here too.
+				if old_cards then
+					MPAPI.sendWarnMessage(
+						'[replay] reorder: area ' .. tostring(area_id) .. ' has ' .. #old_cards
+							.. ' cards but the recording expected ' .. #perm
+							.. ' -- replay has desynced from the recording, skipping this reorder'
+					)
+				end
+				return
+			end
 			local new_cards = {}
 			for j = 1, #perm do
 				new_cards[j] = old_cards[perm[j]]
@@ -307,12 +356,31 @@ MPAPI.RLOG_CODE {
 	write = function(self, played, played_refs, human)
 		self:record({ played, played_refs }, human)
 	end,
+	-- Confirmed live (against a real flagged production match, via SPDRN's own
+	-- copy of this same fix -- see that file's comment for the full crash
+	-- trace): a play whose every card ref failed to resolve left
+	-- G.hand.highlighted empty, and calling play_cards_from_highlighted()
+	-- anyway crashed vanilla's evaluate_play on an empty scoring_hand (no
+	-- empty-hand guard exists there -- the real UI's Play button is simply
+	-- disabled with nothing highlighted, a check this bypasses entirely). A
+	-- partial resolve is still fine to play through -- only the all-failed
+	-- case needs skipping.
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
 			local indices, refs = args and args[1], args and args[2]
 			if not indices then return end
 			highlight_resolved_hand_indices(indices, refs, ctx, 'play')
+			-- G.hand can be nil here too (highlight_resolved_hand_indices already
+			-- warned and no-opped in that case) -- check its own presence rather
+			-- than assume it survived that call.
+			local highlighted = G.hand and G.hand.highlighted
+			if not highlighted or #highlighted == 0 then
+				if G.hand then
+					MPAPI.sendWarnMessage('[replay] play: no cards resolved out of ' .. #indices .. ' -- replay has desynced from the recording, skipping this play entirely')
+				end
+				return
+			end
 			G.FUNCS.play_cards_from_highlighted()
 		end
 	end,
@@ -324,12 +392,20 @@ MPAPI.RLOG_CODE {
 	write = function(self, discarded, discarded_refs, human)
 		self:record({ discarded, discarded_refs }, human)
 	end,
+	-- Same empty-highlight guard as 'play' above, same rationale.
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
 			local indices, refs = args and args[1], args and args[2]
 			if not indices then return end
 			highlight_resolved_hand_indices(indices, refs, ctx, 'discard')
+			local highlighted = G.hand and G.hand.highlighted
+			if not highlighted or #highlighted == 0 then
+				if G.hand then
+					MPAPI.sendWarnMessage('[replay] discard: no cards resolved out of ' .. #indices .. ' -- replay has desynced from the recording, skipping this discard entirely')
+				end
+				return
+			end
 			G.FUNCS.discard_cards_from_highlighted(nil, false)
 		end
 	end,
