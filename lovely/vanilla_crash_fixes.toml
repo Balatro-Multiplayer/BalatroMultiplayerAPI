@@ -1,0 +1,31 @@
+# Narrow safety-net patches for real vanilla crashes -- unlike TheOrder.toml/pool_gating.toml/
+# hud.toml, nothing here is gated on MPAPI.should_use_the_order() or any other ruleset/mod
+# state: every patch in this file is a plain nil/bounds guard that changes nothing in the case
+# vanilla already handles correctly, and only prevents an outright crash in a case vanilla's own
+# code doesn't check for. Applies to every match, Order or not, exactly like the un-patched
+# vanilla code path would if the guard weren't needed.
+[manifest]
+version = "1.0.0"
+dump_lua = true
+priority = 0
+
+# CONFIRMED LIVE BUG: Hex/Wheel of Fortune/Ectoplasm's deferred (0.4s-delayed) eligible-joker
+# selection can legitimately find no eligible candidate left by the time this callback actually
+# fires, even though Card:can_use_consumeable required a non-empty pool at play time -- the pool
+# can empty out during that 0.4s window (e.g. another effect destroying/selling the only
+# eligible joker before the delay elapses). pseudorandom_element already returns `nil, nil` for
+# an empty pool (its own explicit `if #keys == 0 then return nil, nil end` guard,
+# functions/misc_functions.lua) -- vanilla just never checks for that nil result before calling
+# `eligible_card:set_edition(...)` on it. Reproduced live via a real production match crash log
+# ("card.lua:1803: attempt to index local 'eligible_card' (a nil value)"), hit far more easily
+# under replay fast-forwarding: compressing many real actions into a fraction of a real second
+# makes "something else empties the pool during this one card's 0.4s delay" dramatically more
+# likely than in normal real-time play, though the race exists in vanilla regardless of Order/
+# replay/fast-forward -- this guard applies unconditionally, matching that.
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+pattern = '''eligible_card:set_edition(edition, true)'''
+position = "before"
+payload = '''if not eligible_card then return true end'''
+match_indent = true
