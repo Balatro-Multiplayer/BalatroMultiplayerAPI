@@ -547,7 +547,22 @@ end
 -- an explicit seed was actually given.
 local _orig_pseudorandom_element = pseudorandom_element
 function pseudorandom_element(_t, seed, args)
-	if seed and MPAPI.should_use_the_order() then
+	-- CONFIRMED LIVE BUG, fixed by the `next(_t)` check: vanilla's own pseudorandom_element
+	-- (functions/misc_functions.lua) explicitly guards `if #keys == 0 then return nil, nil end`
+	-- -- this override dropped that guard. With an empty `_t`, the for loop below never runs, so
+	-- is_joker/is_p_card stay at their initialized `true` default (nothing to disprove
+	-- them), taking the joker/playing-card branch anyway with zero real entries: `keys` ends up
+	-- {}, and `keys[1].k` crashes outright ("attempt to index a nil value") instead of the
+	-- graceful `nil, nil` vanilla itself would return. Reproduced live via a real production
+	-- match crash log: Hex's own deferred (0.4s-delayed) eligible-joker-selection callback
+	-- (card.lua) calls this with `self.eligible_editionless_jokers` as `_t` -- non-empty at the
+	-- moment Hex is played (Card:can_use_consumeable's own gate requires that), but the pool can
+	-- legitimately empty out during that 0.4s window (e.g. another effect destroying/selling the
+	-- only eligible joker before the delayed callback fires) -- a real race, not a hypothetical
+	-- one. Falling through to the original implementation for an empty `_t` matches vanilla's own
+	-- safe behavior exactly, and is a no-op change for every non-empty call (this override's
+	-- normal case, untouched).
+	if seed and MPAPI.should_use_the_order() and next(_t) ~= nil then
 		local is_joker, is_p_card = true, true
 		for k, v in pairs(_t) do
 			if is_joker and not (type(v) == 'table' and v.ability and v.ability.set == 'Joker') then
