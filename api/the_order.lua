@@ -328,6 +328,20 @@ local function get_culled(_pool)
 	return culled
 end
 
+-- Whether `culled` still has at least one entry this call could legally land on: not
+-- 'UNAVAILABLE' (both halves of that pair are exhausted/locked) and not already claimed by an
+-- earlier iteration of this same get_next_vouchers call (`spawn`). A cheap linear scan, not an
+-- RNG draw -- safe to call before every iteration without perturbing the pseudorandom_element
+-- sequence the loop below depends on for its exact draw order.
+local function has_available_voucher(culled, spawn)
+	for _, v in ipairs(culled) do
+		if v ~= 'UNAVAILABLE' and not spawn[v] then
+			return true
+		end
+	end
+	return false
+end
+
 local _nextvouchers = SMODS.get_next_vouchers
 function SMODS.get_next_vouchers(vouchers)
 	if MPAPI.should_use_the_order() or mp_major_league() then
@@ -338,6 +352,46 @@ function SMODS.get_next_vouchers(vouchers)
 			SMODS.size_of_pool(_pool),
 			G.GAME.starting_params.vouchers_in_shop + (G.GAME.modifiers.extra_vouchers or 0)
 		) do
+			-- DEFENSIVE FIX for a real (not just theoretical) dead end found via code review,
+			-- NOT YET LIVE-CONFIRMED as the trigger for a separately-reported freeze (see that
+			-- investigation's own notes) -- flagging the confidence level explicitly since this
+			-- file otherwise reserves stronger language for live-verified fixes.
+			--
+			-- Per call, `culled`'s count of real (non-'UNAVAILABLE') entries always exactly
+			-- equals SMODS.size_of_pool(_pool) (get_culled above only ever collapses a pair to
+			-- a single 'UNAVAILABLE' placeholder when BOTH halves are unavailable, so every
+			-- available raw entry survives into `culled` one-for-one) -- so a single call
+			-- starting from an empty `vouchers` table can never legitimately run out, since the
+			-- outer loop above never asks for more than that same size_of_pool(_pool) count.
+			--
+			-- The gap is cross-call: `vouchers` is NOT always fresh. `game.lua`'s shop-render
+			-- path calls `SMODS.get_next_vouchers(G.GAME.current_round.voucher)`, re-passing an
+			-- ALREADY-PARTIALLY-FILLED table from an earlier ante's call, to top it up when
+			-- vouchers_in_shop/extra_vouchers has since grown. `vouchers.spawn` still marks
+			-- every voucher chosen back then, but `culled`/`_pool` here are recomputed fresh
+			-- against CURRENT availability -- if the pool's available set hasn't grown (or
+			-- shrunk) enough to cover both the old spawned entries AND the new top-up target,
+			-- every remaining entry in the current `culled` can be simultaneously
+			-- 'UNAVAILABLE' or already in the old `vouchers.spawn`, with the outer loop still
+			-- expecting one more. Without this guard, the while loop below has no way out --
+			-- every reseed attempt (including `it > 1000`) can only ever land back on that same
+			-- exhausted set, spinning forever with no yield point. Since this runs synchronously
+			-- inside Game:start_run/shop-render (not inside any Event queue), that's not just a
+			-- hang MPAPI.sendWarnMessage could report from mid-loop -- love2d's own main loop
+			-- never gets back to processing input/network until the calling frame returns, so a
+			-- true infinite loop here freezes the whole process, unrecoverably.
+			--
+			-- Stopping early here instead of guaranteeing termination is the deliberately safe
+			-- tradeoff: a shop with fewer vouchers than requested is a minor, visible cosmetic
+			-- gap; an unbounded spin is a total, unrecoverable process freeze.
+			if not has_available_voucher(culled, vouchers.spawn) then
+				MPAPI.sendWarnMessage(
+					'[the_order] get_next_vouchers: culled voucher pool exhausted after '
+						.. tostring(#vouchers) .. '/' .. tostring(i - 1)
+						.. ' -- stopping early instead of spinning forever'
+				)
+				break
+			end
 			local center = pseudorandom_element(culled, pseudoseed('Voucher0'))
 			local it = 1
 			while center == 'UNAVAILABLE' or vouchers.spawn[center] do
@@ -360,6 +414,13 @@ function get_next_voucher_key(_from_tag)
 	if MPAPI.should_use_the_order() or mp_major_league() then
 		local _pool = get_current_pool('Voucher')
 		local culled = get_culled(_pool)
+		-- Unlike SMODS.get_next_vouchers above, this one doesn't need the same guard: `_pool`
+		-- comes straight from vanilla's get_current_pool, which unconditionally synthesizes a
+		-- single real fallback entry (e.g. 'v_blank') whenever the raw pool would otherwise be
+		-- empty -- so `culled` derived from it can never end up with zero real entries. This
+		-- function only ever draws once per call (no `vouchers.spawn`-style cross-call table
+		-- reuse), so the "ran out mid-call" scenario the other function guards against doesn't
+		-- apply here either.
 		local center = pseudorandom_element(culled, pseudoseed('Voucher0'))
 		local it = 1
 		while center == 'UNAVAILABLE' do
@@ -508,4 +569,51 @@ function pseudorandom_element(_t, seed, args)
 		end
 	end
 	return _orig_pseudorandom_element(_t, seed, args)
+end
+
+-----------------------------
+-- Diagnostics (replay-only)
+-----------------------------
+
+-- Entry/exit logging (via MPAPI.sendWarnMessage, which is confirmed to flush/surface even when
+-- code called shortly after it hangs -- the original investigation's own "stalled at cursor..."
+-- messages relied on exactly this) around two vanilla RNG-pool functions that run synchronously
+-- inside Game:start_run at the exact `run_died -> run_info -> select_blind` restart boundary
+-- where a real, reproducible, CPU-pegged freeze was found (Ghost Deck/stake 8/Misprint/Hex,
+-- cursor ~204-206). Code review found this codebase's own get_next_vouchers override has a real
+-- (now-fixed, see above) termination gap, but could NOT confirm it's reachable from that exact
+-- boundary (its own fresh-per-call path there is provably safe -- only a later, table-reusing
+-- shop-render call site isn't). get_next_tag_key/generate_starting_seed were also reviewed and
+-- look structurally safe by inspection, but "looks safe by inspection" is exactly what the
+-- get_next_vouchers case also looked like before the cross-call scenario was found -- so this
+-- adds a cheap, zero-behavior-change trace instead of asserting confidence pure code review
+-- couldn't actually earn. If the freeze recurs, whichever "entering" line has no matching
+-- "exiting" line pinpoints the stuck call directly, without another blind multi-hour live sweep.
+--
+-- Gated on an active replay/rejoin driver so this adds zero log volume (and negligible overhead
+-- -- one love.timer.getTime() pair per call) for real, live play.
+local function _diag_during_replay()
+	return next(MPAPI.playback._active_drivers) ~= nil
+end
+
+local _diag_gen_starting_seed = generate_starting_seed
+function generate_starting_seed(...)
+	if not _diag_during_replay() then
+		return _diag_gen_starting_seed(...)
+	end
+	MPAPI.sendWarnMessage('[diagnostic] entering generate_starting_seed')
+	local ret = _diag_gen_starting_seed(...)
+	MPAPI.sendWarnMessage('[diagnostic] exiting generate_starting_seed')
+	return ret
+end
+
+local _diag_next_tag_key = get_next_tag_key
+function get_next_tag_key(...)
+	if not _diag_during_replay() then
+		return _diag_next_tag_key(...)
+	end
+	MPAPI.sendWarnMessage('[diagnostic] entering get_next_tag_key')
+	local ret = _diag_next_tag_key(...)
+	MPAPI.sendWarnMessage('[diagnostic] exiting get_next_tag_key: ' .. tostring(ret))
+	return ret
 end
