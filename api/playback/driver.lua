@@ -130,6 +130,32 @@ function Driver:play()
 	self._playing = true
 	MPAPI.playback._active_drivers[self] = true
 	G.CONTROLLER.locks.mpapi_playback = true
+
+	-- CONFIRMED LIVE BUG, fixed by this reset: Driver:_tick() returns immediately without ever
+	-- calling _fast_forward_tick() while self._playing is false (see _tick's own guard below), so
+	-- the fast-forward watchdog literally cannot observe -- let alone react to -- time spent
+	-- genuinely paused. Every boundary opcode handler (select_blind/skip_blind/cash_out/shop
+	-- entry, playback_handlers.lua) calls driver:pause() synchronously, then waits up to its own
+	-- bounded real-time timeout (SHOP_READY_TIMEOUT_SECONDS/BLIND_SELECT_SCREEN_TIMEOUT_SECONDS,
+	-- both 10s) before calling driver:play() again -- this is normal, working-as-designed replay
+	-- behavior, not a stall. Without this reset, _ff_last_progress_at is still whatever it was
+	-- BEFORE that pause even started, so the very first _fast_forward_tick() after resuming can
+	-- see 10+ real seconds of "no progress" already banked against the 15s watchdog from the pause
+	-- alone -- one such pause immediately following another real delay (e.g. a queued warning or a
+	-- prior dispatch's own overhead) is enough to trip it. Reproduced live against a real
+	-- production match (cbf37c2e.../c97bf35d..., a heavily-desynced recording that chains many of
+	-- these bounded pauses back to back): a single select_blind's own still-in-progress 10s wait
+	-- tripped the watchdog before that wait's own timeout even fired. Fast_forward_to's watchdog
+	-- is meant to catch a genuinely stuck tight loop (Driver:_fast_forward_tick's own header
+	-- comment), never a bounded, already-timed-out-on-its-own handler wait -- and once tripped,
+	-- Driver:_ff_degraded is permanent for the rest of that fast_forward_to call (see
+	-- _fast_forward_tick below), turning what should be an accelerated pass over a long real match
+	-- into an unboundedly slow real-time replay of everything after the false-positive trip. This
+	-- reset makes the watchdog's clock measure only genuinely-active (self._playing == true) time
+	-- with no dispatch progress, which is what it was always meant to measure.
+	if self._ff_active then
+		self._ff_last_progress_at = love.timer.getTime()
+	end
 end
 
 function Driver:pause()
