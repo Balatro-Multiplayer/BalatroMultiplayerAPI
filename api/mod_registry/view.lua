@@ -65,6 +65,22 @@ MPAPI.set_logo_offset = function(y, immediate)
 			G.SPLASH_LOGO.VT.y = G.SPLASH_LOGO.T.y
 		end
 	end
+	-- A mod's optional two-part title (register_mod{title={base,extra}}, api/title.lua) has a
+	-- second sprite bonded to G.title_top as its alignment "major" (bond='Strong'), unlike
+	-- G.SPLASH_LOGO above -- a bonded Moveable recalculates its own T.y from
+	-- major.T.y + alignment.offset.y every frame, so poking its T.y directly (the approach that
+	-- works for G.title_top/G.SPLASH_LOGO, neither of which is bonded to anything) gets silently
+	-- overwritten by the very next frame's realignment. Confirmed live: T.y/VT.y both read back
+	-- exactly the intended offset immediately after setting them, but the rendered title still
+	-- showed the extra half sitting at its original position, split apart from the base half.
+	-- alignment.offset.y is the field that actually persists across frames for a bonded object.
+	local extra = MPAPI._internal.get_title_extra_sprite and MPAPI._internal.get_title_extra_sprite()
+	if extra and extra.alignment then
+		extra.alignment.offset.y = y
+		if immediate then
+			extra:align_to_major()
+		end
+	end
 end
 
 -- Leave a run back to the menu (go_to_menu rebuilds it via Game:main_menu -> set_main_menu_UI).

@@ -23,6 +23,16 @@ end
 local _extra = nil
 local _hidden_cards = {}
 
+-- Exposed so MPAPI.set_logo_offset (api/mod_registry/view.lua) can reposition this sprite too --
+-- it previously only touched G.title_top/G.SPLASH_LOGO, silently leaving a mod's "extra" title
+-- sprite (register_mod{title={base,extra}}'s second atlas) exactly where apply_title first put
+-- it, since _extra was a plain module-local with no accessor at all. Confirmed live: PvP's own
+-- two-part title showed the "base" half correctly nudged up by a page's on_enter but the
+-- "extra" half stayed in its original spot, overlapping that page's own content underneath it.
+function MPAPI._internal.get_title_extra_sprite()
+	return _extra
+end
+
 local function remove_extra()
 	if not _extra then return end
 	local s = _extra
