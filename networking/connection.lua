@@ -30,6 +30,9 @@ function connection.new(opts)
 		mqtt = opts.mqtt_client,
 		api = opts.api_client,
 		steam = opts.steam,
+		-- Set when logging in through Nakama (config use_nakama_auth).
+		nakama_client = opts.nakama_client,
+		nakama_session = nil,
 		config = opts.config or {},
 		state = STATES.DISCONNECTED,
 
@@ -135,7 +138,29 @@ end
 -- Steam ticket handshake instead of preferring a cached refresh token.
 function connection:_do_auth()
 	set_state(self, STATES.AUTHENTICATING)
-	self:_try_steam_auth()
+	if self.nakama_client then
+		self:_try_nakama_auth()
+	else
+		self:_try_steam_auth()
+	end
+end
+
+-- Shared handler for the /steam and /nakama login responses.
+function connection:_handle_login_response(data)
+	if data.tosRequired then
+		self._pending_tos_token = data.token
+		set_state(self, STATES.TOS_REQUIRED, { steam_name = self.steam_name, tos_update = data.tosUpdate or false })
+		return
+	end
+
+	self:_handle_auth_success(data)
+end
+
+function connection:_cancel_auth_ticket()
+	if self.auth_ticket_handle then
+		self.steam.cancel_auth_ticket(self.auth_ticket_handle)
+		self.auth_ticket_handle = nil
+	end
 end
 
 function connection:_try_steam_auth()
@@ -156,23 +181,62 @@ function connection:_try_steam_auth()
 	self.mqtt:start_thread()
 
 	self.api:authenticate_steam(ticket_data.ticket, self.steam_name, function(err, data)
-		if self.auth_ticket_handle then
-			self.steam.cancel_auth_ticket(self.auth_ticket_handle)
-			self.auth_ticket_handle = nil
-		end
+		self:_cancel_auth_ticket()
 
 		if err then
 			set_state(self, STATES.DISCONNECTED, { error = 'Steam auth failed: ' .. tostring(err) })
 			return
 		end
 
-		if data.tosRequired then
-			self._pending_tos_token = data.token
-			set_state(self, STATES.TOS_REQUIRED, { steam_name = self.steam_name, tos_update = data.tosUpdate or false })
+		self:_handle_login_response(data)
+	end)
+end
+
+-- Same as _try_steam_auth, except the Steam ticket goes to Nakama, which
+-- verifies it and returns a Nakama session; the API then signs the player in
+-- from that session (POST /api/auth/nakama) and the rest is unchanged.
+function connection:_try_nakama_auth()
+	if not self.steam or not self.steam.available() then
+		set_state(self, STATES.DISCONNECTED, { error = 'Steam is not available' })
+		return
+	end
+
+	local ticket_data, ticket_err = self.steam.get_auth_ticket()
+	if not ticket_data then
+		set_state(self, STATES.DISCONNECTED, { error = 'Steam ticket failed: ' .. tostring(ticket_err) })
+		return
+	end
+
+	self.auth_ticket_handle = ticket_data.handle
+	self.steam_name = self.steam.get_persona_name() or 'Player'
+
+	-- Still needed: the API calls go over the MQTT thread's HTTP transport.
+	self.mqtt:start_thread()
+
+	local client = self.nakama_client
+	client.authenticate_steam(ticket_data.ticket, nil, true, nil, false, function(session)
+		self:_cancel_auth_ticket()
+		if self.state ~= STATES.AUTHENTICATING then
 			return
 		end
 
-		self:_handle_auth_success(data)
+		if not session or session.error then
+			local message = session and (session.message or session.error) or 'no response'
+			set_state(self, STATES.DISCONNECTED, { error = 'Nakama auth failed: ' .. tostring(message) })
+			return
+		end
+
+		self.nakama_session = session
+		client.set_bearer_token(session.token)
+
+		self.api:authenticate_nakama(session.token, self.steam_name, function(err, data)
+			if err then
+				set_state(self, STATES.DISCONNECTED, { error = 'Nakama login rejected: ' .. tostring(err) })
+				return
+			end
+
+			self:_handle_login_response(data)
+		end)
 	end)
 end
 
@@ -555,6 +619,7 @@ function connection:disconnect()
 	set_state(self, STATES.DISCONNECTED)
 	self.player_id = nil
 	self.jwt_token = nil
+	self.nakama_session = nil
 	self.lobby_data = nil
 end
 

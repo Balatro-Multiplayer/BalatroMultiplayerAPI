@@ -12,6 +12,20 @@ function api_client:authenticate_steam(ticket, steam_name, callback)
 	self.mqtt:http_post(self.base_url .. '/api/auth/steam', body)
 end
 
+-- Log in with a Nakama session token instead of a Steam ticket (Nakama has
+-- already verified the ticket). Same response as authenticate_steam.
+function api_client:authenticate_nakama(nakama_token, steam_name, callback)
+	if not self:_transport_ready() then
+		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)
+		return
+	end
+
+	self:_setup_http_callback(callback)
+
+	local body = api_client.json_encode({ nakamaToken = nakama_token, steamName = steam_name })
+	self.mqtt:http_post(self.base_url .. '/api/auth/nakama', body)
+end
+
 function api_client:authenticate_dev(steam_name, callback)
 	if not self:_transport_ready() then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'MQTT thread not running'), nil)

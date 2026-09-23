@@ -35,7 +35,10 @@ the SDK's own `require` calls look up.
 `session.store`/`session.restore` use Defold's `sys` module and don't work
 here. Don't call them.
 
-This code isn't wired up yet: nothing in `core.lua` loads it.
+Only used for login so far: with the config option `use_nakama_auth` on (and
+`use_custom_server`), `api/connection/lifecycle.lua` loads the SDK and
+`networking/connection.lua`'s `_try_nakama_auth` signs in to Nakama with the
+Steam ticket. With it off, nothing loads the SDK.
 
 ## Updating
 

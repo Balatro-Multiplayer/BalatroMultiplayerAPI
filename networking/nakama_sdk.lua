@@ -1,7 +1,8 @@
 --[[
     Entry point for the vendored Nakama SDK (lib/nakama/, see its README).
-    Not wired up: core.lua doesn't load this file, and nothing calls
-    M.load() or the engine's update() yet.
+    Only loaded for Nakama login (config use_nakama_auth, see
+    api/connection/lifecycle.lua's create_nakama_client), which also pumps
+    the engine's update() from MPAPI.update. core.lua doesn't load it.
 
       local sdk = MPAPI.load_mpapi_file('networking/nakama_sdk.lua').load()
       local client = sdk.nakama.create_client({

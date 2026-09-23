@@ -29,6 +29,8 @@ local SERVER_DEFAULTS = {
 local CUSTOM_API_PORT = 8788
 local CUSTOM_MQTT_TLS_PORT = 8883
 local CUSTOM_MQTT_PLAIN_PORT = 1883
+local CUSTOM_NAKAMA_PORT = 7350
+local CUSTOM_NAKAMA_SERVER_KEY = 'defaultkey'
 
 local function config_server()
 	local c = MPAPI.config or {}
@@ -45,13 +47,41 @@ local function config_server()
 		mqtt_broker = host,
 		mqtt_port = secure and CUSTOM_MQTT_TLS_PORT or CUSTOM_MQTT_PLAIN_PORT,
 		mqtt_secure = secure,
+		nakama = c.use_nakama_auth and {
+			host = host,
+			port = tonumber(c.nakama_port) or CUSTOM_NAKAMA_PORT,
+			use_ssl = secure,
+			server_key = c.nakama_server_key or CUSTOM_NAKAMA_SERVER_KEY,
+		} or nil,
 	}
+end
+
+-- Nakama client for logging in (see connection:_try_nakama_auth), or nil when
+-- Nakama login is off. The SDK is only loaded here, so with the flag off it
+-- never is.
+local function create_nakama_client(nakama_opts)
+	if not nakama_opts then
+		return nil
+	end
+	local sdk = MPAPI.load_mpapi_file('networking/nakama_sdk.lua').load()
+	C.nakama_engine = sdk.engine
+	return sdk.nakama.create_client({
+		host = nakama_opts.host,
+		port = nakama_opts.port,
+		use_ssl = nakama_opts.use_ssl,
+		username = nakama_opts.server_key,
+		password = '',
+		engine = sdk.engine,
+	})
 end
 
 local MPAPI_update_ref = MPAPI.update
 MPAPI.update = function()
 	if C.mqtt_instance then
 		C.mqtt_instance:update()
+	end
+	if C.nakama_engine then
+		C.nakama_engine.update()
 	end
 	MPAPI_update_ref()
 end
@@ -124,6 +154,7 @@ MPAPI.connect = function(opts)
 		mqtt_client = C.mqtt_instance,
 		api_client = api,
 		steam = MPAPI.networking.steam,
+		nakama_client = create_nakama_client(custom and custom.nakama),
 		config = {
 			mqtt_broker = mqtt_broker,
 			mqtt_port = mqtt_port,
@@ -182,6 +213,12 @@ end
 
 MPAPI.get_connection = function()
 	return C.connection
+end
+
+-- The Nakama session from the last login, or nil when Nakama login is off
+-- or the player isn't logged in.
+MPAPI.get_nakama_session = function()
+	return C.connection and C.connection.nakama_session or nil
 end
 
 MPAPI.get_last_opts = function()
