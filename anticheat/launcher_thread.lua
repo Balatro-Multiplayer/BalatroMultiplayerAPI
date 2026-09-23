@@ -113,8 +113,7 @@ end
 -- though json_lib is expected to always resolve in the real Steamodded
 -- runtime). Only implements what this channel's own messages ever need:
 -- objects, strings (with the same handful of escapes encode_json emits),
--- numbers, booleans, null, and nested objects (the launcher's
--- challenge_response frame nests hardware_fingerprint one level deep) - no
+-- numbers, booleans, null, and nested objects - no
 -- arrays, since nothing on this channel ever sends one.
 local function decode_json_fallback(str)
 	local pos = 1
@@ -452,11 +451,9 @@ while running do
 						type = 'challenge_answered',
 						challenge_id = frame.challenge_id,
 						signature = frame.signature,
-						hardware_fingerprint = frame.hardware_fingerprint,
 						-- Only ever present for a ranked_readiness response
 						-- (see RankedSupervisor::sendReadinessChallengeResponse())
-						-- - nil for every other kind, same as
-						-- hardware_fingerprint being nil for a non-login one.
+						-- - nil for every other kind.
 						launcher_current = frame.launcher_current,
 						mods_current = frame.mods_current,
 						stale_mod_ids = frame.stale_mod_ids,

@@ -508,14 +508,11 @@ end
 -- topics - see emqx-auth.service.ts's authorizePlayerNotificationTopic().
 -- `result` is whatever anticheat/launcher_channel.lua's
 -- run_challenge_answered_callbacks() produced: either
--- {challenge_id, refused = true}, {challenge_id, signature,
--- hardware_fingerprint}, or {challenge_id, signature, launcher_current,
--- mods_current, stale_mod_ids} (ranked_readiness only - see
--- RankedSupervisor::sendReadinessChallengeResponse()). hardware_fingerprint
--- is only ever present on a login-kind challenge's answer (see
--- rankedsupervisor.cpp) - nests as-is under hardwareFingerprint; its own
--- keys stay whatever hardwarefingerprint.cpp already shaped them as, this
--- layer doesn't touch them. launcher_current can legitimately be `false`,
+-- {challenge_id, refused = true}, {challenge_id, signature}, or
+-- {challenge_id, signature, launcher_current, mods_current, stale_mod_ids}
+-- (ranked_readiness only - see
+-- RankedSupervisor::sendReadinessChallengeResponse()). launcher_current can
+-- legitimately be `false`,
 -- so its presence (not truthiness) is what selects that shape - see
 -- RANKED_READINESS_SPEC.md in the server repo for the exact wire contract.
 function connection:_publish_challenge_response(result)
@@ -532,11 +529,6 @@ function connection:_publish_challenge_response(result)
 			launcherCurrent = result.launcher_current,
 			modsCurrent = result.mods_current,
 			staleModIds = result.stale_mod_ids,
-		}
-	elseif result.hardware_fingerprint then
-		body.response = {
-			signature = result.signature,
-			hardwareFingerprint = result.hardware_fingerprint,
 		}
 	else
 		body.response = result.signature

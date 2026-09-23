@@ -127,8 +127,8 @@ end
 
 -- Registers fn(result) to run whenever a launcher-integrity challenge relayed
 -- via A.answer_challenge() gets an answer - either from the launcher itself
--- (result = {challenge_id, signature, hardware_fingerprint}, the last field
--- only present for a login-kind challenge), or an immediate refusal when
+-- (result = {challenge_id, signature}, plus launcher_current/mods_current/
+-- stale_mod_ids for a ranked_readiness challenge), or an immediate refusal when
 -- there's no launcher to ask at all, or the launcher reported an error
 -- (result = {challenge_id, refused = true}). Unlike
 -- on_launcher_supervision_lost, there's no "fire immediately" case here - an
@@ -327,7 +327,6 @@ function A.update()
 				run_challenge_answered_callbacks({
 					challenge_id = event.challenge_id,
 					signature = event.signature,
-					hardware_fingerprint = event.hardware_fingerprint,
 					launcher_current = event.launcher_current,
 					mods_current = event.mods_current,
 					stale_mod_ids = event.stale_mod_ids,
