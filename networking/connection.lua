@@ -16,6 +16,10 @@ local STATES = MPAPI.ConnectionState
 local MQTT_RECONNECT_BACKOFF = { 0.3, 0.8, 1.5 }
 local MQTT_RECONNECT_MAX_ATTEMPTS = 4
 
+-- Placeholder custom id for Nakama's Steam login (see _try_nakama_auth);
+-- the server replaces it.
+local NAKAMA_STEAM_LOGIN_ID = 'steam-ticket'
+
 -- Always the most recently constructed instance (connection.new() can run
 -- more than once per session - e.g. MPAPI.reconnect() - each call replacing
 -- the previous instance). The launcher-integrity challenge-answered callback
@@ -195,6 +199,10 @@ end
 -- Same as _try_steam_auth, except the Steam ticket goes to Nakama, which
 -- verifies it and returns a Nakama session; the API then signs the player in
 -- from that session (POST /api/auth/nakama) and the rest is unchanged.
+--
+-- Custom auth, not authenticate_steam: Nakama's built-in Steam check needs
+-- Balatro's publisher key. The server's runtime hook checks the ticket in
+-- vars.steam_ticket and replaces the placeholder id with "steam:<steamid>".
 function connection:_try_nakama_auth()
 	if not self.steam or not self.steam.available() then
 		set_state(self, STATES.DISCONNECTED, { error = 'Steam is not available' })
@@ -214,7 +222,7 @@ function connection:_try_nakama_auth()
 	self.mqtt:start_thread()
 
 	local client = self.nakama_client
-	client.authenticate_steam(ticket_data.ticket, nil, true, nil, false, function(session)
+	client.authenticate_custom(NAKAMA_STEAM_LOGIN_ID, { steam_ticket = ticket_data.ticket }, true, nil, function(session)
 		self:_cancel_auth_ticket()
 		if self.state ~= STATES.AUTHENTICATING then
 			return
