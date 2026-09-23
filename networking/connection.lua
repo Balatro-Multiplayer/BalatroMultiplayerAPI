@@ -20,6 +20,12 @@ local MQTT_RECONNECT_MAX_ATTEMPTS = 4
 -- the server replaces it.
 local NAKAMA_STEAM_LOGIN_ID = 'steam-ticket'
 
+-- Seconds between resends of the Nakama login. A fresh Steam ticket is only
+-- valid once Steam's backend has registered it; sent straight away (the
+-- Nakama request goes out on the same frame), Steam can answer 101 "Invalid
+-- ticket". Resending the same ticket a moment later succeeds.
+local NAKAMA_LOGIN_RETRY_INTERVALS = { 0.5, 0.5, 1, 1 }
+
 -- Always the most recently constructed instance (connection.new() can run
 -- more than once per session - e.g. MPAPI.reconnect() - each call replacing
 -- the previous instance). The launcher-integrity challenge-answered callback
@@ -245,7 +251,7 @@ function connection:_try_nakama_auth()
 
 			self:_handle_login_response(data)
 		end)
-	end)
+	end, NAKAMA_LOGIN_RETRY_INTERVALS)
 end
 
 function connection:_try_dev_auth()
