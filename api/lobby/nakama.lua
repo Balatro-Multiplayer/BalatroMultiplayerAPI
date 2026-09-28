@@ -3,9 +3,10 @@
 -- lobby object. The transport is networking/nakama_lobby.lua.
 --
 -- A prototype: the lobby itself (roster, player info, metadata, own state,
--- host, kick, leave, disconnect/rejoin) is server-authoritative on Nakama,
--- but actions and chat still only exist on MQTT, so a Nakama lobby can't run
--- a game yet. Roster ids are Nakama user ids, and lobby.player_id is ours.
+-- host, kick, leave, disconnect/rejoin) is server-authoritative on Nakama.
+-- Actions are relayed through the match, or run by the server when
+-- authoritative (api/action/builtin.lua); chat still only exists on MQTT.
+-- Roster ids are Nakama user ids, and lobby.player_id is ours.
 MPAPI._internal.lobby = MPAPI._internal.lobby or {}
 local L = MPAPI._internal.lobby
 
@@ -15,17 +16,6 @@ end
 
 L.nakama_enabled = function()
 	return NL() ~= nil and NL().enabled()
-end
-
-local warned = {}
-
--- One warning per feature per session, then silence.
-L.warn_nakama_unsupported = function(feature)
-	if warned[feature] then
-		return
-	end
-	warned[feature] = true
-	MPAPI.sendWarnMessage(feature .. ' not available on Nakama lobbies yet')
 end
 
 local function fail(lobby, message)
@@ -78,6 +68,23 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	lobby._player_state = snapshot.ownState
 	lobby._players = roster
 
+	local game = type(snapshot.game) == 'table' and snapshot.game or {}
+	local was_started = lobby._game.started ~= nil
+	lobby._game.ready = {}
+	for id, ready in pairs(type(game.ready) == 'table' and game.ready or {}) do
+		if ready == true and roster[id] then
+			lobby._game.ready[id] = true
+			MPAPI.set_player_ready(lobby, id, true)
+		end
+	end
+	if type(game.started) == 'table' then
+		if announce and not was_started then
+			L.apply_game_started(lobby, game.started)
+		else
+			lobby._game.started = { seed = game.started.seed, stake = game.started.stake, options = game.started.options }
+		end
+	end
+
 	if not announce then
 		return
 	end
@@ -118,6 +125,17 @@ local function on_data(lobby, on_ready, op, data)
 		if type(data.playerId) == 'string' then
 			L.apply_player_info(lobby, data.playerId, type(data.info) == 'table' and data.info or nil)
 		end
+	elseif op == ServerOp.ACTION then
+		L.deliver_action(lobby, {
+			cid = data.cid,
+			action = data.action,
+			from = data.from,
+			to = data.to,
+			params = data.params,
+			response_to = data.responseTo,
+		})
+	elseif op == ServerOp.ACTION_REJECTED then
+		L.reject_action(lobby, data)
 	elseif op == ServerOp.ERROR then
 		fail(lobby, data.message or 'Lobby error')
 	end

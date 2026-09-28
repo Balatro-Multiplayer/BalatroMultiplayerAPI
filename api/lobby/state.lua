@@ -30,8 +30,11 @@ L.create_object = function(opts)
 		-- and actions are all handled in-process. See MPAPI.create_local_lobby.
 		_local_mode = opts.local_mode or false,
 		-- Hosted as a Nakama match: see api/lobby/nakama.lua. No _mqtt, and no
-		-- actions or chat yet.
+		-- chat yet.
 		_nakama = opts.nakama or false,
+		-- Server-owned game state (Nakama lobbies): { ready = {id=true},
+		-- started = nil | { seed, stake, options } }. See api/action/builtin.lua.
+		_game = { ready = {}, started = nil },
 	}
 
 	function lobby:on(event_name, handler)
@@ -177,19 +180,31 @@ L.create_object = function(opts)
 
 	lobby._pending_actions = {}
 
+	-- The lobby's mod's action types, plus MPAPI's own (which every lobby
+	-- has: mpapi_opponent_context, mpapi_ready, ...).
 	lobby._action_types = {}
 	for _, key in ipairs(MPAPI.ActionType.obj_buffer) do
 		local at = MPAPI.ActionTypes[key]
-		if at.mod and at.mod.id == lobby.mod_id then
+		if at.mod and (at.mod.id == lobby.mod_id or at.mod.id == MPAPI.id) then
 			lobby._action_types[key] = at
 		end
 	end
 
 	function lobby:action(action_type)
-		if self._nakama then
-			L.warn_nakama_unsupported('Lobby actions')
-		end
 		return MPAPI._internal.create_action_instance(self, action_type)
+	end
+
+	-- Server-refereed lobby flow (Nakama lobbies only; see api/action/builtin.lua).
+	function lobby:set_ready(ready, cb)
+		L.set_ready(self, ready, cb)
+	end
+
+	function lobby:start_game(opts, cb)
+		L.start_game(self, opts, cb)
+	end
+
+	function lobby:is_game_started()
+		return self._game.started ~= nil
 	end
 
 	return lobby

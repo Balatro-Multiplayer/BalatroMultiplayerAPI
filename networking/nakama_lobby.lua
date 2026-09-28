@@ -10,8 +10,18 @@
 local NL = {}
 
 -- Must match nakama/src/lobby/protocol.ts.
-NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4 }
-NL.ServerOp = { SNAPSHOT = 100, EVENT = 101, METADATA = 102, PLAYER_INFO = 103, ERROR = 104 }
+NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5 }
+NL.ServerOp = {
+	SNAPSHOT = 100,
+	EVENT = 101,
+	METADATA = 102,
+	PLAYER_INFO = 103,
+	ERROR = 104,
+	ACTION = 105,
+	ACTION_REJECTED = 106,
+}
+-- ACTION's `to` for an authoritative action.
+NL.SERVER_TARGET = 'server'
 
 -- Seconds between socket reconnect attempts; the last one repeats until the
 -- server's grace period (LOBBY_GRACE_SECONDS, 120 by default) is surely over.
