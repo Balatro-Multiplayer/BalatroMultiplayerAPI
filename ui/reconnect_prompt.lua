@@ -104,6 +104,12 @@ G.FUNCS.mpapi_reconnect_prompt_reconnect = function()
 			MPAPI.playback.rejoin(data.active.modId, data.active)
 			return
 		end
+		if lobby_data.nakama then
+			MPAPI._internal.create_reconnected_lobby(lobby_data, function(lobby)
+				MPAPI.lobby_reconnect(lobby_data.modId, lobby)
+			end)
+			return
+		end
 		MPAPI._internal.create_reconnected_lobby(lobby_data)
 		local lobby = MPAPI.get_current_lobby()
 		if lobby then
@@ -116,6 +122,14 @@ G.FUNCS.mpapi_reconnect_prompt_leave = function()
 	local lobby_data = _reconnected_lobby
 	close_prompt()
 	if not lobby_data then
+		return
+	end
+	if lobby_data.nakama then
+		MPAPI._internal.lobby.nakama_leave_current(function(err)
+			if err then
+				MPAPI.sendWarnMessage('[reconnect_prompt] lobby_leave failed: ' .. tostring(err))
+			end
+		end)
 		return
 	end
 	local conn = MPAPI.get_connection()

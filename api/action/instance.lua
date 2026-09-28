@@ -32,6 +32,9 @@ local function create_action_instance(lobby, action_type)
 			MPAPI._internal.dispatch_local_action(self, target_id)
 			return
 		end
+		if self._lobby._nakama then
+			return
+		end
 
 		local cid = MPAPI.generate_id()
 		local lobby = self._lobby
@@ -65,6 +68,9 @@ local function create_action_instance(lobby, action_type)
 		-- Offline lobby: deliver in-process instead of over the broker.
 		if self._lobby._local_mode then
 			MPAPI._internal.dispatch_local_action(self, '*')
+			return
+		end
+		if self._lobby._nakama then
 			return
 		end
 

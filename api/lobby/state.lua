@@ -29,6 +29,9 @@ L.create_object = function(opts)
 		-- Offline lobbies have no server/MQTT backing: metadata, player state, leave
 		-- and actions are all handled in-process. See MPAPI.create_local_lobby.
 		_local_mode = opts.local_mode or false,
+		-- Hosted as a Nakama match: see api/lobby/nakama.lua. No _mqtt, and no
+		-- actions or chat yet.
+		_nakama = opts.nakama or false,
 	}
 
 	function lobby:on(event_name, handler)
@@ -68,6 +71,12 @@ L.create_object = function(opts)
 			self:_fire(MPAPI.LobbyEvent.METADATA_CHANGED, self._metadata)
 			return
 		end
+		-- Nakama lobby: the server merges and broadcasts it back to everyone.
+		if self._nakama then
+			local NL = MPAPI.networking.nakama_lobby
+			NL.send(NL.ClientOp.SET_METADATA, { metadata = tbl })
+			return
+		end
 		self._api:set_lobby_metadata(self._connection.jwt_token, self.code, tbl, function(err, data)
 			if err then
 				self:_fire(MPAPI.LobbyEvent.ERROR, err)
@@ -95,6 +104,12 @@ L.create_object = function(opts)
 			self._player_state = tbl
 			return
 		end
+		if self._nakama then
+			local NL = MPAPI.networking.nakama_lobby
+			NL.send(NL.ClientOp.SET_STATE, { state = tbl })
+			self._player_state = tbl
+			return
+		end
 		local topic = self._mqtt:lobby_topic(self.code, 'players/' .. self.player_id .. '/state')
 		self._mqtt:publish(topic, MPAPI.json_encode(tbl), 1, true)
 		self._player_state = tbl
@@ -114,6 +129,25 @@ L.create_object = function(opts)
 
 	function lobby:leave()
 		if self._destroyed then
+			return
+		end
+		-- Nakama lobby: tear down once the server has dropped us. Local teardown
+		-- happens even if that failed; the server's grace period drops us then.
+		if self._nakama then
+			if self._leaving then
+				return
+			end
+			self._leaving = true
+			MPAPI.networking.nakama_lobby.leave(function(err)
+				if err then
+					MPAPI.sendWarnMessage('[nakama_lobby] leave failed: ' .. tostring(err))
+				end
+				L.cleanup(self)
+				self:_fire(MPAPI.LobbyEvent.DISCONNECTED)
+				if MPAPI._internal.on_lobby_disconnected then
+					MPAPI._internal.on_lobby_disconnected()
+				end
+			end)
 			return
 		end
 		-- Offline lobby: nothing to tell the server; tear down locally.
@@ -152,6 +186,9 @@ L.create_object = function(opts)
 	end
 
 	function lobby:action(action_type)
+		if self._nakama then
+			L.warn_nakama_unsupported('Lobby actions')
+		end
 		return MPAPI._internal.create_action_instance(self, action_type)
 	end
 
@@ -179,6 +216,10 @@ L.cleanup = function(lobby)
 		return
 	end
 	lobby._destroyed = true
+
+	if lobby._nakama then
+		MPAPI.networking.nakama_lobby.forget()
+	end
 
 	if lobby._mqtt and lobby.code then
 		lobby._mqtt:unsubscribe(lobby._mqtt:lobby_topic(lobby.code, 'events'))

@@ -114,6 +114,7 @@ end
 function connection:_handle_auth_success(data)
 	self.jwt_token = data.token
 	self.player_id = data.player and data.player.id or nil
+	self._check_nakama_lobby = true
 	self.is_temp = data.player and data.player.isTemp or false
 
 	if data.player then
@@ -332,6 +333,22 @@ function connection:decline_tos()
 	set_state(self, STATES.DISCONNECTED)
 end
 
+-- A seat in a Nakama lobby (config use_nakama_lobbies) survives a game
+-- restart the same way an MQTT lobby membership does; lobby_current finds it,
+-- and it goes out as a second CONNECTED with reconnected_lobby, like the
+-- API's lobby_data. Once per login, and not while already in a lobby.
+function connection:_check_nakama_lobby_seat()
+	local lobby = MPAPI._internal.lobby
+	if not lobby or not lobby.nakama_enabled or not lobby.nakama_enabled() or lobby.current then
+		return
+	end
+	lobby.nakama_check_current(function(lobby_data)
+		if lobby_data and self.state == STATES.CONNECTED and not lobby.current then
+			fire(self, STATES.CONNECTED, { reconnected_lobby = lobby_data })
+		end
+	end)
+end
+
 function connection:_mqtt_connect_with_credentials()
 	set_state(self, STATES.CONNECTING)
 
@@ -350,6 +367,10 @@ function connection:_mqtt_connect_with_credentials()
 		if self.lobby_data then
 			fire(self, STATES.CONNECTED, { reconnected_lobby = self.lobby_data })
 			self.lobby_data = nil
+		end
+		if self._check_nakama_lobby then
+			self._check_nakama_lobby = nil
+			self:_check_nakama_lobby_seat()
 		end
 
 		if self.player_id then
@@ -631,6 +652,9 @@ function connection:disconnect()
 	end
 
 	set_state(self, STATES.DISCONNECTED)
+	if MPAPI.networking.nakama_lobby then
+		MPAPI.networking.nakama_lobby.reset()
+	end
 	self.player_id = nil
 	self.jwt_token = nil
 	self.nakama_session = nil

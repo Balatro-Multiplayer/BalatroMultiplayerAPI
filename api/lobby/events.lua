@@ -1,5 +1,5 @@
--- Inbound lobby message handlers: decode an MQTT payload, update the lobby's
--- player/metadata state, and fire the corresponding lobby event.
+-- Inbound lobby message handlers: update the lobby's player/metadata state
+-- from a message and fire the corresponding lobby event.
 MPAPI._internal.lobby = MPAPI._internal.lobby or {}
 local L = MPAPI._internal.lobby
 
@@ -93,13 +93,13 @@ local EVENT_HANDLERS = {
 	[MPAPI.LobbyEvent.LOBBY_CLOSED] = on_lobby_closed,
 }
 
-L.handle_event = function(lobby, payload)
-	if lobby._destroyed then
-		return
-	end
+-- apply_*: update the lobby from an already-decoded message and fire the
+-- matching lobby events. Shared by both transports: the MQTT handle_*
+-- wrappers below decode a topic payload first, api/lobby/nakama.lua feeds
+-- decoded match data straight in.
 
-	local ok, data = pcall(MPAPI.json_decode, payload)
-	if not ok or not data or not data.type then
+L.apply_event = function(lobby, data)
+	if lobby._destroyed or type(data) ~= 'table' or not data.type then
 		return
 	end
 
@@ -109,13 +109,8 @@ L.handle_event = function(lobby, payload)
 	end
 end
 
-L.handle_metadata = function(lobby, payload)
-	if lobby._destroyed then
-		return
-	end
-
-	local ok, data = pcall(MPAPI.json_decode, payload)
-	if not ok or not data then
+L.apply_metadata = function(lobby, data)
+	if lobby._destroyed or type(data) ~= 'table' then
 		return
 	end
 
@@ -123,17 +118,70 @@ L.handle_metadata = function(lobby, payload)
 	lobby:_fire(MPAPI.LobbyEvent.METADATA_CHANGED, lobby._metadata)
 end
 
-L.handle_own_state = function(lobby, payload)
-	if lobby._destroyed then
-		return
-	end
-
-	local ok, data = pcall(MPAPI.json_decode, payload)
-	if not ok or not data then
+L.apply_own_state = function(lobby, data)
+	if lobby._destroyed or type(data) ~= 'table' then
 		return
 	end
 
 	lobby._player_state = data
+end
+
+-- info nil: the player is gone.
+L.apply_player_info = function(lobby, player_id, info)
+	if lobby._destroyed then
+		return
+	end
+
+	if not info then
+		if lobby._players[player_id] then
+			lobby._players[player_id] = nil
+			lobby:_fire(MPAPI.LobbyEvent.PLAYER_LEFT, player_id)
+		end
+		return
+	end
+
+	local is_new = not lobby._players[player_id]
+	lobby._players[player_id] = lobby._players[player_id] or {}
+	lobby._players[player_id].id = player_id
+	lobby._players[player_id].displayName = info.displayName
+	lobby._players[player_id].preferredJoker = info.preferredJoker
+	-- May be nil/absent (only present once that player has hit
+	-- POST /api/auth/preferences/mods post-connect) -- the Lobby Info
+	-- overlay's Mods tab treats absence as "no mod data available yet".
+	lobby._players[player_id].mods = info.mods
+
+	if is_new then
+		lobby:_fire(MPAPI.LobbyEvent.PLAYER_JOINED, player_id)
+	end
+	lobby:_fire(MPAPI.LobbyEvent.PLAYER_INFO, player_id, lobby._players[player_id])
+end
+
+local function decode(payload)
+	local ok, data = pcall(MPAPI.json_decode, payload)
+	if ok then
+		return data
+	end
+end
+
+L.handle_event = function(lobby, payload)
+	if lobby._destroyed then
+		return
+	end
+	L.apply_event(lobby, decode(payload))
+end
+
+L.handle_metadata = function(lobby, payload)
+	if lobby._destroyed then
+		return
+	end
+	L.apply_metadata(lobby, decode(payload))
+end
+
+L.handle_own_state = function(lobby, payload)
+	if lobby._destroyed then
+		return
+	end
+	L.apply_own_state(lobby, decode(payload))
 end
 
 L.handle_player_info = function(lobby, topic, payload)
@@ -147,30 +195,13 @@ L.handle_player_info = function(lobby, topic, payload)
 	end
 
 	if not payload or payload == '' then
-		if lobby._players[player_id] then
-			lobby._players[player_id] = nil
-			lobby:_fire(MPAPI.LobbyEvent.PLAYER_LEFT, player_id)
-		end
+		L.apply_player_info(lobby, player_id, nil)
 		return
 	end
 
-	local ok, data = pcall(MPAPI.json_decode, payload)
-	if not ok or not data then
+	local data = decode(payload)
+	if type(data) ~= 'table' then
 		return
 	end
-
-	local is_new = not lobby._players[player_id]
-	lobby._players[player_id] = lobby._players[player_id] or {}
-	lobby._players[player_id].id = player_id
-	lobby._players[player_id].displayName = data.displayName
-	lobby._players[player_id].preferredJoker = data.preferredJoker
-	-- May be nil/absent (only present once that player has hit
-	-- POST /api/auth/preferences/mods post-connect) -- the Lobby Info
-	-- overlay's Mods tab treats absence as "no mod data available yet".
-	lobby._players[player_id].mods = data.mods
-
-	if is_new then
-		lobby:_fire(MPAPI.LobbyEvent.PLAYER_JOINED, player_id)
-	end
-	lobby:_fire(MPAPI.LobbyEvent.PLAYER_INFO, player_id, lobby._players[player_id])
+	L.apply_player_info(lobby, player_id, data)
 end

@@ -159,6 +159,17 @@ end
 -- player_kicked broadcast back over lobby/{code}/events, same as any other
 -- lobby event.
 MPAPI._internal.kick_player = function(code, target_id, callback)
+	local lobby = MPAPI.get_current_lobby()
+	if lobby and lobby._nakama and lobby.code == code then
+		local NL = MPAPI.networking.nakama_lobby
+		if NL.send(NL.ClientOp.KICK, { playerId = target_id }) then
+			callback(nil, {})
+		else
+			callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected to the lobby'), nil)
+		end
+		return
+	end
+
 	local conn = require_connected(callback)
 	if not conn then
 		return

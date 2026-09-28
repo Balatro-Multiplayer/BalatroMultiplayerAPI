@@ -8,6 +8,9 @@ local join_lobby_callback
 
 MPAPI.create_lobby = function(mod_id, opts)
 	opts = opts or {}
+	if L.nakama_enabled() then
+		return L.nakama_create_lobby(mod_id, opts)
+	end
 	local conn = MPAPI.get_connection()
 	local mqtt = MPAPI.get_mqtt()
 
@@ -88,6 +91,9 @@ end
 
 MPAPI.join_lobby = function(mod_id, code, opts)
 	opts = opts or {}
+	if L.nakama_enabled() then
+		return L.nakama_join_lobby(mod_id, code)
+	end
 	local conn = MPAPI.get_connection()
 	local mqtt = MPAPI.get_mqtt()
 
@@ -122,7 +128,13 @@ MPAPI.get_current_lobby = function()
 	return L.current
 end
 
-MPAPI._internal.create_reconnected_lobby = function(lobby_data)
+-- on_ready(lobby) is only used for a Nakama lobby, whose state arrives
+-- after this returns.
+MPAPI._internal.create_reconnected_lobby = function(lobby_data, on_ready)
+	if lobby_data.nakama then
+		L.nakama_rejoin_lobby(lobby_data, on_ready)
+		return
+	end
 	local conn = MPAPI.get_connection()
 	local mqtt = MPAPI.get_mqtt()
 
