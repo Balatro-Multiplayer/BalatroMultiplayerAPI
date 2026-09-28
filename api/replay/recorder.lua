@@ -202,8 +202,15 @@ end
 -- (practice mode, headless tests) or no broadcaster registered for that mod
 -- (a consuming mod that hasn't wired transport up yet) -- local carbon/human
 -- logging is unaffected either way.
+--
+-- A server-refereed lobby (Nakama) sends the event to the server instead,
+-- which stores it with the finished game -- no mod broadcaster involved.
 function RLOG.broadcast_event(t, opcode, args)
 	local lobby = MPAPI.get_current_lobby()
+	if MPAPI.has_server_referee(lobby) then
+		MPAPI._internal.lobby.send_log_event(lobby, t, opcode, args)
+		return
+	end
 	local fn = lobby and RLOG._broadcasters[lobby.mod_id]
 	if fn then fn(t, opcode, args) end
 end

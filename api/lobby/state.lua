@@ -34,7 +34,7 @@ L.create_object = function(opts)
 		_nakama = opts.nakama or false,
 		-- Server-owned game state (Nakama lobbies): { ready = {id=true},
 		-- started = nil | { seed, stake, options } }. See api/action/builtin.lua.
-		_game = { ready = {}, started = nil },
+		_game = { ready = {}, started = nil, reported = {} },
 	}
 
 	function lobby:on(event_name, handler)
@@ -205,6 +205,23 @@ L.create_object = function(opts)
 
 	function lobby:is_game_started()
 		return self._game.started ~= nil
+	end
+
+	function lobby:report_result(placements, cb)
+		L.report_result(self, placements, cb)
+	end
+
+	function lobby:abandon_game(cb)
+		L.abandon_game(self, cb)
+	end
+
+	function lobby:restart_game(cb)
+		L.restart_game(self, cb)
+	end
+
+	-- See MPAPI.has_server_referee (api/action/builtin.lua).
+	function lobby:has_server_referee()
+		return MPAPI.has_server_referee(self)
 	end
 
 	return lobby

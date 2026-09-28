@@ -91,6 +91,10 @@ local EVENT_HANDLERS = {
 	[MPAPI.LobbyEvent.METADATA_CHANGED] = on_metadata_changed,
 	[MPAPI.LobbyEvent.HOST_CHANGED] = on_host_changed,
 	[MPAPI.LobbyEvent.LOBBY_CLOSED] = on_lobby_closed,
+	-- Nakama lobbies only (api/action/builtin.lua).
+	[MPAPI.LobbyEvent.GAME_ENDED] = function(lobby, data)
+		L.apply_game_ended(lobby, data.data)
+	end,
 }
 
 -- apply_*: update the lobby from an already-decoded message and fire the

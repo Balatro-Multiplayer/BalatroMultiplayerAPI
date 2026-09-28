@@ -5,7 +5,9 @@
 -- A prototype: the lobby itself (roster, player info, metadata, own state,
 -- host, kick, leave, disconnect/rejoin) is server-authoritative on Nakama.
 -- Actions are relayed through the match, or run by the server when
--- authoritative (api/action/builtin.lua); chat still only exists on MQTT.
+-- authoritative (api/action/builtin.lua): ready, start, results and replay
+-- capture, which the server stores with each finished game. Chat still only
+-- exists on MQTT.
 -- Roster ids are Nakama user ids, and lobby.player_id is ours.
 MPAPI._internal.lobby = MPAPI._internal.lobby or {}
 local L = MPAPI._internal.lobby
@@ -77,12 +79,27 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 			MPAPI.set_player_ready(lobby, id, true)
 		end
 	end
+	lobby._game.reported = {}
+	for _, id in ipairs(type(game.reported) == 'table' and game.reported or {}) do
+		lobby._game.reported[id] = true
+	end
 	if type(game.started) == 'table' then
 		if announce and not was_started then
 			L.apply_game_started(lobby, game.started)
 		else
-			lobby._game.started = { seed = game.started.seed, stake = game.started.stake, options = game.started.options }
+			lobby._game.started = {
+				run_id = game.started.runId,
+				seed = game.started.seed,
+				stake = game.started.stake,
+				options = game.started.options,
+				players = game.started.players,
+			}
 		end
+	elseif was_started and announce then
+		-- It ended while we were away; the result went out without us.
+		L.apply_game_ended(lobby, { status = 'unknown', placements = {} })
+	else
+		lobby._game.started = nil
 	end
 
 	if not announce then

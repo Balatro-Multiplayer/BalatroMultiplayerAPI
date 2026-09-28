@@ -10,9 +10,14 @@ MPAPI.LobbyEvent = {
 	-- Client-side only, never a server LobbyEvent.type: set by MPAPI.set_player_ready
 	-- (api/lobby/ready.lua), called by any gamemode's own ready-broadcast handler.
 	PLAYER_READY_CHANGED = 'player_ready_changed',
-	-- Client-side only: the server started the game (mpapi_start_game, Nakama
-	-- lobbies). Args: { seed, stake, options }. See api/action/builtin.lua.
+	-- Client-side only: the server started (or restarted) the game
+	-- (mpapi_start_game / mpapi_restart_game, Nakama lobbies). Args: { run_id,
+	-- seed, stake, options, players, restarted? }. See api/action/builtin.lua.
 	GAME_STARTED = 'game_started',
+	-- The server ended the game: every result is in, the result clock ran
+	-- out, or the host abandoned it (Nakama lobbies). Also a server event
+	-- type. Args: { run_id, status, placements }.
+	GAME_ENDED = 'game_ended',
 	PLAYER_JOINED = 'player_joined',
 	PLAYER_LEFT = 'player_left',
 	PLAYER_KICKED = 'player_kicked',
