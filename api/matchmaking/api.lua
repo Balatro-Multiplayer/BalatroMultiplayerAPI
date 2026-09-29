@@ -168,12 +168,42 @@ MPAPI.matchmaking.queue_group = function(opts)
 	return MPAPI.matchmaking.queue(opts)
 end
 
+-- With Nakama lobbies on, ratings live on the Nakama server (BalatroMultiplayerServer
+-- nakama/src/rating) and are read through its RPCs, handed back in the API's shapes.
+-- Its boards are keyed by the bare mode, so a queue's 'ranked:' prefix is dropped.
+local function nakama_ratings_on()
+	local L = MPAPI._internal.lobby
+	return L ~= nil and L.nakama_enabled ~= nil and L.nakama_enabled()
+end
+
+local function nakama_mode(game_mode)
+	return (tostring(game_mode):gsub('^ranked:', ''))
+end
+
+local function nakama_rating_rpc(id, mod_id, game_mode, callback)
+	MPAPI.networking.nakama_lobby.rpc(id, { modId = mod_id, mode = nakama_mode(game_mode) }, function(err, data)
+		if err then
+			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)), nil)
+			return
+		end
+		callback(nil, data)
+	end)
+end
+
 -- Fetch a rating for a given mode. season may be nil to use the active
 -- season. player_id may be nil to fetch the local player's own rating
 -- (ratings are already fully public via get_leaderboard's entries array, so
 -- fetching an arbitrary other player's -- e.g. a current lobby opponent's --
 -- is just as unrestricted server-side).
 MPAPI.matchmaking.get_rating = function(mod_id, game_mode, season, player_id, callback)
+	if nakama_ratings_on() then
+		if player_id ~= nil then
+			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, "another player's rating isn't available from Nakama yet"), nil)
+			return
+		end
+		nakama_rating_rpc('rating_get', mod_id, game_mode, callback)
+		return
+	end
 	local conn = MPAPI.get_connection()
 	if not conn then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
@@ -184,6 +214,35 @@ end
 
 -- Fetch leaderboard for a given mode. season may be nil to use the active season.
 MPAPI.matchmaking.get_leaderboard = function(mod_id, game_mode, season, opts, callback)
+	if nakama_ratings_on() then
+		-- Same shape as the API's: entries sorted by rank, plus the caller's own entry.
+		nakama_rating_rpc('leaderboard_get', mod_id, game_mode, function(err, data)
+			if err then
+				callback(err, nil)
+				return
+			end
+			local own = MPAPI.get_replay_player_id()
+			local entries, player_entry = {}, nil
+			for _, e in ipairs(data.entries or {}) do
+				local entry = {
+					rank = e.rank,
+					playerId = e.playerId,
+					displayName = e.name,
+					rating = e.rating,
+					wins = e.wins,
+					losses = e.losses,
+					gamesPlayed = e.gamesPlayed,
+					seasonBest = e.seasonBest,
+				}
+				entries[#entries + 1] = entry
+				if e.playerId == own then
+					player_entry = entry
+				end
+			end
+			callback(nil, { entries = entries, playerEntry = player_entry })
+		end)
+		return
+	end
 	local conn = MPAPI.get_connection()
 	if not conn then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)

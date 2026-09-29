@@ -222,6 +222,18 @@ MPAPI.get_nakama_session = function()
 	return C.connection and C.connection.nakama_session or nil
 end
 
+-- The id this player's replay logs and lobby rosters are keyed by: the Nakama
+-- user id when Nakama lobbies are on, else the API player id (which differs).
+MPAPI.get_replay_player_id = function()
+	local lobby = MPAPI._internal.lobby
+	local session = MPAPI.get_nakama_session()
+	if session and lobby and lobby.nakama_enabled and lobby.nakama_enabled() then
+		return session.user_id
+	end
+	local conn = C.connection
+	return conn and conn.player_id or nil
+end
+
 MPAPI.get_last_opts = function()
 	return C.last_opts
 end

@@ -141,6 +141,24 @@ end
 -- progress right now. callback(err, data) where data is
 -- {active = {runId, lobbyCode, modId} | nil}.
 MPAPI.replay.get_active_run = function(callback)
+	if on_nakama() then
+		nakama_rpc('run_active', {}, function(err, data)
+			if err then
+				callback(err, nil)
+				return
+			end
+			local active = data and data.active
+			callback(nil, {
+				active = active and {
+					runId = active.runId,
+					lobbyCode = active.code,
+					modId = active.modId,
+					events = active.events or {},
+				} or nil,
+			})
+		end)
+		return
+	end
 	local conn = MPAPI.get_connection()
 	if not conn then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
