@@ -50,6 +50,15 @@ local function make_publish_fn(lobby)
 			MPAPI.chat.addMessage(localize('k_chat_client_disabled'), COLOUR_SYSTEM)
 			return
 		end
+		if lobby._nakama then
+			-- The server moderates it and sends it back to everyone, us included.
+			MPAPI.networking.nakama_lobby.rpc('chat_send', { message = text }, function(err, _)
+				if err then
+					MPAPI.chat.addMessage('[!] ' .. tostring(err), COLOUR_SYSTEM)
+				end
+			end)
+			return
+		end
 		MPAPI._internal.send_chat_message(lobby.code, text, function(err, _)
 			if err then
 				MPAPI.chat.addMessage('[!] ' .. tostring(err), COLOUR_SYSTEM)
@@ -58,30 +67,40 @@ local function make_publish_fn(lobby)
 	end
 end
 
+-- Shows one chat line from `sender_id` (a muted sender's is dropped). Both
+-- transports end here: MQTT's chat topic and a Nakama lobby's CHAT op.
+function MPAPI.chat.on_message(lobby, sender_id, display_name, message)
+	-- Checked before anything else, per the design doc: a muted sender's
+	-- message is silently dropped.
+	if MPAPI.connection_state.mute_list[sender_id] then
+		return
+	end
+	if type(message) ~= 'string' then
+		return
+	end
+	local name = display_name or sender_id
+	local colour = (sender_id == lobby.player_id) and COLOUR_OWN or COLOUR_INCOMING
+	MPAPI.chat.addMessage(name .. ': ' .. message, colour)
+end
+
 local function subscribe_chat(lobby)
+	-- A Nakama lobby's chat arrives as ops on its match, not on a topic.
+	if lobby._nakama then
+		return
+	end
 	_chat_topic = lobby._mqtt:lobby_topic(lobby.code, 'chat/+')
 	lobby._mqtt:subscribe(_chat_topic, 1, function(topic, payload)
 		local sender_id = topic:match('/chat/([^/]+)$')
-
-		-- Checked before anything else, per the design doc: a muted sender's
-		-- message is silently dropped, not even parsed.
-		if MPAPI.connection_state.mute_list[sender_id] then
-			return
-		end
-
 		local ok, data = pcall(MPAPI.json_decode, payload)
-		if not ok or type(data) ~= 'table' or type(data.message) ~= 'string' then
+		if not ok or type(data) ~= 'table' then
 			return
 		end
-
-		local name = data.displayName or sender_id
-		local colour = (sender_id == lobby.player_id) and COLOUR_OWN or COLOUR_INCOMING
-		MPAPI.chat.addMessage(name .. ': ' .. data.message, colour)
+		MPAPI.chat.on_message(lobby, sender_id, data.displayName, data.message)
 	end)
 end
 
 local function unsubscribe_chat()
-	if _chat_topic and _current_lobby then
+	if _chat_topic and _current_lobby and _current_lobby._mqtt then
 		_current_lobby._mqtt:unsubscribe(_chat_topic)
 	end
 	_chat_topic = nil

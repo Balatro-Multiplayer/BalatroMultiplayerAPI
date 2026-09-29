@@ -19,6 +19,7 @@ NL.ServerOp = {
 	ERROR = 104,
 	ACTION = 105,
 	ACTION_REJECTED = 106,
+	CHAT = 107,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'

@@ -7,7 +7,8 @@
 -- Actions are relayed through the match, or run by the server when
 -- authoritative (api/action/builtin.lua): ready, start, results and replay
 -- capture, which the server stores with each finished game. Matchmaker groups
--- land in these lobbies too (api/matchmaking). Chat still only exists on MQTT.
+-- land in these lobbies too (api/matchmaking), and chat is a server RPC that
+-- comes back as a CHAT op (BalatroMultiplayerServer nakama/src/chat).
 -- Roster ids are Nakama user ids, and lobby.player_id is ours.
 MPAPI._internal.lobby = MPAPI._internal.lobby or {}
 local L = MPAPI._internal.lobby
@@ -153,13 +154,35 @@ local function on_data(lobby, on_ready, op, data)
 		})
 	elseif op == ServerOp.ACTION_REJECTED then
 		L.reject_action(lobby, data)
+	elseif op == ServerOp.CHAT then
+		if type(data.senderId) == 'string' then
+			MPAPI.chat.on_message(lobby, data.senderId, data.displayName, data.message)
+		end
 	elseif op == ServerOp.ERROR then
 		fail(lobby, data.message or 'Lobby error')
 	end
 end
 
+-- The server only carries chat for accounts that have turned it on there; an
+-- account the API has cleared for chat says so once per lobby.
+local function start_chat(lobby)
+	if not MPAPI.connection_state.chat_enabled then
+		MPAPI.chat.init(lobby)
+		return
+	end
+	NL().rpc('chat_enable', {}, function(err)
+		if err then
+			MPAPI.sendWarnMessage('[nakama_lobby] chat_enable failed: ' .. tostring(err))
+		end
+		if not lobby._destroyed then
+			MPAPI.chat.init(lobby)
+		end
+	end)
+end
+
 local function connected(lobby)
 	lobby:_fire(MPAPI.LobbyEvent.CONNECTED)
+	start_chat(lobby)
 	if MPAPI._internal.on_lobby_connected then
 		MPAPI._internal.on_lobby_connected(lobby)
 	end

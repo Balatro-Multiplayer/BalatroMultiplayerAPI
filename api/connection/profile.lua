@@ -103,9 +103,27 @@ end
 -- Optimistic local update (matches set_preferred_joker/enable_chat's pattern):
 -- on success, apply the change to conn.mute_list/MPAPI.connection_state.mute_list
 -- directly from the server's returned mutedPlayerIds, rather than re-fetching.
+-- A Nakama lobby's roster ids are Nakama user ids, which the API's mute
+-- endpoints don't know: there a mute lasts for the session, kept locally.
+local function set_local_mute(conn, target_id, muted, callback)
+	conn.mute_list = conn.mute_list or {}
+	conn.mute_list[target_id] = muted or nil
+	MPAPI.connection_state.mute_list = conn.mute_list
+	callback(nil, { mutedPlayerIds = conn.mute_list })
+end
+
+local function in_nakama_lobby()
+	local lobby = MPAPI.get_current_lobby()
+	return lobby ~= nil and lobby._nakama == true
+end
+
 MPAPI._internal.mute_player = function(target_id, callback)
 	local conn = require_connected(callback)
 	if not conn then
+		return
+	end
+	if in_nakama_lobby() then
+		set_local_mute(conn, target_id, true, callback)
 		return
 	end
 
@@ -126,6 +144,10 @@ end
 MPAPI._internal.unmute_player = function(target_id, callback)
 	local conn = require_connected(callback)
 	if not conn then
+		return
+	end
+	if in_nakama_lobby() then
+		set_local_mute(conn, target_id, false, callback)
 		return
 	end
 
