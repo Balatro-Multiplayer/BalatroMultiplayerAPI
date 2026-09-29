@@ -6,8 +6,8 @@
 -- host, kick, leave, disconnect/rejoin) is server-authoritative on Nakama.
 -- Actions are relayed through the match, or run by the server when
 -- authoritative (api/action/builtin.lua): ready, start, results and replay
--- capture, which the server stores with each finished game. Chat still only
--- exists on MQTT.
+-- capture, which the server stores with each finished game. Matchmaker groups
+-- land in these lobbies too (api/matchmaking). Chat still only exists on MQTT.
 -- Roster ids are Nakama user ids, and lobby.player_id is ours.
 MPAPI._internal.lobby = MPAPI._internal.lobby or {}
 local L = MPAPI._internal.lobby
@@ -251,6 +251,18 @@ L.nakama_join_lobby = function(mod_id, code)
 		lobby.code = data.code
 		attach(lobby, data.matchId, connected)
 	end)
+	return lobby
+end
+
+-- Joins the lobby the matchmaker made (no code lookup: the ticket's match id is
+-- all there is; the code arrives with the first snapshot).
+L.nakama_join_match = function(mod_id, match_id)
+	local conn = connected_conn('join_match')
+	if not conn then
+		return nil
+	end
+	local lobby = new_lobby(conn, mod_id, {})
+	attach(lobby, match_id, connected)
 	return lobby
 end
 

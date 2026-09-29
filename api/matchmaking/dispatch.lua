@@ -56,6 +56,54 @@ local function on_match_found(mm, msg)
 	end
 end
 
+-- A Nakama matchmaker group was found for `handle`: the lobby already exists
+-- on the server, so join it by match id.
+function MPAPI._internal.mm.on_nakama_matched(handle, match_id)
+	local mm = MPAPI._internal.mm
+	if handle._left then
+		return
+	end
+	handle.match_id = match_id
+	for _, h in ipairs(mm.handles) do
+		if h ~= handle then
+			MPAPI._internal.mm.leave_handle_quietly(h)
+		end
+	end
+	mm.handles = { handle }
+	handle:_fire(MPAPI.MatchmakingEvent.MATCH_FOUND, { matchId = match_id, modId = handle.mod_id, gameMode = handle.game_mode })
+
+	local lobby = MPAPI._internal.lobby.nakama_join_match(handle.mod_id, match_id)
+	if not lobby then
+		handle._lobby_ready = true
+		handle:_fire(MPAPI.MatchmakingEvent.ERROR, 'could not join the matched lobby')
+		return
+	end
+	lobby:on(MPAPI.LobbyEvent.CONNECTED, function()
+		handle._lobby_ready = true
+		handle:_fire(MPAPI.MatchmakingEvent.LOBBY_READY, lobby)
+	end)
+	lobby:on(MPAPI.LobbyEvent.ERROR, function(err)
+		handle._lobby_ready = true
+		handle:_fire(MPAPI.MatchmakingEvent.ERROR, 'lobby join failed: ' .. tostring(err))
+	end)
+	-- Nakama has no separate resolve message: the lobby's result is it.
+	lobby:on(MPAPI.LobbyEvent.GAME_ENDED, function()
+		if handle.match_id == match_id then
+			handle:_fire(MPAPI.MatchmakingEvent.MATCH_RESOLVED, nil)
+			mm.remove_handle(handle)
+		end
+	end)
+end
+
+-- Another queue's ticket, dropped because this one matched first.
+function MPAPI._internal.mm.leave_handle_quietly(handle)
+	handle._left = true
+	if handle._nakama_ticket then
+		MPAPI.networking.nakama_lobby.unqueue(handle._nakama_ticket)
+	end
+	handle:_fire(MPAPI.MatchmakingEvent.LEFT, nil)
+end
+
 local function on_match_reconnect(mm, msg)
 	local handle = mm.find_handle_by_match_id(msg.matchId)
 	if not handle then

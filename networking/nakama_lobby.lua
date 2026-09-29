@@ -172,6 +172,20 @@ end
 
 local schedule_rejoin
 
+-- Matchmaker tickets this client has open: ticket -> on_matched(match_id).
+local tickets = {}
+
+local function on_matchmaker_matched(message)
+	local matched = message.matchmaker_matched
+	local ticket = matched and matched.ticket
+	local fn = ticket and tickets[ticket]
+	if not fn then
+		return
+	end
+	tickets[ticket] = nil
+	fn(matched.match_id)
+end
+
 local function on_match_data(message)
 	local data_msg = message.match_data
 	if not match or not data_msg or data_msg.match_id ~= match.id then
@@ -225,6 +239,7 @@ local function with_socket(cb)
 		end
 		local s = nakama_client().create_socket()
 		s.on_match_data(on_match_data)
+		s.on_matchmaker_matched(on_matchmaker_matched)
 		s.on_error(function(message)
 			MPAPI.sendWarnMessage('[nakama_lobby] socket error: ' .. error_message(message, '?'))
 		end)
@@ -405,6 +420,66 @@ function NL.leave_current(cb)
 end
 
 ----------------------------------------------------------------------
+-- Matchmaker
+----------------------------------------------------------------------
+
+-- Opens a matchmaker ticket. `ticket` = { min_count, max_count, query,
+-- strings = {..}, numbers = {..} }. cb(err, ticket_id) runs once the server
+-- has taken it; on_matched(match_id) runs when a group is found and its
+-- lobby made (join it with NL.join).
+function NL.queue(ticket, on_matched, cb)
+	with_socket(function(ok, err)
+		if not ok then
+			cb(err or 'Could not open the Nakama socket')
+			return
+		end
+		socket.matchmaker_add(
+			ticket.min_count,
+			ticket.max_count,
+			ticket.query,
+			ticket.strings,
+			ticket.numbers,
+			nil,
+			function(result)
+				local id = result and result.matchmaker_ticket and result.matchmaker_ticket.ticket
+				if result and result.error or not id then
+					cb(error_message(result, 'Could not join the queue'))
+					return
+				end
+				tickets[id] = on_matched
+				cb(nil, id)
+			end
+		)
+	end)
+end
+
+-- Withdraws a ticket. Quietly does nothing for one that already matched.
+function NL.unqueue(ticket_id, cb)
+	tickets[ticket_id] = nil
+	if not (socket and socket_open) then
+		if cb then
+			cb()
+		end
+		return
+	end
+	socket.matchmaker_remove(ticket_id, function(result)
+		if cb then
+			cb(result and result.error and error_message(result, 'Could not leave the queue') or nil)
+		end
+	end)
+end
+
+function NL.unqueue_all()
+	local ids = {}
+	for id in pairs(tickets) do
+		ids[#ids + 1] = id
+	end
+	for _, id in ipairs(ids) do
+		NL.unqueue(id)
+	end
+end
+
+----------------------------------------------------------------------
 -- Pump / teardown
 ----------------------------------------------------------------------
 
@@ -436,6 +511,7 @@ end
 -- (connection teardown; the server treats it as a disconnect).
 function NL.reset()
 	match = nil
+	tickets = {}
 	timers = {}
 	flush_waiters(false, 'Connection closed')
 	local s = socket

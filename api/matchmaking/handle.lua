@@ -56,6 +56,11 @@ MPAPI.matchmaking._make_handle = function(mod_id, game_mode)
 			return
 		end
 
+		if self._nakama_ticket then
+			MPAPI.networking.nakama_lobby.unqueue(self._nakama_ticket)
+			return
+		end
+
 		conn.api:leave_matchmaking_queue(conn.jwt_token, {
 			modId = self.mod_id,
 			gameMode = self.game_mode,
@@ -67,6 +72,12 @@ MPAPI.matchmaking._make_handle = function(mod_id, game_mode)
 	end
 
 	function handle:report_result(placements, callback)
+		-- A Nakama match is refereed by its lobby (lobby:report_result); nothing
+		-- goes to the API.
+		if self._nakama_ticket then
+			if callback then callback(nil, nil) end
+			return
+		end
 		if not self.match_id then
 			if callback then callback(MPAPI.make_error(MPAPI.ErrorKind.NO_ACTIVE_MATCH, 'No active match'), nil) end
 			return
@@ -84,6 +95,11 @@ MPAPI.matchmaking._make_handle = function(mod_id, game_mode)
 	-- Signal that the run has started (host only). The server stamps the start time once,
 	-- forming the basis for server-measured timing leaderboards (e.g. fastest completion).
 	function handle:mark_started(callback)
+		-- The Nakama server stamps the start time itself.
+		if self._nakama_ticket then
+			if callback then callback(nil, nil) end
+			return
+		end
 		if not self.match_id then
 			if callback then callback(MPAPI.make_error(MPAPI.ErrorKind.NO_ACTIVE_MATCH, 'No active match'), nil) end
 			return

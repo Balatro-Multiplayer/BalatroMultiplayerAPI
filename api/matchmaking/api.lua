@@ -1,5 +1,75 @@
 MPAPI.matchmaking = MPAPI.matchmaking or {}
 
+-- With Nakama lobbies on, queues are Nakama matchmaker tickets (the server
+-- makes the lobby, see BalatroMultiplayerServer nakama/src/matchmaking).
+local function on_nakama()
+	local L = MPAPI._internal.lobby
+	return L ~= nil and L.nakama_enabled ~= nil and L.nakama_enabled()
+end
+
+-- How far apart two ranked ratings may be to be matched.
+MPAPI.matchmaking.NAKAMA_RATING_SPREAD = 300
+local DEFAULT_RATING = 600
+
+-- The matchmaker ticket for a queue attempt. Pure. A ticket only matches
+-- others asking for the same mod, mode and kind; a ranked one also only
+-- ones rated within the spread of `rating`. The mode is the bare board name
+-- (a 'ranked:' key prefix dropped), like the rating RPCs.
+MPAPI.matchmaking._nakama_ticket = function(opts, ranked, rating)
+	local mode = tostring(opts.game_mode):gsub('^ranked:', '')
+	local kind = ranked and 'ranked' or 'casual'
+	local query = string.format('+properties.modId:%s +properties.mode:%s +properties.kind:%s', opts.mod_id, mode, kind)
+	local numbers
+	if ranked then
+		local spread = MPAPI.matchmaking.NAKAMA_RATING_SPREAD
+		rating = rating or DEFAULT_RATING
+		query = query
+			.. string.format(' +properties.rating:>=%d +properties.rating:<=%d', rating - spread, rating + spread)
+		numbers = { rating = rating }
+	end
+	return {
+		min_count = opts.min_players or 2,
+		max_count = opts.max_players or opts.min_players or 2,
+		query = query,
+		strings = { modId = opts.mod_id, mode = mode, kind = kind },
+		numbers = numbers,
+	}
+end
+
+local function nakama_queue(opts, handle, ranked)
+	local NL = MPAPI.networking.nakama_lobby
+	local function open(rating)
+		if handle._left then
+			return
+		end
+		NL.queue(MPAPI.matchmaking._nakama_ticket(opts, ranked, rating), function(match_id)
+			MPAPI._internal.mm.on_nakama_matched(handle, match_id)
+		end, function(err, ticket)
+			if err then
+				MPAPI._internal.mm.remove_handle(handle)
+				handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)))
+				return
+			end
+			if handle._left then
+				NL.unqueue(ticket)
+				return
+			end
+			handle._nakama_ticket = ticket
+			local mm = MPAPI._internal.mm
+			if mm.queue_timer then mm.queue_timer.start() end
+			handle:_fire(MPAPI.MatchmakingEvent.QUEUED, nil)
+		end)
+	end
+	if not ranked then
+		open(nil)
+		return
+	end
+	-- Ranked tickets carry the player's rating; an unreadable one queues at the default.
+	MPAPI.matchmaking.get_rating(opts.mod_id, opts.game_mode, nil, nil, function(err, data)
+		open(not err and data and tonumber(data.rating) or nil)
+	end)
+end
+
 -- Queue for a single mode. Returns a handle, or nil if not connected.
 --
 -- opts.ranked (or opts.lobby_type == MPAPI.LobbyType.RANKED) is an explicit
@@ -80,10 +150,16 @@ MPAPI.matchmaking.queue = function(opts)
 
 	MPAPI.sendDebugMessage('[mmdbg] matchmaking.queue mod=' .. tostring(opts.mod_id) .. ' gameMode=' .. tostring(opts.game_mode) .. ' min=' .. tostring(opts.min_players) .. ' max=' .. tostring(opts.max_players))
 
-	mm.ensure_subscribed()
-
 	local handle = MPAPI.matchmaking._make_handle(opts.mod_id, opts.game_mode)
 	mm.handles[#mm.handles + 1] = handle
+
+	if on_nakama() then
+		handle._nakama = true
+		nakama_queue(opts, handle, wants_ranked and true or false)
+		return handle
+	end
+
+	mm.ensure_subscribed()
 
 	conn.api:queue_matchmaking(conn.jwt_token, {
 		modId = opts.mod_id,
@@ -142,6 +218,11 @@ MPAPI.matchmaking.leave_all = function()
 		h._left = true
 	end
 
+	if on_nakama() then
+		MPAPI.networking.nakama_lobby.unqueue_all()
+		return
+	end
+
 	-- Tell server to leave all queues
 	conn.api:leave_all_matchmaking_queues(conn.jwt_token, function(err)
 		if err then
@@ -180,8 +261,9 @@ local function nakama_mode(game_mode)
 	return (tostring(game_mode):gsub('^ranked:', ''))
 end
 
-local function nakama_rating_rpc(id, mod_id, game_mode, callback)
-	MPAPI.networking.nakama_lobby.rpc(id, { modId = mod_id, mode = nakama_mode(game_mode) }, function(err, data)
+local function nakama_rating_rpc(id, mod_id, game_mode, callback, player_id)
+	local body = { modId = mod_id, mode = nakama_mode(game_mode), playerId = player_id }
+	MPAPI.networking.nakama_lobby.rpc(id, body, function(err, data)
 		if err then
 			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)), nil)
 			return
@@ -197,11 +279,8 @@ end
 -- is just as unrestricted server-side).
 MPAPI.matchmaking.get_rating = function(mod_id, game_mode, season, player_id, callback)
 	if nakama_ratings_on() then
-		if player_id ~= nil then
-			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, "another player's rating isn't available from Nakama yet"), nil)
-			return
-		end
-		nakama_rating_rpc('rating_get', mod_id, game_mode, callback)
+		-- player_id is a lobby roster id, which on Nakama is the Nakama user id.
+		nakama_rating_rpc('rating_get', mod_id, game_mode, callback, player_id)
 		return
 	end
 	local conn = MPAPI.get_connection()
