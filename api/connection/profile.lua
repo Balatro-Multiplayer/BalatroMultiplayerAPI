@@ -234,6 +234,17 @@ MPAPI._internal.report_player = function(code, target_id, report_type, message, 
 		return
 	end
 
+	-- A Nakama lobby's reports go through Nakama (moderation/report.ts), which
+	-- adds the lobby's evidence and hands them to the API.
+	if nakama_only() or in_nakama_lobby() then
+		nakama_rpc(conn, 'report_submit', {
+			reportedUserId = target_id,
+			type = report_type,
+			message = message,
+		}, callback)
+		return
+	end
+
 	conn.api:report_player(conn.jwt_token, code, target_id, report_type, message, callback)
 end
 
