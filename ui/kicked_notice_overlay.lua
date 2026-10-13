@@ -3,6 +3,8 @@
 -- returned to the menu. There's no existing player-facing toast in MPAPI
 -- (chat's addMessage only writes to the debug console), so this is a small
 -- modal twin of ui/chat_enable_overlay.lua.
+local _state = { body_key = 'k_player_kicked_you' }
+
 local create_UIBox_kicked_notice_overlay = function()
 	local contents = {
 		{
@@ -20,7 +22,7 @@ local create_UIBox_kicked_notice_overlay = function()
 					n = G.UIT.R,
 					config = { align = 'cm', padding = 0.06 },
 					nodes = {
-						{ n = G.UIT.T, config = { text = localize('k_player_kicked_you'), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
+						{ n = G.UIT.T, config = { text = localize(_state.body_key), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
 					},
 				},
 				{ n = G.UIT.R, config = { minh = 0.2 } },
@@ -57,6 +59,9 @@ end
 
 MPAPI.kicked_notice_overlay = MPAPI.ui_element(create_UIBox_kicked_notice_overlay)
 
-function MPAPI.show_kicked_notice()
+-- kick: the player_kicked event's data ({kickedBy, reason}); a server kick
+-- (webadmin) reads as a moderator's.
+function MPAPI.show_kicked_notice(kick)
+	_state.body_key = kick and kick.kickedBy == 'server' and 'k_moderator_kicked_you' or 'k_player_kicked_you'
 	MPAPI.kicked_notice_overlay:as_overlay()
 end

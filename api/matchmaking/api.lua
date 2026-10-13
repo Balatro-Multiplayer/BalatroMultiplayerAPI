@@ -59,14 +59,19 @@ local function nakama_queue(opts, handle, ranked)
 			handle:_fire(MPAPI.MatchmakingEvent.QUEUED, nil)
 		end)
 	end
-	if not ranked then
-		open(nil)
-		return
+	local function start()
+		if not ranked then
+			open(nil)
+			return
+		end
+		-- Ranked tickets carry the player's rating; an unreadable one queues at the default.
+		MPAPI.matchmaking.get_rating(opts.mod_id, opts.game_mode, nil, nil, function(err, data)
+			open(not err and data and tonumber(data.rating) or nil)
+		end)
 	end
-	-- Ranked tickets carry the player's rating; an unreadable one queues at the default.
-	MPAPI.matchmaking.get_rating(opts.mod_id, opts.game_mode, nil, nil, function(err, data)
-		open(not err and data and tonumber(data.rating) or nil)
-	end)
+	-- A refused match spends the ticket (api/connection/moderation.lua).
+	handle._nakama_requeue = start
+	start()
 end
 
 -- Queue for a single mode. Returns a handle, or nil if not connected.

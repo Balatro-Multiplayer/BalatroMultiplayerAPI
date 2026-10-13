@@ -63,6 +63,19 @@ function MPAPI._internal.mm.on_nakama_matched(handle, match_id)
 	if handle._left then
 		return
 	end
+	-- No match: the server refused the group (e.g. another player was banned
+	-- meanwhile, nakama/src/matchmaking/gate.ts), but the ticket is spent.
+	if not match_id then
+		handle._nakama_ticket = nil
+		if handle._nakama_requeue then
+			MPAPI.sendDebugMessage('[mmdbg] matched group refused by the server, queueing again')
+			handle._nakama_requeue()
+		else
+			mm.remove_handle(handle)
+			handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(MPAPI.ErrorKind.SERVER, 'match refused'))
+		end
+		return
+	end
 	handle.match_id = match_id
 	for _, h in ipairs(mm.handles) do
 		if h ~= handle then

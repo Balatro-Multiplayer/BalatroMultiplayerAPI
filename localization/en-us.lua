@@ -138,6 +138,14 @@ return {
 			k_kick_player = 'Kick Player',
 			k_kicked_title = 'Removed from Lobby',
 			k_player_kicked_you = 'The host removed you from the lobby.',
+			k_moderator_kicked_you = 'A moderator removed you from the lobby.',
+			-- Ban notice (Nakama: api/connection/moderation.lua)
+			k_banned_title = 'Account Banned',
+			k_queue_banned_title = 'Matchmaking Banned',
+			k_chat_banned_title = 'Chat Banned',
+			k_account_banned_body = 'Your account is banned',
+			k_queue_banned_body = 'You are banned from matchmaking',
+			k_chat_banned_body = 'You are banned from chat',
 			k_ok = 'OK',
 			-- Ranked queue cancelled overlay (post-queue-join ranked_readiness
 			-- challenge refused/failed - see api/matchmaking/dispatch.lua)

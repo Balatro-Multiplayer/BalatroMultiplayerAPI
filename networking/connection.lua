@@ -285,8 +285,7 @@ function connection:_try_nakama_auth()
 		end
 
 		if not session or session.error then
-			local message = session and (session.message or session.error) or 'no response'
-			set_state(self, STATES.DISCONNECTED, { error = 'Nakama auth failed: ' .. tostring(message) })
+			self:_nakama_auth_failed(session)
 			return
 		end
 
@@ -339,7 +338,7 @@ function connection:_nakama_session_init(session)
 			return
 		end
 		if err then
-			set_state(self, STATES.DISCONNECTED, { error = 'Nakama login rejected: ' .. tostring(err) })
+			self:_login_refused('Nakama login rejected: ', err)
 			return
 		end
 		data.token = session.token
@@ -352,7 +351,18 @@ function connection:_nakama_auth_failed(session)
 	if type(message) == 'table' then
 		message = message.message or 'error'
 	end
-	set_state(self, STATES.DISCONNECTED, { error = 'Nakama auth failed: ' .. tostring(message) })
+	self:_login_refused('Nakama auth failed: ', message)
+end
+
+-- A refused Nakama login. A banned account's refusal ("Account banned ...",
+-- see api/connection/moderation.lua) is shown to the player as a ban.
+function connection:_login_refused(prefix, message)
+	local moderation = MPAPI._internal.moderation
+	local ban = moderation and moderation.account_ban_message(message)
+	if ban and MPAPI.show_banned_notice then
+		MPAPI.show_banned_notice('k_banned_title', ban)
+	end
+	set_state(self, STATES.DISCONNECTED, { error = prefix .. tostring(message), banned = ban })
 end
 
 function connection:_try_nakama_only_auth()

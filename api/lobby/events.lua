@@ -62,8 +62,10 @@ local function on_player_kicked(lobby, data)
 		if MPAPI._internal.on_lobby_disconnected then
 			MPAPI._internal.on_lobby_disconnected()
 		end
-		if MPAPI.show_kicked_notice then
-			MPAPI.show_kicked_notice()
+		-- A ban's removal is explained by the ban notice instead.
+		local kick = type(data.data) == 'table' and data.data or nil
+		if MPAPI.show_kicked_notice and not (kick and kick.reason == 'banned') then
+			MPAPI.show_kicked_notice(kick)
 		end
 		return
 	end
