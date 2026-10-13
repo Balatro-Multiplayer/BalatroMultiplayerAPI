@@ -22,6 +22,7 @@ NL.ServerOp = {
 	CHAT = 107,
 	SPECTATE_SNAPSHOT = 108,
 	SPECTATE_EVENT = 109,
+	SERVER_RESTARTING = 110,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'
@@ -189,6 +190,9 @@ local schedule_rejoin
 
 -- Matchmaker tickets this client has open: ticket -> on_matched(match_id).
 local tickets = {}
+-- Tickets the server dropped with the socket (it keeps none across a
+-- disconnect), handed to MPAPI.matchmaking once a socket is open again.
+local lost_tickets = {}
 
 local function on_matchmaker_matched(message)
 	local matched = message.matchmaker_matched
@@ -239,7 +243,11 @@ local function on_socket_disconnect()
 	-- Nothing to rejoin: a spectator holds no seat, and the snapshot a
 	-- rewatch would get can't replay the events missed meanwhile.
 	stop_spectating('Connection lost')
-	if keep_open and not match then
+	for id in pairs(tickets) do
+		lost_tickets[#lost_tickets + 1] = id
+	end
+	tickets = {}
+	if (keep_open or #lost_tickets > 0) and not match then
 		reopen_socket()
 	end
 	if match and not match.lost_since then
@@ -300,6 +308,13 @@ local function with_socket(cb)
 				socket = nil
 			end
 			flush_waiters(socket_open, message)
+			if socket_open and #lost_tickets > 0 then
+				local lost = lost_tickets
+				lost_tickets = {}
+				if MPAPI.matchmaking and MPAPI.matchmaking._on_nakama_tickets_lost then
+					MPAPI.matchmaking._on_nakama_tickets_lost(lost)
+				end
+			end
 		end)
 	end)
 end
@@ -315,13 +330,14 @@ reopen_socket = function()
 	keep_open_attempt = keep_open_attempt + 1
 	local delay = RECONNECT_BACKOFF[math.min(keep_open_attempt, #RECONNECT_BACKOFF)]
 	after(delay, function()
-		if not keep_open or socket or match then
+		local wanted = keep_open or #lost_tickets > 0
+		if not wanted or socket or match then
 			return
 		end
 		with_socket(function(ok)
 			if ok then
 				keep_open_attempt = 0
-			elseif keep_open and not socket and not match then
+			elseif (keep_open or #lost_tickets > 0) and not socket and not match then
 				reopen_socket()
 			end
 		end)
@@ -395,8 +411,31 @@ local function lose(reason)
 	end
 end
 
+-- A refused rejoin may be a lobby the server brought back under a new match
+-- after a restart (its lobby/checkpoint.ts): lobby_current names the match
+-- the seat is in now. cb('moved') once `this` follows it, cb('wait') while
+-- the server is still bringing it back, else cb(nil).
+local function follow_seat(this, cb)
+	NL.rpc('lobby_current', {}, function(err, data)
+		if match ~= this then
+			return
+		end
+		if err then
+			cb('wait')
+		elseif data and data.resuming then
+			cb('wait')
+		elseif data and data.matchId and data.matchId ~= this.id then
+			this.id = data.matchId
+			cb('moved')
+		else
+			cb(nil)
+		end
+	end)
+end
+
 -- After a socket drop: reconnect and rejoin the same match. A refused join
--- (lobby closed, seat already given up) ends it; a transport failure retries.
+-- (lobby closed, seat already given up) ends it, unless the lobby moved to a
+-- new match over a server restart; a transport failure retries.
 schedule_rejoin = function()
 	local this = match
 	local delay = RECONNECT_BACKOFF[math.min(this.attempt, #RECONNECT_BACKOFF)]
@@ -416,12 +455,23 @@ schedule_rejoin = function()
 				end
 				return
 			end
-			if not retryable or love.timer.getTime() - this.lost_since > RECONNECT_GIVE_UP_SECONDS then
+			if love.timer.getTime() - this.lost_since > RECONNECT_GIVE_UP_SECONDS then
 				lose(err)
 				return
 			end
-			this.attempt = this.attempt + 1
-			schedule_rejoin()
+			if retryable then
+				this.attempt = this.attempt + 1
+				schedule_rejoin()
+				return
+			end
+			follow_seat(this, function(outcome)
+				if not outcome then
+					lose(err)
+					return
+				end
+				this.attempt = outcome == 'moved' and 1 or this.attempt + 1
+				schedule_rejoin()
+			end)
 		end)
 	end)
 end
@@ -632,6 +682,7 @@ function NL.reset()
 	match = nil
 	spectating = nil
 	tickets = {}
+	lost_tickets = {}
 	timers = {}
 	flush_waiters(false, 'Connection closed')
 	local s = socket

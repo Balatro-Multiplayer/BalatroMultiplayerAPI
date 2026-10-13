@@ -160,6 +160,12 @@ local function on_data(lobby, on_ready, op, data)
 		end
 	elseif op == ServerOp.ERROR then
 		fail(lobby, data.message or 'Lobby error')
+	elseif op == ServerOp.SERVER_RESTARTING then
+		-- The socket drops next; the rejoin finds the lobby again once the
+		-- server is back.
+		MPAPI.sendWarnMessage('[nakama_lobby] server restarting; rejoining ' .. tostring(lobby.code) .. ' when it is back')
+		lobby._server_restarting = true
+		lobby:_fire(MPAPI.LobbyEvent.SERVER_RESTARTING, { grace_seconds = data.graceSeconds })
 	end
 end
 
@@ -200,6 +206,7 @@ local function attach(lobby, match_id, on_ready)
 			MPAPI.sendDebugMessage('[nakama_lobby] socket dropped, rejoining ' .. tostring(lobby.code))
 		end,
 		rejoined = function()
+			lobby._server_restarting = nil
 			MPAPI.sendDebugMessage('[nakama_lobby] rejoined ' .. tostring(lobby.code))
 		end,
 		lost = function(reason)

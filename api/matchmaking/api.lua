@@ -35,6 +35,27 @@ MPAPI.matchmaking._nakama_ticket = function(opts, ranked, rating)
 	}
 end
 
+-- The server keeps no ticket across a dropped socket (a network blip, or a
+-- server restart): queue again, once a socket is open, for every handle whose
+-- ticket went with it.
+MPAPI.matchmaking._on_nakama_tickets_lost = function(lost)
+	local mm = MPAPI._internal.mm
+	if not mm then
+		return
+	end
+	local gone = {}
+	for _, id in ipairs(lost) do
+		gone[id] = true
+	end
+	for _, handle in ipairs(mm.handles) do
+		if handle._nakama_ticket and gone[handle._nakama_ticket] and not handle._left and handle._nakama_requeue then
+			handle._nakama_ticket = nil
+			MPAPI.sendDebugMessage('[matchmaking] ticket lost with the socket; queueing again')
+			handle._nakama_requeue()
+		end
+	end
+end
+
 local function nakama_queue(opts, handle, ranked)
 	local NL = MPAPI.networking.nakama_lobby
 	local function open(rating)
@@ -69,7 +90,8 @@ local function nakama_queue(opts, handle, ranked)
 			open(not err and data and tonumber(data.rating) or nil)
 		end)
 	end
-	-- A refused match spends the ticket (api/connection/moderation.lua).
+	-- A refused match spends the ticket (api/connection/moderation.lua), as
+	-- does a dropped socket (on_tickets_lost below).
 	handle._nakama_requeue = start
 	handle._nakama_ranked = ranked
 	start()

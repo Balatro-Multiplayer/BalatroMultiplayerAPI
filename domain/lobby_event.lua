@@ -18,6 +18,10 @@ MPAPI.LobbyEvent = {
 	-- out, or the host abandoned it (Nakama lobbies). Also a server event
 	-- type. Args: { run_id, status, placements }.
 	GAME_ENDED = 'game_ended',
+	-- Client-side only: the server is restarting (Nakama lobbies). The
+	-- connection drops next and the lobby is rejoined, under the same code,
+	-- once the server is back. Args: { grace_seconds }.
+	SERVER_RESTARTING = 'server_restarting',
 	PLAYER_JOINED = 'player_joined',
 	PLAYER_LEFT = 'player_left',
 	PLAYER_KICKED = 'player_kicked',
