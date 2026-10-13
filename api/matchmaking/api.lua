@@ -344,6 +344,17 @@ end
 -- MPAPI.matchmaking.create_queue_counts_poller (queue_counts_poller.lua)
 -- instead of calling this directly on a timer themselves.
 MPAPI.matchmaking.get_queue_counts = function(mod_id, callback)
+	-- Nakama queues are matchmaker tickets: the module counts them.
+	if on_nakama() then
+		MPAPI.networking.nakama_lobby.rpc('queue_counts', { modId = mod_id }, function(err, data)
+			if err then
+				callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)), nil)
+				return
+			end
+			callback(nil, data)
+		end)
+		return
+	end
 	local conn = MPAPI.get_connection()
 	if not conn then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
