@@ -22,6 +22,10 @@ MPAPI.LobbyEvent = {
 	-- connection drops next and the lobby is rejoined, under the same code,
 	-- once the server is back. Args: { grace_seconds }.
 	SERVER_RESTARTING = 'server_restarting',
+	-- Client-side only: this client rejoined a running game it had dropped out
+	-- of, and the server sent what the others logged meanwhile (Nakama
+	-- lobbies). Args: { { playerId, events = { {t, opcode, args}, ... } }, ... }.
+	REPLAY_TAIL = 'replay_tail',
 	PLAYER_JOINED = 'player_joined',
 	PLAYER_LEFT = 'player_left',
 	PLAYER_KICKED = 'player_kicked',

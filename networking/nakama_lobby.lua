@@ -23,6 +23,7 @@ NL.ServerOp = {
 	SPECTATE_SNAPSHOT = 108,
 	SPECTATE_EVENT = 109,
 	SERVER_RESTARTING = 110,
+	REPLAY_TAIL = 111,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'

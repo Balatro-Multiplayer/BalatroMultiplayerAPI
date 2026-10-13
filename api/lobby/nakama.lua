@@ -166,6 +166,10 @@ local function on_data(lobby, on_ready, op, data)
 		MPAPI.sendWarnMessage('[nakama_lobby] server restarting; rejoining ' .. tostring(lobby.code) .. ' when it is back')
 		lobby._server_restarting = true
 		lobby:_fire(MPAPI.LobbyEvent.SERVER_RESTARTING, { grace_seconds = data.graceSeconds })
+	elseif op == ServerOp.REPLAY_TAIL then
+		if type(data.tails) == 'table' then
+			lobby:_fire(MPAPI.LobbyEvent.REPLAY_TAIL, data.tails)
+		end
 	end
 end
 
