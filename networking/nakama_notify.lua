@@ -9,9 +9,8 @@ N.Code = {
 	ACCOUNT_UPDATED = 101,
 	BANNED = 102,
 	QUEUE_CANCELLED = 103,
-	CONFIG = 104,
+	-- 104 and 106 are retired (never sent); don't reuse them.
 	INTEGRITY = 105,
-	KICKED = 106,
 }
 
 local handlers = {} -- code -> { fn, ... }
