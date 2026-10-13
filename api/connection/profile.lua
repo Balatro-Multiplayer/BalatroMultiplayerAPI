@@ -47,6 +47,11 @@ MPAPI._internal.get_discord_link_url = function(callback)
 	if not conn then
 		return
 	end
+	-- The link finishes in the browser; Nakama then pushes ACCOUNT_UPDATED.
+	if nakama_only() then
+		nakama_rpc(conn, 'discord_link_start', {}, callback)
+		return
+	end
 	conn.api:get_discord_link_url(conn.jwt_token, callback)
 end
 
@@ -278,6 +283,10 @@ MPAPI._internal.unlink_discord = function(callback)
 		return
 	end
 
+	if nakama_only() then
+		nakama_rpc(conn, 'discord_unlink', {}, callback, apply_account(conn))
+		return
+	end
 	conn.api:unlink_discord(conn.jwt_token, callback)
 end
 
