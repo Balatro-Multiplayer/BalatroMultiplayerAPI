@@ -14,9 +14,8 @@
 --
 -- Button label: "Abandon" for a public/ranked (matchmaking-formed) lobby,
 -- "Leave" for a private one -- same underlying leave_lobby call either way
--- (lobby.service.ts's leaveLobby already forfeits any in-progress match on
--- leave regardless of lobby type, confirmed by the previous rejoin_prompt.lua
--- this file replaces -- there's no separate "abandon" endpoint), just
+-- (leaving a started game forfeits it regardless of lobby type, Nakama's
+-- lobby/state.ts -- there's no separate "abandon" call), just
 -- different framing for the player: leaving a private lobby is just leaving,
 -- leaving a public/ranked one during a match is conceding it.
 --

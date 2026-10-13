@@ -47,9 +47,8 @@
 -- carbon stream's hash (carbon_hash) is a real SHA-256 over a canonical JSON
 -- re-encoding of its own {t, opcode, args} events (see canonical_hash_input),
 -- not over the text lines themselves -- this is what the server independently
--- recomputes from its own buffered events and compares against at match-
--- resolve time (matchmaking.service.ts's evaluateAntiCheat, Phase 8) to flag a
--- tampered log. The human stream's hash (human_hash) stays on a cheap local
+-- recomputes from its own stored events and compares against at the run's
+-- end (Nakama's lobby/log_check.ts) to flag a tampered log. The human stream's hash (human_hash) stays on a cheap local
 -- Adler-style checksum -- it's never server-verified, just a local corruption
 -- check. Full re-simulation anti-cheat remains future work.
 --
@@ -452,8 +451,7 @@ end
 -- submit (see Phase 8/anti-cheat) -- there's no separate "submit the whole
 -- block" step, since the server-side buffer already has every event from the
 -- live broadcasts and independently recomputes carbon_hash itself
--- (matchmaking.service.ts's evaluateAntiCheat) for comparison against this
--- value. carbon_hash is a real SHA-256 (love.data.hash) over
+-- (Nakama's lobby/log_check.ts) for comparison against this value. carbon_hash is a real SHA-256 (love.data.hash) over
 -- canonical_hash_input's positional-tuple JSON -- deliberately NOT over
 -- carbon_str's text lines, since a byte-identical text re-formatting is much
 -- harder to guarantee cross-language than re-encoding the same JSON tuples.

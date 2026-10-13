@@ -141,8 +141,8 @@ L.apply_player_info = function(lobby, player_id, info)
 	lobby._players[player_id].id = player_id
 	lobby._players[player_id].displayName = info.displayName
 	lobby._players[player_id].preferredJoker = info.preferredJoker
-	-- May be nil/absent (only present once that player has hit
-	-- POST /api/auth/preferences/mods post-connect) -- the Lobby Info
+	-- May be nil/absent (only present once that player's client has sent
+	-- its installed mods, Nakama's profile_set_mods) -- the Lobby Info
 	-- overlay's Mods tab treats absence as "no mod data available yet".
 	lobby._players[player_id].mods = info.mods
 
