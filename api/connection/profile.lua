@@ -89,7 +89,7 @@ end
 -- Failure just leaves that player's Mods tab empty for lobby peers; not fatal.
 MPAPI._internal.send_installed_mods = function()
 	local conn = require_connected(function() end)
-	if not conn then
+	if not conn or MPAPI.networking.nakama_only() then
 		return
 	end
 

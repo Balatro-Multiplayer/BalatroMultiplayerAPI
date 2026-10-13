@@ -15,4 +15,7 @@ return {
 	-- Local dev only: impersonated logins have no Steam ticket, so sign them
 	-- in to Nakama with a device id (needs the server's ALLOW_DEVICE_AUTH).
 	['nakama_dev_device_auth'] = false,
+	-- Local dev only, needs use_nakama_auth: talk to Nakama alone -- no API
+	-- requests and no MQTT. Implies use_nakama_lobbies.
+	['nakama_only'] = false,
 }

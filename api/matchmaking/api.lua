@@ -3,8 +3,7 @@ MPAPI.matchmaking = MPAPI.matchmaking or {}
 -- With Nakama lobbies on, queues are Nakama matchmaker tickets (the server
 -- makes the lobby, see BalatroMultiplayerServer nakama/src/matchmaking).
 local function on_nakama()
-	local L = MPAPI._internal.lobby
-	return L ~= nil and L.nakama_enabled ~= nil and L.nakama_enabled()
+	return MPAPI.networking.on_nakama()
 end
 
 -- How far apart two ranked ratings may be to be matched.

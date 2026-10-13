@@ -5,8 +5,7 @@ MPAPI.replay = MPAPI.replay or {}
 -- get/list_mine read them through its run RPCs and hand back the API's shapes,
 -- so the replay browsers don't care where a run came from.
 local function on_nakama()
-	local L = MPAPI._internal.lobby
-	return L ~= nil and L.nakama_enabled ~= nil and L.nakama_enabled()
+	return MPAPI.networking.on_nakama()
 end
 
 local function nakama_rpc(id, body, callback)

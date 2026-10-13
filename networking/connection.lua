@@ -20,6 +20,10 @@ local MQTT_RECONNECT_MAX_ATTEMPTS = 4
 -- the server replaces it.
 local NAKAMA_STEAM_LOGIN_ID = 'steam-ticket'
 
+-- Device ids for dev impersonation under nakama_only (see
+-- _try_nakama_device_auth); the same prefix nakama_lobby.lua uses.
+local NAKAMA_DEV_DEVICE_PREFIX = 'bmp-dev-'
+
 -- Seconds between resends of the Nakama login. A fresh Steam ticket is only
 -- valid once Steam's backend has registered it; sent straight away (the
 -- Nakama request goes out on the same frame), Steam can answer 101 "Invalid
@@ -142,14 +146,20 @@ function connection:_handle_auth_success(data)
 		return
 	end
 
-	self:_mqtt_connect_with_credentials()
+	if self:_nakama_only() then
+		self:_nakama_connect()
+	else
+		self:_mqtt_connect_with_credentials()
+	end
 end
 
 -- §4.2/§4.3: no persisted credentials -- every launch does a fresh, silent
 -- Steam ticket handshake instead of preferring a cached refresh token.
 function connection:_do_auth()
 	set_state(self, STATES.AUTHENTICATING)
-	if self.nakama_client then
+	if self:_nakama_only() then
+		self:_try_nakama_only_auth()
+	elseif self.nakama_client then
 		self:_try_nakama_auth()
 	else
 		self:_try_steam_auth()
@@ -255,6 +265,125 @@ function connection:_try_nakama_auth()
 	end, NAKAMA_LOGIN_RETRY_INTERVALS)
 end
 
+-- True when the client talks to Nakama alone (config nakama_only): no API
+-- requests and no MQTT. Login is a Nakama session plus the session_init RPC,
+-- which answers what /api/auth/nakama did.
+function connection:_nakama_only()
+	return self.nakama_client ~= nil and MPAPI.config ~= nil and MPAPI.config.nakama_only == true
+end
+
+-- Calls a Nakama RPC on this connection's client. cb(err_message, data).
+function connection:_nakama_rpc(id, body, cb)
+	local encoded = (body and next(body)) and MPAPI.json_encode(body) or '{}'
+	self.nakama_client.rpc_func(id, encoded, nil, function(result)
+		if not result or result.error then
+			local e = result and result.error
+			cb(type(e) == 'table' and e.message or (result and result.message) or ('RPC ' .. id .. ' failed'))
+			return
+		end
+		local ok, data = pcall(MPAPI.json_decode, result.payload or '{}')
+		if not ok or type(data) ~= 'table' then
+			cb('RPC ' .. id .. ' returned bad JSON')
+			return
+		end
+		cb(nil, data)
+	end)
+end
+
+-- With a fresh Nakama session: fetch the account (session_init) and carry on
+-- exactly as after an API login. The session token stands in for the JWT.
+function connection:_nakama_session_init(session)
+	self.nakama_session = session
+	self.nakama_client.set_bearer_token(session.token)
+	self:_nakama_rpc('session_init', { steamName = self.steam_name }, function(err, data)
+		if self.state ~= STATES.AUTHENTICATING then
+			return
+		end
+		if err then
+			set_state(self, STATES.DISCONNECTED, { error = 'Nakama login rejected: ' .. tostring(err) })
+			return
+		end
+		data.token = session.token
+		self:_handle_login_response(data)
+	end)
+end
+
+function connection:_nakama_auth_failed(session)
+	local message = session and (session.message or session.error) or 'no response'
+	if type(message) == 'table' then
+		message = message.message or 'error'
+	end
+	set_state(self, STATES.DISCONNECTED, { error = 'Nakama auth failed: ' .. tostring(message) })
+end
+
+function connection:_try_nakama_only_auth()
+	if not self.steam or not self.steam.available() then
+		set_state(self, STATES.DISCONNECTED, { error = 'Steam is not available' })
+		return
+	end
+
+	local ticket_data, ticket_err = self.steam.get_auth_ticket()
+	if not ticket_data then
+		set_state(self, STATES.DISCONNECTED, { error = 'Steam ticket failed: ' .. tostring(ticket_err) })
+		return
+	end
+
+	self.auth_ticket_handle = ticket_data.handle
+	self.steam_name = self.steam.get_persona_name() or 'Player'
+
+	self.nakama_client.authenticate_custom(NAKAMA_STEAM_LOGIN_ID, { steam_ticket = ticket_data.ticket }, true, nil, function(session)
+		self:_cancel_auth_ticket()
+		if self.state ~= STATES.AUTHENTICATING then
+			return
+		end
+		if not session or session.error then
+			self:_nakama_auth_failed(session)
+			return
+		end
+		self:_nakama_session_init(session)
+	end, NAKAMA_LOGIN_RETRY_INTERVALS)
+end
+
+-- Dev only, the nakama_only counterpart of impersonation: a device login
+-- keyed by the impersonation target (needs the server's ALLOW_DEVICE_AUTH).
+function connection:_try_nakama_device_auth(target)
+	local key = target.playerId or target.steamId or target.discordId or target.steamName or 'dev'
+	self.steam_name = target.steamName or ('Dev-' .. tostring(key):sub(1, 8))
+	self.nakama_client.authenticate_device(NAKAMA_DEV_DEVICE_PREFIX .. tostring(key), nil, true, nil, function(session)
+		if self.state ~= STATES.AUTHENTICATING then
+			return
+		end
+		if not session or session.error then
+			self:_nakama_auth_failed(session)
+			return
+		end
+		self:_nakama_session_init(session)
+	end)
+end
+
+-- Logged in through Nakama alone: open the socket (it carries the server's
+-- pushes) and go CONNECTED; MQTT never starts.
+function connection:_nakama_connect()
+	set_state(self, STATES.CONNECTING)
+	local NL = MPAPI.networking.nakama_lobby
+	NL.keep_socket_open(true)
+	NL.ensure_socket(function(ok, err)
+		if self.state ~= STATES.CONNECTING then
+			return
+		end
+		if not ok then
+			NL.keep_socket_open(false)
+			set_state(self, STATES.DISCONNECTED, { error = 'Nakama socket failed: ' .. tostring(err) })
+			return
+		end
+		set_state(self, STATES.CONNECTED)
+		if self._check_nakama_lobby then
+			self._check_nakama_lobby = nil
+			self:_check_nakama_lobby_seat()
+		end
+	end)
+end
+
 function connection:_try_dev_auth()
 	set_state(self, STATES.AUTHENTICATING)
 	self.mqtt:start_thread()
@@ -276,6 +405,10 @@ end
 -- Lets a second instance act as a different real account for matchmaking testing.
 function connection:_try_impersonate_auth(target)
 	set_state(self, STATES.AUTHENTICATING)
+	if self:_nakama_only() then
+		self:_try_nakama_device_auth(target)
+		return
+	end
 	self.mqtt:start_thread()
 
 	self.api:authenticate_impersonate(target, function(err, data)
@@ -314,6 +447,24 @@ function connection:accept_tos(chat_eligible)
 	set_state(self, STATES.AUTHENTICATING)
 	local token = self._pending_tos_token
 	self._pending_tos_token = nil
+	if self:_nakama_only() then
+		local body = {}
+		if chat_eligible ~= nil then
+			body.chatEligible = chat_eligible and true or false
+		end
+		self:_nakama_rpc('tos_accept', body, function(err, data)
+			if self.state ~= STATES.AUTHENTICATING then
+				return
+			end
+			if err then
+				set_state(self, STATES.DISCONNECTED, { error = 'ToS acceptance failed: ' .. tostring(err) })
+				return
+			end
+			data.token = token
+			self:_handle_auth_success(data)
+		end)
+		return
+	end
 	self.api:accept_tos_update(token, chat_eligible, function(err, data)
 		if err then
 			set_state(self, STATES.DISCONNECTED, { error = 'ToS acceptance failed: ' .. tostring(err) })

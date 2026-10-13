@@ -133,6 +133,7 @@ end
 MPAPI.load_mpapi_file('networking/api_client.lua')
 MPAPI.load_mpapi_file('networking/connection.lua')
 MPAPI.load_mpapi_file('networking/nakama_lobby.lua')
+MPAPI.load_mpapi_file('networking/nakama_notify.lua')
 
 -----------------------------
 -- FILE LOADING & STARTUP

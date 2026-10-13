@@ -72,7 +72,14 @@ end
 -- True when lobbies should go through Nakama: the flag is on and there is a
 -- Nakama client to talk to (use_nakama_auth on a custom server).
 function NL.enabled()
-	return MPAPI.config and MPAPI.config.use_nakama_lobbies and nakama_client() ~= nil or false
+	local c = MPAPI.config
+	return c and (c.use_nakama_lobbies or c.nakama_only) and nakama_client() ~= nil or false
+end
+
+-- True when the client talks to Nakama alone (config nakama_only): login,
+-- account and pushes all go through it, and the socket stays open.
+function NL.only()
+	return MPAPI.config and MPAPI.config.nakama_only and nakama_client() ~= nil or false
 end
 
 ----------------------------------------------------------------------
@@ -201,9 +208,16 @@ local function on_match_data(message)
 	match.listener.data(op, data)
 end
 
+local keep_open = false
+local keep_open_attempt = 0
+local reopen_socket
+
 local function on_socket_disconnect()
 	socket_open = false
 	socket = nil
+	if keep_open and not match then
+		reopen_socket()
+	end
 	if match and not match.lost_since then
 		match.lost_since = love.timer.getTime()
 		match.attempt = 1
@@ -241,6 +255,9 @@ local function with_socket(cb)
 		local s = nakama_client().create_socket()
 		s.on_match_data(on_match_data)
 		s.on_matchmaker_matched(on_matchmaker_matched)
+		s.on_notifications(function(message)
+			MPAPI.networking.nakama_notify.dispatch(message)
+		end)
 		s.on_error(function(message)
 			MPAPI.sendWarnMessage('[nakama_lobby] socket error: ' .. error_message(message, '?'))
 		end)
@@ -261,6 +278,35 @@ local function with_socket(cb)
 			flush_waiters(socket_open, message)
 		end)
 	end)
+end
+
+-- cb(ok, err) once the socket is open.
+NL.ensure_socket = function(cb)
+	with_socket(cb or ignore)
+end
+
+-- With nakama_only the socket carries the server's pushes, so it is reopened
+-- after a drop even outside a lobby (a lobby rejoin reopens it anyway).
+reopen_socket = function()
+	keep_open_attempt = keep_open_attempt + 1
+	local delay = RECONNECT_BACKOFF[math.min(keep_open_attempt, #RECONNECT_BACKOFF)]
+	after(delay, function()
+		if not keep_open or socket or match then
+			return
+		end
+		with_socket(function(ok)
+			if ok then
+				keep_open_attempt = 0
+			elseif keep_open and not socket and not match then
+				reopen_socket()
+			end
+		end)
+	end)
+end
+
+function NL.keep_socket_open(on)
+	keep_open = on and true or false
+	keep_open_attempt = 0
 end
 
 ----------------------------------------------------------------------
@@ -511,6 +557,7 @@ end
 -- Forgets the match and closes the socket without telling the server
 -- (connection teardown; the server treats it as a disconnect).
 function NL.reset()
+	keep_open = false
 	match = nil
 	tickets = {}
 	timers = {}
@@ -541,3 +588,13 @@ function NL._current_match_id()
 end
 
 MPAPI.networking.nakama_lobby = NL
+
+-- True when lobbies, matchmaking, replays and the rest go through Nakama.
+function MPAPI.networking.on_nakama()
+	return NL.enabled()
+end
+
+-- True when nothing goes through the API or MQTT (config nakama_only).
+function MPAPI.networking.nakama_only()
+	return NL.only()
+end
