@@ -94,6 +94,7 @@ MPAPI.ActionType({
 		{ key = 't', type = 'number', required = true },
 		{ key = 'opcode', type = 'string', required = true },
 		{ key = 'args', type = 'table' },
+		{ key = 'run', type = 'string' },
 	},
 	on_receive = function(_, _, result)
 		local lobby = MPAPI.get_current_lobby()
@@ -228,5 +229,12 @@ L.send_log_event = function(lobby, t, opcode, args)
 	if args ~= nil and type(args) ~= 'table' then
 		args = { args }
 	end
-	lobby:action(MPAPI.ActionTypes.mpapi_log_event):send(nil, { t = t, opcode = opcode, args = args })
+	-- Tagged with the run, so an event still in flight when the server
+	-- restarts the game isn't kept in the new run's log.
+	lobby:action(MPAPI.ActionTypes.mpapi_log_event):send(nil, {
+		t = t,
+		opcode = opcode,
+		args = args,
+		run = lobby._game.started.run_id,
+	})
 end
