@@ -11,7 +11,7 @@
 
 local tx_channel, rx_channel = ... -- passed from main thread
 
--- Same bootstrap as mqtt_thread.lua (see lib/thread_preload.lua).
+-- Same bootstrap as nakama_http_thread.lua (see lib/thread_preload.lua).
 local setup = tx_channel:demand()
 local pkg_path, pkg_cpath = setup:match('^setup\1(.*)\1(.*)$')
 if pkg_path then

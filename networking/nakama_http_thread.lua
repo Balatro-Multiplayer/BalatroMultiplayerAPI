@@ -6,7 +6,7 @@
 
 local tx_channel, rx_channel = ... -- passed from main thread
 
--- Same bootstrap as mqtt_thread.lua: package paths, then the pre-read
+-- Bootstrap: package paths, then the pre-read
 -- module sources (the mod may live in a zip mount this thread's require()
 -- can't read - see lib/thread_preload.lua).
 local setup = tx_channel:demand()

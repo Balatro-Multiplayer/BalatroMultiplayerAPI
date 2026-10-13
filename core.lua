@@ -1,7 +1,7 @@
 MPAPI = SMODS.current_mod
 
--- Add mod root, lib/ and networking/ to package.path so the MQTT thread can
--- require("mqtt") (vendored luamqtt at lib/mqtt/init.lua) and require("openssl_ffi")
+-- Add mod root, lib/ and networking/ to package.path so the worker threads can
+-- require("openssl_ffi") and the vendored lib/ modules
 package.path = MPAPI.path
 	.. '/?.lua;'
 	.. MPAPI.path
@@ -42,13 +42,12 @@ MPAPI._loaded_file_results = {}
 -- Returns the same result every time, including on a dedup-skipped repeat
 -- call (previously returned nil on any call after the first, which is safe
 -- for a callsite that only cares about the load side effect but crashes one
--- that needs the module table on every call, e.g. networking/mqtt_client.lua
--- and anticheat/launcher_channel.lua both calling this for
--- lib/thread_preload.lua after core.lua's own load_mpapi_dir('lib') already
--- loaded it once during bootstrap - confirmed live: 'attempt to index local
--- thread_preload (a nil value)' crashing mqtt_client.lua:start_thread() and
--- the launcher-integrity relay thread setup identically, every time, since
--- neither ever gets a first, non-deduped call).
+-- that needs the module table on every call, e.g. anticheat/launcher_channel.lua
+-- calling this for lib/thread_preload.lua after core.lua's own
+-- load_mpapi_dir('lib') already loaded it once during bootstrap - confirmed
+-- live: 'attempt to index local thread_preload (a nil value)' crashing the
+-- launcher-integrity relay thread setup every time, since it never gets a
+-- first, non-deduped call).
 function MPAPI.load_mpapi_file(file)
 	if MPAPI._loaded_files[file] then return MPAPI._loaded_file_results[file] end
 	MPAPI._loaded_files[file] = true
@@ -81,13 +80,12 @@ function MPAPI.load_mpapi_dir(directory, recursive)
 end
 
 -----------------------------
--- DOMAIN & CONTRACTS
+-- DOMAIN
 -----------------------------
 
--- Load enums and contracts first: networking and api modules reference them at
--- load time (e.g. networking/connection.lua uses MPAPI.ConnectionState).
+-- Load enums first: networking and api modules reference them at load time
+-- (e.g. networking/connection.lua uses MPAPI.ConnectionState).
 MPAPI.load_mpapi_dir('domain', true)
-MPAPI.load_mpapi_dir('contracts', true)
 
 -----------------------------
 -- NETWORKING
@@ -114,14 +112,6 @@ else
 	MPAPI.sendWarnMessage('OpenSSL FFI module failed to load')
 end
 
-MPAPI.load_mpapi_file('networking/mqtt_client.lua')
-
-if MPAPI.networking.mqtt_client then
-	MPAPI.sendDebugMessage('MQTT client wrapper loaded')
-else
-	MPAPI.sendWarnMessage('MQTT client wrapper failed to load')
-end
-
 MPAPI.load_mpapi_file('networking/steam.lua')
 
 if MPAPI.networking.steam then
@@ -130,7 +120,6 @@ else
 	MPAPI.sendWarnMessage('Steam module failed to load')
 end
 
-MPAPI.load_mpapi_file('networking/api_client.lua')
 MPAPI.load_mpapi_file('networking/connection.lua')
 MPAPI.load_mpapi_file('networking/nakama_lobby.lua')
 MPAPI.load_mpapi_file('networking/nakama_notify.lua')
@@ -153,7 +142,7 @@ MPAPI._internal = {}
 -- Ranked-mode launch via BET only) - see anticheat/launcher_channel.lua's
 -- header comment. Loaded here (after the MPAPI.update stub above, before
 -- lib/api/ui) since it chain-wraps MPAPI.update itself, the same
--- convention api/connection/lifecycle.lua uses for the MQTT client.
+-- convention api/connection/lifecycle.lua uses for the Nakama engine.
 MPAPI.load_mpapi_file('anticheat/crypto.lua')
 MPAPI.load_mpapi_file('anticheat/launcher_channel.lua')
 

@@ -1,30 +1,22 @@
 -- Outbound action instances: the object returned by lobby:action(type), used to
 -- send a directed request or broadcast to every participant.
 
-local function actions_topic(lobby)
-	return lobby._mqtt:lobby_topic(lobby.code, 'players/' .. lobby.player_id .. '/actions')
-end
-
 -- Puts one envelope { cid, action, from, to, params, response_to } on the
--- lobby's transport. False when it couldn't be sent.
+-- lobby's match. False when it couldn't be sent.
 MPAPI._internal.transmit_action = function(lobby, envelope)
-	if lobby._nakama then
-		local NL = MPAPI.networking.nakama_lobby
-		-- The server stamps `from` itself.
-		local sent = NL.send(NL.ClientOp.ACTION, {
-			cid = envelope.cid,
-			action = envelope.action,
-			to = envelope.to,
-			params = envelope.params,
-			responseTo = envelope.response_to,
-		})
-		if not sent then
-			MPAPI.sendWarnMessage('action ' .. tostring(envelope.action) .. ' dropped: not connected to the lobby')
-		end
-		return sent
+	local NL = MPAPI.networking.nakama_lobby
+	-- The server stamps `from` itself.
+	local sent = NL.send(NL.ClientOp.ACTION, {
+		cid = envelope.cid,
+		action = envelope.action,
+		to = envelope.to,
+		params = envelope.params,
+		responseTo = envelope.response_to,
+	})
+	if not sent then
+		MPAPI.sendWarnMessage('action ' .. tostring(envelope.action) .. ' dropped: not connected to the lobby')
 	end
-	lobby._mqtt:publish(actions_topic(lobby), MPAPI.json_encode(envelope), 1, false)
-	return true
+	return sent
 end
 
 local warned_authoritative = {}
@@ -58,16 +50,16 @@ local function create_action_instance(lobby, action_type)
 		local action_type = self._action_type
 
 		if action_type.authoritative then
-			if not lobby._nakama then
+			if lobby._local_mode then
 				if not warned_authoritative[action_type.key] then
 					warned_authoritative[action_type.key] = true
-					MPAPI.sendWarnMessage(action_type.key .. ' needs a Nakama lobby')
+					MPAPI.sendWarnMessage(action_type.key .. ' needs a server lobby')
 				end
 				return
 			end
 			target_id = MPAPI.networking.nakama_lobby.SERVER_TARGET
 		elseif lobby._local_mode then
-			-- Offline lobby: deliver in-process instead of over the broker.
+			-- Offline lobby: deliver in-process instead of through the server.
 			MPAPI._internal.dispatch_local_action(self, target_id)
 			return
 		end

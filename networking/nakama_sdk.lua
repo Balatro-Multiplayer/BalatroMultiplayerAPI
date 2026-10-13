@@ -1,8 +1,8 @@
 --[[
     Entry point for the vendored Nakama SDK (lib/nakama/, see its README).
-    Only loaded for Nakama login (config use_nakama_auth, see
-    api/connection/lifecycle.lua's create_nakama_client), which also pumps
-    the engine's update() from MPAPI.update. core.lua doesn't load it.
+    Loaded on the first connect (api/connection/lifecycle.lua's
+    create_nakama_client), which also pumps the engine's update() from
+    MPAPI.update. core.lua doesn't load it.
 
       local sdk = MPAPI.load_mpapi_file('networking/nakama_sdk.lua').load()
       local client = sdk.nakama.create_client({
@@ -12,9 +12,9 @@
       -- every frame: sdk.engine.update()
 
     load() registers every lib/nakama module (and the socket helpers the
-    engine's tests use) into package.preload from pre-read source, the
-    same way the MQTT thread gets luamqtt - require() can't read modules
-    out of a zip-mounted mod (see lib/thread_preload.lua).
+    engine's tests use) into package.preload from pre-read source -
+    require() can't read modules out of a zip-mounted mod (see
+    lib/thread_preload.lua).
 ]]
 
 local M = {}

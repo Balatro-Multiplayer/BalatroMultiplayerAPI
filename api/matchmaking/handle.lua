@@ -1,17 +1,15 @@
 MPAPI.matchmaking = MPAPI.matchmaking or {}
 
 -- A queue handle: the object returned to a mod when it joins matchmaking. It
--- carries the per-queue event listeners and the server round-trips (leave, report
--- result, mark run start) scoped to its match.
+-- carries the per-queue event listeners and its matchmaker ticket.
 MPAPI.matchmaking._make_handle = function(mod_id, game_mode)
 	local handle = {
 		mod_id = mod_id,
 		game_mode = game_mode,
 		match_id = nil,
 		_left = false,
-		_reconnected = false,
 		-- Set true once this handle's matched lobby has finished joining (LOBBY_READY fired)
-		-- or the join attempt has failed (ERROR fired) -- see dispatch.lua's on_match_found.
+		-- or the join attempt has failed (ERROR fired) -- see dispatch.lua's on_nakama_matched.
 		-- Lets MPAPI.matchmaking.is_committed() (queue_timer.lua) distinguish "matched, still
 		-- joining" from "already searching" and from "already in the match", since match_id
 		-- alone is set for the whole match duration, not just the brief join window.
@@ -51,67 +49,19 @@ MPAPI.matchmaking._make_handle = function(mod_id, game_mode)
 		-- before the server round-trip so UI state resets even if it fails.
 		self:_fire('left')
 
-		local conn = MPAPI.get_connection()
-		if not conn then
-			return
-		end
-
 		if self._nakama_ticket then
 			MPAPI.networking.nakama_lobby.unqueue(self._nakama_ticket)
-			return
 		end
-
-		conn.api:leave_matchmaking_queue(conn.jwt_token, {
-			modId = self.mod_id,
-			gameMode = self.game_mode,
-		}, function(err)
-			if err then
-				MPAPI.sendWarnMessage('leave_matchmaking_queue error: ' .. tostring(err))
-			end
-		end)
 	end
 
+	-- Kept for older callers: a matched game is refereed by its lobby
+	-- (lobby:report_result), and the server stamps the run's start itself.
 	function handle:report_result(placements, callback)
-		-- A Nakama match is refereed by its lobby (lobby:report_result); nothing
-		-- goes to the API.
-		if self._nakama_ticket then
-			if callback then callback(nil, nil) end
-			return
-		end
-		if not self.match_id then
-			if callback then callback(MPAPI.make_error(MPAPI.ErrorKind.NO_ACTIVE_MATCH, 'No active match'), nil) end
-			return
-		end
-
-		local conn = MPAPI.get_connection()
-		if not conn then
-			if callback then callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil) end
-			return
-		end
-
-		conn.api:report_match_result(conn.jwt_token, self.match_id, placements, callback)
+		if callback then callback(nil, nil) end
 	end
 
-	-- Signal that the run has started (host only). The server stamps the start time once,
-	-- forming the basis for server-measured timing leaderboards (e.g. fastest completion).
 	function handle:mark_started(callback)
-		-- The Nakama server stamps the start time itself.
-		if self._nakama_ticket then
-			if callback then callback(nil, nil) end
-			return
-		end
-		if not self.match_id then
-			if callback then callback(MPAPI.make_error(MPAPI.ErrorKind.NO_ACTIVE_MATCH, 'No active match'), nil) end
-			return
-		end
-
-		local conn = MPAPI.get_connection()
-		if not conn then
-			if callback then callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil) end
-			return
-		end
-
-		conn.api:mark_run_start(conn.jwt_token, self.match_id, callback)
+		if callback then callback(nil, nil) end
 	end
 
 	return handle

@@ -444,17 +444,10 @@ match_history_row = function(run)
 	local can_replay = run.status ~= 'active'
 
 	G.FUNCS['mpapi_match_history_view_log_' .. run.id] = function()
-		local conn = MPAPI._internal.conn and MPAPI._internal.conn.connection
-		local base_url = conn and conn.api and conn.api.base_url
+		local base_url = MPAPI.get_web_url()
 		if base_url then
-			-- Same conn.api.base_url the sibling "View Report" link
-			-- (ui/player_report_overlay.lua) already opens a website page
-			-- through -- in production the API and website share one origin
-			-- (path-routed, matching apps/web's own default `/api/proxy`
-			-- same-origin proxying), so this is the site root. In local dev
-			-- (a bare API port, no path routing to the separate web dev
-			-- server) this opens the API host directly, same known
-			-- dev-only gap the report link already has.
+			-- The website (config web_url), like the sibling "View Report"
+			-- link (ui/player_report_overlay.lua).
 			love.system.openURL(base_url .. '/matches/' .. tostring(run.id))
 		end
 	end

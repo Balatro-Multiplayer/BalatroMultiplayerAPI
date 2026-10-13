@@ -39,7 +39,7 @@
 -- every line) while still being monotonically non-decreasing, so it doubles as
 -- the same ordering key a sequence number would give, and additionally carries
 -- the real elapsed-time information anti-cheat plausibility checks and
--- reconnect tail-requests both need. Matches the MQTT design doc's own §26.1
+-- reconnect tail-requests both need. Matches the server's
 -- `t` field convention (ms since match start), so this format and the server's
 -- eventual event schema agree instead of diverging.
 --

@@ -99,10 +99,8 @@ local EVENT_HANDLERS = {
 	end,
 }
 
--- apply_*: update the lobby from an already-decoded message and fire the
--- matching lobby events. Shared by both transports: the MQTT handle_*
--- wrappers below decode a topic payload first, api/lobby/nakama.lua feeds
--- decoded match data straight in.
+-- apply_*: update the lobby from a decoded match message (api/lobby/nakama.lua)
+-- and fire the matching lobby events.
 
 L.apply_event = function(lobby, data)
 	if lobby._destroyed or type(data) ~= 'table' or not data.type then
@@ -122,14 +120,6 @@ L.apply_metadata = function(lobby, data)
 
 	lobby._metadata = data
 	lobby:_fire(MPAPI.LobbyEvent.METADATA_CHANGED, lobby._metadata)
-end
-
-L.apply_own_state = function(lobby, data)
-	if lobby._destroyed or type(data) ~= 'table' then
-		return
-	end
-
-	lobby._player_state = data
 end
 
 -- info nil: the player is gone.
@@ -160,54 +150,4 @@ L.apply_player_info = function(lobby, player_id, info)
 		lobby:_fire(MPAPI.LobbyEvent.PLAYER_JOINED, player_id)
 	end
 	lobby:_fire(MPAPI.LobbyEvent.PLAYER_INFO, player_id, lobby._players[player_id])
-end
-
-local function decode(payload)
-	local ok, data = pcall(MPAPI.json_decode, payload)
-	if ok then
-		return data
-	end
-end
-
-L.handle_event = function(lobby, payload)
-	if lobby._destroyed then
-		return
-	end
-	L.apply_event(lobby, decode(payload))
-end
-
-L.handle_metadata = function(lobby, payload)
-	if lobby._destroyed then
-		return
-	end
-	L.apply_metadata(lobby, decode(payload))
-end
-
-L.handle_own_state = function(lobby, payload)
-	if lobby._destroyed then
-		return
-	end
-	L.apply_own_state(lobby, decode(payload))
-end
-
-L.handle_player_info = function(lobby, topic, payload)
-	if lobby._destroyed then
-		return
-	end
-
-	local player_id = topic:match('/players/([^/]+)/info$')
-	if not player_id then
-		return
-	end
-
-	if not payload or payload == '' then
-		L.apply_player_info(lobby, player_id, nil)
-		return
-	end
-
-	local data = decode(payload)
-	if type(data) ~= 'table' then
-		return
-	end
-	L.apply_player_info(lobby, player_id, data)
 end

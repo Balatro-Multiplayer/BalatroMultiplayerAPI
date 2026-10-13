@@ -6,7 +6,7 @@ A mod library that adds real-time multiplayer to [Balatro](https://www.playbalat
 
 All functions are accessed through the global `MPAPI` table.
 
-`create_lobby` and `join_lobby` are async, they talk to the API server to get credentials, then connect to the broker. Use the `on("connected")` event to know when the lobby is ready.
+`create_lobby` and `join_lobby` are async: they create or find the lobby match on the server, then join it. Use the `on("connected")` event to know when the lobby is ready.
 
 By default, lobbies connect to the official MultiplayerAPI server. Self-hosted servers can be configured via the mod config (see [Configuration](#configuration)).
 
@@ -15,7 +15,7 @@ By default, lobbies connect to the official MultiplayerAPI server. Self-hosted s
 ```lua
 -- Create a new lobby for your mod. Returns a lobby object.
 -- Generates a short join code, authenticates with the server,
--- and connects to the broker.
+-- and joins it.
 local lobby = MPAPI.create_lobby("my_mod_id")
 
 -- Join an existing lobby by code.
@@ -183,7 +183,7 @@ lobby:on("error", function(err)
 end)
 
 lobby:on("disconnected", function()
-    -- Lost connection to the broker
+    -- Lost connection to the server
 end)
 ```
 
@@ -215,67 +215,56 @@ local players = lobby:get_players()
 
 ### State Recovery
 
-Player state is published to MQTT retained topics (`lobby/{code}/players/{playerId}/state`), so it survives disconnects. When a player reconnects, they resubscribe to their own state topic and immediately receive their latest retained state.
+The server keeps each player's last state for the lobby, so it survives disconnects. When a player rejoins, the server sends them a snapshot that includes it.
 
 Mod authors don't need to handle this manually. As long as game state is kept in player state via `lobby:set_player_state()`, it will be available on reconnect. The reconnecting client receives:
 
-- Their own last published state (retained)
-- Current lobby metadata (retained)
+- Their own last state
+- Current lobby metadata
 - A `player_reconnected` event confirming they're back
 
 ## Configuration
 
-MultiplayerAPI is configured via SMODS mod config (`config.lua`), editable in-game from the mod's **Config** tab in the Mods menu or by editing the file directly:
+MultiplayerAPI is configured via SMODS mod config (`config.lua`):
 
 ```lua
 return {
     ["chat_enabled"] = false,           -- enable/disable built-in lobby chat
-
-    -- Self-hosted / local server (development). When use_custom_server is true, lobbies connect
-    -- to custom_server_url instead of the official server. Use 127.0.0.1 (not "localhost") on
-    -- Windows. custom_server_secure picks the scheme and ports automatically:
-    --   secure -> API https on 8788, MQTT TLS on 8883
-    --   plain  -> API http  on 8788, MQTT     on 1883
-    -- The dev docker-compose API is plain HTTP, so use secure = false until the API serves TLS.
-    ["use_custom_server"] = false,
-    ["custom_server_url"] = "127.0.0.1",
-    ["custom_server_secure"] = true,
 }
 ```
 
-The **Config** tab exposes "Use local / self-hosted server" and "Secure (TLS)" toggles plus an **Apply & Reconnect** button, so you can switch servers at runtime without a restart. Values are accessible at `SMODS.current_mod.config.*`. Explicit `MPAPI.connect{ api_url = ..., mqtt_broker = ..., mqtt_port = ..., mqtt_secure = ... }` opts still take precedence over the config.
+Values are accessible at `SMODS.current_mod.config.*`. The server is the production Nakama server unless one of these optional keys overrides it: `server_host`, `server_port`, `server_secure`, `nakama_server_key` and `web_url` (the website that "View Log" and report links open). `MPAPI.connect{ host = ..., port = ..., secure = ..., server_key = ..., web_url = ... }` opts take precedence over the config. Use 127.0.0.1 (not "localhost") on Windows.
+
+Dev builds load `dev/init.lua` (stripped from releases), which points the game at the local server stack (Nakama on 127.0.0.1:7350) unless `BMP_SERVER_HOST` is set. `BMP_IMPERSONATE_ID`/`BMP_IMPERSONATE_NAME` log an instance in as another account with a Nakama device login.
 
 Chat is handled entirely by MultiplayerAPI
 
 ## Architecture
 
-MultiplayerAPI uses MQTT (a lightweight pub/sub messaging protocol) for networking, backed by an EMQX broker and a small Express API server.
+MultiplayerAPI talks to a [Nakama](https://heroiclabs.com/nakama/) server (BalatroMultiplayerServer's `nakama/` module):
 
 ```
-Game Client <-> API Server (Express) <-> EMQX Broker -> PostgreSQL
+Game Client <-> Nakama (lobby matches, RPCs, notifications) -> PostgreSQL
+                  |
+                  +-> Express API (website, webadmin, moderation)
 ```
 
-- **Game client** calls the API server to create/join lobbies and receive broker credentials.
-- **API server** manages lobby state, generates scoped MQTT credentials, and handles authentication. EMQX calls back to the API server on every connect and publish/subscribe to verify permissions.
-- **EMQX broker** handles message routing. Knows nothing about lobbies or game logic and just asks the API server "is this allowed?" on every operation.
-- **PostgreSQL** archives all messages via EMQX's rule engine for moderation and auditing. Not used during gameplay.
+- **Login** sends the Steam ticket to Nakama, which checks it and opens a session; `session_init` returns the account.
+- **Lobbies** are server-authoritative Nakama matches. Metadata, player state, actions, chat and the game's ready/start/result flow all go through the match, and the server stamps who sent each message.
+- **Matchmaking** uses Nakama matchmaker tickets; ratings, replays and spectating are RPCs.
+- **Server pushes** (account changes, bans, integrity challenges, config) arrive as Nakama notifications over the same socket.
+- **Express** keeps the website and webadmin. Nakama mirrors finished games, ratings and chat logs into its Postgres tables.
 
-All networking runs on a dedicated `love.thread` so the game loop never blocks. The mod author doesn't interact with any of this directly.
+All socket and HTTP I/O runs on dedicated `love.thread`s so the game loop never blocks. The mod author doesn't interact with any of this directly.
 
 ### Permissions
 
-The API server enforces access control via EMQX's HTTP authorization callbacks:
+The Nakama match enforces access control:
 
-- **Lobby isolation** - Players can only publish/subscribe within their own lobby.
-- **Host-only metadata** - Only the host can update lobby metadata and send lifecycle events.
-- **Private player state** - Players can only read and write their own state topic. Other players' state is not accessible — use actions to share information.
-- **Chat** - Players can only publish to their own chat topic. Identity is determined by the topic, not the payload, so players cannot impersonate each other.
-
-These aren't conventions, they're enforced at the broker level. Unauthorized publishes are rejected before they reach any client.
-
-### Future Authentication
-
-The API server is the auth boundary. Currently it issues credentials directly. In the future, players will authenticate via **Steam** (session ticket validation) or **Discord** (OAuth2) before receiving broker credentials. The broker never touches third-party auth.
+- **Lobby isolation** - Players only receive messages from the lobby they joined.
+- **Host-only metadata** - Only the host can update lobby metadata and start the game.
+- **Private player state** - Players can only write their own state. Other players' state is not sent to them — use actions to share information.
+- **Identity** - The server stamps each action and chat message with its sender, so players cannot impersonate each other.
 
 ## Installation
 

@@ -1,12 +1,7 @@
 MPAPI.replay = MPAPI.replay or {}
 
--- With Nakama lobbies on, finished games are stored by the Nakama server
--- (BalatroMultiplayerServer nakama/src/lobby/storage.ts) rather than the API;
--- get/list_mine read them through its run RPCs and hand back the API's shapes,
--- so the replay browsers don't care where a run came from.
-local function on_nakama()
-	return MPAPI.networking.on_nakama()
-end
+-- Finished games are stored by the Nakama server (BalatroMultiplayerServer
+-- nakama/src/lobby/storage.ts); get/list_mine read them through its run RPCs.
 
 local function nakama_rpc(id, body, callback)
 	MPAPI.networking.nakama_lobby.rpc(id, body, function(err, data)
@@ -18,7 +13,7 @@ local function nakama_rpc(id, body, callback)
 	end)
 end
 
--- Epoch ms -> the API's ISO timestamp.
+-- Epoch ms -> an ISO timestamp.
 local function iso_time(ms)
 	if type(ms) ~= 'number' then
 		return nil
@@ -103,20 +98,10 @@ local function nakama_list_mine(opts, callback)
 end
 
 -- Phase 6: download a stored run's replay. callback(err, data) where data is
--- {run={...}, logs=[{playerId, compressedEvents, carbonHash, eventCount, status}]}.
--- A Nakama-stored run's logs carry decoded `events` instead of
--- compressedEvents, plus each log's `check` against its hash.
+-- {run={...}, logs=[{playerId, events, carbonHash, eventCount, status, check}]},
+-- `check` being the server's verdict on the log against its hash.
 MPAPI.replay.get = function(run_id, callback)
-	if on_nakama() then
-		nakama_get(run_id, callback)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
-		return
-	end
-	conn.api:get_replay(conn.jwt_token, run_id, callback)
+	nakama_get(run_id, callback)
 end
 
 -- §22.2 (+pagination): the player's own past run ids. opts = {page=,
@@ -124,51 +109,33 @@ end
 -- callback(err, data) where data is {runs = [{id, lobbyCode, modId,
 -- lobbyType, status, startedAt, finalizedAt}, ...], total, page, pageSize}.
 MPAPI.replay.list_mine = function(opts, callback)
-	if on_nakama() then
-		nakama_list_mine(opts, callback)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
-		return
-	end
-	conn.api:get_my_runs(conn.jwt_token, opts, callback)
+	nakama_list_mine(opts, callback)
 end
 
 -- Crash-relaunch rejoin detection: does the player have a match still in
 -- progress right now. callback(err, data) where data is
 -- {active = {runId, lobbyCode, modId} | nil}.
 MPAPI.replay.get_active_run = function(callback)
-	if on_nakama() then
-		nakama_rpc('run_active', {}, function(err, data)
-			if err then
-				callback(err, nil)
-				return
-			end
-			local active = data and data.active
-			callback(nil, {
-				active = active and {
-					runId = active.runId,
-					lobbyCode = active.code,
-					modId = active.modId,
-					events = active.events or {},
-				} or nil,
-			})
-		end)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
-		return
-	end
-	conn.api:get_active_run(conn.jwt_token, callback)
+	nakama_rpc('run_active', {}, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		local active = data and data.active
+		callback(nil, {
+			active = active and {
+				runId = active.runId,
+				lobbyCode = active.code,
+				modId = active.modId,
+				events = active.events or {},
+			} or nil,
+		})
+	end)
 end
 
--- On Nakama: watches the lobby as a spectator match (the server's
+-- Watches the lobby as a spectator match (the server's
 -- lobby/spectate.ts). callback(err, data) once the snapshot is in, data being
--- {snapshot, players, runId, code, nakama = true}; then handlers.event({t,
+-- {snapshot, players, runId, code}; then handlers.event({t,
 -- player_id, opcode, args}) for each participant replay event, and
 -- handlers.ended(reason) once watching stops (lobby closed, connection lost).
 local function nakama_spectate(code, callback, handlers)
@@ -202,7 +169,6 @@ local function nakama_spectate(code, callback, handlers)
 						players = data.players or {},
 						runId = data.runId,
 						code = data.code,
-						nakama = true,
 					})
 				elseif op == NL.ServerOp.SPECTATE_EVENT then
 					if handlers.event then
@@ -222,40 +188,19 @@ local function nakama_spectate(code, callback, handlers)
 	end)
 end
 
--- Phase 7: request a spectator token + one-time snapshot for a lobby.
--- callback(err, data) where data is {token, snapshot}. On Nakama there is no
--- token: the live feed comes through `handlers` (see nakama_spectate).
+-- Watches a lobby: callback(err, data) once the snapshot is in, then the live
+-- feed through `handlers` (see nakama_spectate).
 MPAPI.replay.spectate_lobby = function(code, callback, handlers)
-	if on_nakama() then
-		nakama_spectate(code, callback, handlers)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
-		return
-	end
-	conn.api:spectate_lobby(conn.jwt_token, code, callback)
+	nakama_spectate(code, callback, handlers)
 end
 
--- Stops a Nakama spectate (an MQTT spectator just disconnects its own feed).
+-- Stops watching a lobby.
 MPAPI.replay.stop_spectating = function()
-	if on_nakama() then
-		MPAPI.networking.nakama_lobby.unspectate()
-	end
+	MPAPI.networking.nakama_lobby.unspectate()
 end
 
 -- §22.3: which live lobbies are currently spectatable. callback(err, data)
 -- where data is {lobbies = [{code, modId, playerCount}, ...]}.
 MPAPI.replay.list_spectatable = function(callback)
-	if on_nakama() then
-		nakama_rpc('spectate_list', {}, callback)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
-		return
-	end
-	conn.api:list_spectatable(conn.jwt_token, callback)
+	nakama_rpc('spectate_list', {}, callback)
 end

@@ -7,69 +7,62 @@ C.ready = C.ready or false
 C.ready_callbacks = C.ready_callbacks or {}
 C.state_change_callbacks = C.state_change_callbacks or {}
 
--- Production endpoints. For local development against a server running inside WSL2,
--- override these via MPAPI.connect{ api_url = ..., mqtt_broker = ... }: prefer the
--- literal 127.0.0.1 over 'localhost', since on Windows 'localhost' resolves to IPv6
--- ::1 first, which does not reach WSL2 and eats a ~21s TCP SYN timeout per connection
--- before falling back to IPv4.
-local SERVER_DEFAULTS = {
-	api_url = 'https://new.balatromp.com',
-	mqtt_broker = 'mqtt.balatromp.com',
-	mqtt_port = 8883,
-	mqtt_secure = true,
+-- Production endpoints: the Nakama server the game talks to, and the website
+-- (log and report links). Each can be overridden by MPAPI.connect{...} opts
+-- or the mod config keys server_host, server_port, server_secure,
+-- nakama_server_key and web_url; dev/init.lua points dev builds at the local
+-- stack. For a server inside WSL2 prefer the literal 127.0.0.1 over
+-- 'localhost': on Windows 'localhost' resolves to IPv6 ::1 first, which does
+-- not reach WSL2 and eats a ~21s TCP SYN timeout before falling back to IPv4.
+C.SERVER_DEFAULTS = {
+	host = 'nakama.balatromp.com',
+	port = 443,
+	secure = true,
+	server_key = 'defaultkey',
+	web_url = 'https://new.balatromp.com',
 }
 
--- Resolve a self-hosted/local server from SMODS mod config (for development). Returns the
--- effective endpoints when MPAPI.config.use_custom_server is on, or nil to fall through to the
--- official SERVER_DEFAULTS. The host is shared by the API and MQTT broker; the API URL is built
--- from it. Explicit MPAPI.connect{...} opts still take precedence over this (see connect()).
--- Dev-server ports are fixed by convention, so the config carries only a host and a single
--- secure flag; the scheme and ports are derived from it (secure -> https + MQTT 8883/TLS;
--- plain -> http + MQTT 1883).
-local CUSTOM_API_PORT = 8788
-local CUSTOM_MQTT_TLS_PORT = 8883
-local CUSTOM_MQTT_PLAIN_PORT = 1883
-local CUSTOM_NAKAMA_PORT = 7350
-local CUSTOM_NAKAMA_SERVER_KEY = 'defaultkey'
+local CONFIG_KEYS = {
+	host = 'server_host',
+	port = 'server_port',
+	secure = 'server_secure',
+	server_key = 'nakama_server_key',
+	web_url = 'web_url',
+}
 
-local function config_server()
-	local c = MPAPI.config or {}
-	if not c.use_custom_server then
-		return nil
+-- One endpoint setting. Precedence: connect{...} opts > mod config > defaults.
+local function setting(opts, key)
+	if opts[key] ~= nil then
+		return opts[key]
 	end
-	local host = c.custom_server_url or '127.0.0.1'
-	local secure = c.custom_server_secure
-	if secure == nil then
-		secure = true
+	local configured = MPAPI.config and MPAPI.config[CONFIG_KEYS[key]]
+	if configured ~= nil then
+		return configured
 	end
+	return C.SERVER_DEFAULTS[key]
+end
+
+-- The endpoints a connect with `opts` uses. Pure but for the config read.
+function C.resolve_server(opts)
+	opts = opts or {}
 	return {
-		api_url = (secure and 'https://' or 'http://') .. host .. ':' .. CUSTOM_API_PORT,
-		mqtt_broker = host,
-		mqtt_port = secure and CUSTOM_MQTT_TLS_PORT or CUSTOM_MQTT_PLAIN_PORT,
-		mqtt_secure = secure,
-		nakama = c.use_nakama_auth and {
-			host = host,
-			port = tonumber(c.nakama_port) or CUSTOM_NAKAMA_PORT,
-			use_ssl = secure,
-			server_key = c.nakama_server_key or CUSTOM_NAKAMA_SERVER_KEY,
-		} or nil,
+		host = setting(opts, 'host'),
+		port = tonumber(setting(opts, 'port')),
+		secure = setting(opts, 'secure') and true or false,
+		server_key = setting(opts, 'server_key'),
+		web_url = setting(opts, 'web_url'),
 	}
 end
 
--- Nakama client for logging in (see connection:_try_nakama_auth), or nil when
--- Nakama login is off. The SDK is only loaded here, so with the flag off it
--- never is.
-local function create_nakama_client(nakama_opts)
-	if not nakama_opts then
-		return nil
-	end
+-- The Nakama client for `server`. The SDK is loaded on first use.
+local function create_nakama_client(server)
 	local sdk = MPAPI.load_mpapi_file('networking/nakama_sdk.lua').load()
 	C.nakama_engine = sdk.engine
 	return sdk.nakama.create_client({
-		host = nakama_opts.host,
-		port = nakama_opts.port,
-		use_ssl = nakama_opts.use_ssl,
-		username = nakama_opts.server_key,
+		host = server.host,
+		port = server.port,
+		use_ssl = server.secure,
+		username = server.server_key,
 		password = '',
 		engine = sdk.engine,
 	})
@@ -77,9 +70,6 @@ end
 
 local MPAPI_update_ref = MPAPI.update
 MPAPI.update = function()
-	if C.mqtt_instance then
-		C.mqtt_instance:update()
-	end
 	if C.nakama_engine then
 		C.nakama_engine.update()
 		MPAPI.networking.nakama_lobby.update()
@@ -126,42 +116,10 @@ MPAPI.connect = function(opts)
 		return
 	end
 
-	if not MPAPI.networking.mqtt_client then
-		MPAPI.sendWarnMessage('MQTT client module not available')
-		return
-	end
-
-	-- Precedence: explicit connect{...} opts > SMODS-config custom server > official defaults.
-	local custom = config_server()
-
-	local mqtt_broker = opts.mqtt_broker or (custom and custom.mqtt_broker) or SERVER_DEFAULTS.mqtt_broker
-	local mqtt_port = opts.mqtt_port or (custom and custom.mqtt_port) or SERVER_DEFAULTS.mqtt_port
-	local mqtt_secure = SERVER_DEFAULTS.mqtt_secure
-	if opts.mqtt_secure ~= nil then
-		mqtt_secure = opts.mqtt_secure
-	elseif custom and custom.mqtt_secure ~= nil then
-		mqtt_secure = custom.mqtt_secure
-	end
-
-	C.mqtt_instance = MPAPI.networking.mqtt_client.new({
-		broker = mqtt_broker,
-		port = mqtt_port,
-		secure = mqtt_secure,
-	})
-
-	local api = MPAPI.networking.api_client.new(C.mqtt_instance, opts.api_url or (custom and custom.api_url) or SERVER_DEFAULTS.api_url)
-
+	C.server = C.resolve_server(opts)
 	C.connection = MPAPI.networking.connection.new({
-		mqtt_client = C.mqtt_instance,
-		api_client = api,
 		steam = MPAPI.networking.steam,
-		nakama_client = create_nakama_client(custom and custom.nakama),
-		config = {
-			mqtt_broker = mqtt_broker,
-			mqtt_port = mqtt_port,
-			mqtt_secure = mqtt_secure,
-			dev_name = opts.dev_name or nil,
-		},
+		nakama_client = create_nakama_client(C.server),
 	})
 
 	C.connection.on_state_change = connection_on_state_change
@@ -173,10 +131,6 @@ MPAPI.disconnect = function()
 	if C.connection then
 		C.connection:disconnect()
 	end
-	if C.mqtt_instance then
-		C.mqtt_instance:disconnect()
-		C.mqtt_instance = nil
-	end
 	C.connection = nil
 	MPAPI.connection_state.state = MPAPI.ConnectionState.DISCONNECTED
 	C.reset_state_vars()
@@ -184,7 +138,7 @@ MPAPI.disconnect = function()
 end
 
 -- Tear down the current connection and reconnect with the same opts. Used to apply a server
--- change (e.g. toggling the local dev server in the config) without a game restart.
+-- change without a game restart.
 MPAPI.reconnect = function()
 	local opts = C.last_opts or {}
 	MPAPI.disconnect()
@@ -208,28 +162,23 @@ MPAPI.is_launcher_verified = function()
 	return MPAPI.anticheat ~= nil and MPAPI.anticheat.server_verified == true
 end
 
-MPAPI.get_mqtt = function()
-	return C.mqtt_instance
+-- The website's base URL, for links to a run's log or a report.
+MPAPI.get_web_url = function()
+	return (C.server or C.resolve_server(C.last_opts)).web_url
 end
 
 MPAPI.get_connection = function()
 	return C.connection
 end
 
--- The Nakama session from the last login, or nil when Nakama login is off
--- or the player isn't logged in.
+-- The Nakama session from the last login, or nil when not logged in.
 MPAPI.get_nakama_session = function()
 	return C.connection and C.connection.nakama_session or nil
 end
 
--- The id this player's replay logs and lobby rosters are keyed by: the Nakama
--- user id when Nakama lobbies are on, else the API player id (which differs).
+-- The id this player's replay logs and lobby rosters are keyed by: the
+-- Nakama user id.
 MPAPI.get_replay_player_id = function()
-	local lobby = MPAPI._internal.lobby
-	local session = MPAPI.get_nakama_session()
-	if session and lobby and lobby.nakama_enabled and lobby.nakama_enabled() then
-		return session.user_id
-	end
 	local conn = C.connection
 	return conn and conn.player_id or nil
 end
@@ -331,7 +280,7 @@ log_state_update = function(new_state, context)
 	elseif new_state == MPAPI.ConnectionState.AUTHENTICATING then
 		MPAPI.sendDebugMessage('Authenticating...')
 	elseif new_state == MPAPI.ConnectionState.CONNECTING then
-		MPAPI.sendDebugMessage('Connecting to MQTT broker...')
+		MPAPI.sendDebugMessage('Connecting to the server...')
 	end
 end
 

@@ -5,7 +5,7 @@
 
       uuid, http, socket_create, socket_connect, socket_disconnect, socket_send
 
-    Network I/O runs on love.threads, like the MQTT client:
+    Network I/O runs on love.threads:
       - networking/nakama_http_thread.lua: one shared thread, one attempt per
         request.
       - networking/nakama_ws_thread.lua: one thread per connected socket
@@ -13,8 +13,8 @@
 
     Nothing is delivered until M.update() runs: it drains the threads,
     fires due retries (Defold's timer.delay) and calls the SDK callbacks on
-    the main thread. Whoever wires this up must call it every frame, the
-    way MPAPI.update drives mqtt_client:update().
+    the main thread. Whoever wires this up must call it every frame, as
+    MPAPI.update does (api/connection/lifecycle.lua).
 
     Main-thread only. Load it through networking/nakama_sdk.lua, which
     registers the SDK's modules first.

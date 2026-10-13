@@ -4,9 +4,8 @@
     networking/websocket.lua). Runs only inside those love.threads - the
     main thread never touches a socket.
 
-    TLS goes through networking/openssl_ffi.lua on top of a luasocket fd,
-    the same technique mqtt_thread.lua's do_https_request uses (Balatro's
-    Lua has no luasec). Like that function, certificates are not verified
+    TLS goes through networking/openssl_ffi.lua on top of a luasocket fd
+    (Balatro's Lua has no luasec). Certificates are not verified
     (verify = false) and DNS is IPv4-only via socket.dns.toip.
 ]]
 
@@ -102,7 +101,7 @@ function TlsStream:receive(timeout)
 		return data
 	end
 	-- 'timeout' is WANT_READ: the socket was readable but a full TLS
-	-- record hasn't arrived yet (see mqtt_thread.lua's do_https_request).
+	-- record hasn't arrived yet.
 	if err == 'timeout' then
 		return ''
 	end

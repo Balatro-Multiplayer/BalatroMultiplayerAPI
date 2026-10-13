@@ -1,9 +1,9 @@
--- Lobbies hosted on Nakama (config use_nakama_lobbies): the create/join/
--- rejoin entry points and the mapping from the bmp_lobby match's ops onto the
--- lobby object. The transport is networking/nakama_lobby.lua.
+-- Lobbies hosted on Nakama: the create/join/rejoin entry points and the
+-- mapping from the bmp_lobby match's ops onto the lobby object. The transport
+-- is networking/nakama_lobby.lua.
 --
--- A prototype: the lobby itself (roster, player info, metadata, own state,
--- host, kick, leave, disconnect/rejoin) is server-authoritative on Nakama.
+-- The lobby itself (roster, player info, metadata, own state, host, kick,
+-- leave, disconnect/rejoin) is server-authoritative.
 -- Actions are relayed through the match, or run by the server when
 -- authoritative (api/action/builtin.lua): ready, start, results and replay
 -- capture, which the server stores with each finished game. Matchmaker groups
@@ -15,10 +15,6 @@ local L = MPAPI._internal.lobby
 
 local function NL()
 	return MPAPI.networking.nakama_lobby
-end
-
-L.nakama_enabled = function()
-	return NL() ~= nil and NL().enabled()
 end
 
 local function fail(lobby, message)
@@ -173,26 +169,9 @@ local function on_data(lobby, on_ready, op, data)
 	end
 end
 
--- The server only carries chat for accounts that have turned it on there; an
--- account the API has cleared for chat says so once per lobby.
-local function start_chat(lobby)
-	if not MPAPI.connection_state.chat_enabled then
-		MPAPI.chat.init(lobby)
-		return
-	end
-	NL().rpc('chat_enable', {}, function(err)
-		if err then
-			MPAPI.sendWarnMessage('[nakama_lobby] chat_enable failed: ' .. tostring(err))
-		end
-		if not lobby._destroyed then
-			MPAPI.chat.init(lobby)
-		end
-	end)
-end
-
 local function connected(lobby)
 	lobby:_fire(MPAPI.LobbyEvent.CONNECTED)
-	start_chat(lobby)
+	MPAPI.chat.init(lobby)
 	if MPAPI._internal.on_lobby_connected then
 		MPAPI._internal.on_lobby_connected(lobby)
 	end
@@ -228,7 +207,6 @@ local function new_lobby(conn, mod_id, opts)
 	local lobby = L.create_object({
 		mod_id = mod_id,
 		player_id = nil,
-		api = conn.api,
 		connection = conn,
 		is_host = opts.is_host,
 		max_players = opts.max_players,

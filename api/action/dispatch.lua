@@ -1,13 +1,12 @@
--- Inbound action delivery: in-process for offline lobbies, over MQTT or a
--- Nakama match for networked ones. Both networked transports hand
--- deliver_action the same envelope.
+-- Inbound action delivery: in-process for offline lobbies, over the Nakama
+-- match for networked ones. Both hand deliver_action the same envelope.
 MPAPI._internal.lobby = MPAPI._internal.lobby or {}
 local L = MPAPI._internal.lobby
 
 -- The sender id of an authoritative action's result (Nakama only).
 MPAPI.ACTION_FROM_SERVER = 'server'
 
--- Offline lobbies have no MQTT broker, so an action is delivered to the only
+-- Offline lobbies have no server, so an action is delivered to the only
 -- participant -- ourselves -- synchronously, in-process. Mirrors the self/broadcast
 -- branch of deliver_action below (validation already ran in send/broadcast).
 MPAPI._internal.dispatch_local_action = function(instance, target_id)
@@ -49,8 +48,7 @@ local function resolve_pending(lobby, cid, params, err)
 end
 
 -- Delivers one inbound action. envelope = { cid, action, from, to, params,
--- response_to }, with `from` already trusted by the transport (the MQTT topic,
--- or the Nakama server's stamp).
+-- response_to }, with `from` already trusted (the Nakama server stamps it).
 L.deliver_action = function(lobby, envelope)
 	if lobby._destroyed or type(envelope) ~= 'table' then
 		return
@@ -130,30 +128,4 @@ L.reject_action = function(lobby, rejection)
 	if not resolve_pending(lobby, rejection.cid, nil, err) then
 		MPAPI.sendWarnMessage('action ' .. tostring(rejection.action) .. ' rejected: ' .. reason)
 	end
-end
-
--- MQTT: the sender is the topic's player id, never the payload's `from`.
-MPAPI._internal.handle_action = function(lobby, topic, payload)
-	if lobby._destroyed then
-		return
-	end
-
-	local ok, data = pcall(MPAPI.json_decode, payload)
-	if not ok or type(data) ~= 'table' then
-		return
-	end
-
-	local from = topic:match('players/([^/]+)/actions$')
-	if not from then
-		return
-	end
-
-	L.deliver_action(lobby, {
-		cid = data.cid,
-		action = data.action,
-		from = from,
-		to = data.to,
-		params = data.params,
-		response_to = data.response_to,
-	})
 end

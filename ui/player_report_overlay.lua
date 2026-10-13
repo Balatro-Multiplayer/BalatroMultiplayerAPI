@@ -127,8 +127,7 @@ G.FUNCS.mpapi_report_player_reason = function(e)
 
 		-- §15.5: hand the submitting player a link to their scoped status page.
 		if _result_report_id then
-			local conn = MPAPI._internal.conn and MPAPI._internal.conn.connection
-			local base_url = conn and conn.api and conn.api.base_url
+			local base_url = MPAPI.get_web_url()
 			if base_url then
 				local link = base_url .. '/reports/' .. tostring(_result_report_id)
 				pcall(function()

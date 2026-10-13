@@ -1,6 +1,4 @@
--- Launcher integrity pushed over the Nakama socket (config nakama_only): the
--- counterpart of the MQTT player/{id}/challenge topic
--- (networking/connection.lua). The API still runs the challenges
+-- Launcher integrity pushed over the Nakama socket. The API still runs the challenges
 -- (launcher-integrity.service.ts); Nakama passes them on as CHALLENGE
 -- notifications and the API's verdicts as INTEGRITY ones
 -- (BalatroMultiplayerServer nakama/src/integrity.ts). Answers go back
@@ -16,7 +14,7 @@ local function on_challenge(msg)
 end
 
 -- {verified, reason, message}. Failing is the normal outcome for any
--- non-BET launch, so it stays silent, as on MQTT; it only closes ranked.
+-- non-BET launch, so it stays silent; it only closes ranked.
 local function on_integrity(msg)
 	local A = MPAPI.anticheat
 	if not A then

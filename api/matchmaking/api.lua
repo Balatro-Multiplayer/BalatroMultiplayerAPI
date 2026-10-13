@@ -1,10 +1,7 @@
 MPAPI.matchmaking = MPAPI.matchmaking or {}
 
--- With Nakama lobbies on, queues are Nakama matchmaker tickets (the server
--- makes the lobby, see BalatroMultiplayerServer nakama/src/matchmaking).
-local function on_nakama()
-	return MPAPI.networking.on_nakama()
-end
+-- Queues are Nakama matchmaker tickets (the server makes the lobby, see
+-- BalatroMultiplayerServer nakama/src/matchmaking).
 
 -- How far apart two ranked ratings may be to be matched.
 MPAPI.matchmaking.NAKAMA_RATING_SPREAD = 300
@@ -154,10 +151,9 @@ MPAPI.matchmaking.queue = function(opts)
 			.. 'queue, pass ranked=true or lobby_type=MPAPI.LobbyType.RANKED explicitly.')
 	end
 
-	local anticheat_ok = false
 	if wants_ranked then
 		local A = MPAPI.anticheat
-		anticheat_ok = A ~= nil and A.active and A.launcher_connected and not A.launcher_supervision_lost
+		local anticheat_ok = A ~= nil and A.active and A.launcher_connected and not A.launcher_supervision_lost
 		if not anticheat_ok then
 			local reason = 'no active/healthy launcher anti-cheat supervision (active=' .. tostring(A and A.active)
 				.. ' launcher_connected=' .. tostring(A and A.launcher_connected)
@@ -180,38 +176,7 @@ MPAPI.matchmaking.queue = function(opts)
 	local handle = MPAPI.matchmaking._make_handle(opts.mod_id, opts.game_mode)
 	mm.handles[#mm.handles + 1] = handle
 
-	if on_nakama() then
-		handle._nakama = true
-		nakama_queue(opts, handle, wants_ranked and true or false)
-		return handle
-	end
-
-	mm.ensure_subscribed()
-
-	conn.api:queue_matchmaking(conn.jwt_token, {
-		modId = opts.mod_id,
-		gameMode = opts.game_mode,
-		minPlayers = opts.min_players,
-		maxPlayers = opts.max_players,
-		-- Lets the (future) server independently see the same anti-cheat
-		-- status the local gate above already enforced - only meaningful
-		-- (and only ever true) for a ranked attempt; omitted otherwise so
-		-- non-ranked queue requests keep their existing wire shape exactly.
-		anticheatActive = wants_ranked and anticheat_ok or nil,
-	}, function(err, data)
-		if err then
-			MPAPI.sendWarnMessage('[mmdbg] queue_matchmaking API error: ' .. tostring(err))
-			mm.remove_handle(handle)
-			handle:_fire(MPAPI.MatchmakingEvent.ERROR, err)
-			return
-		end
-		MPAPI.sendDebugMessage('[mmdbg] queue_matchmaking OK position=' .. tostring(data and data.position))
-		-- Start the shared queue-time display (idempotent; self-terminates when no
-		-- handle is still searching). Every consumer mod gets it for free.
-		if mm.queue_timer then mm.queue_timer.start() end
-		handle:_fire(MPAPI.MatchmakingEvent.QUEUED, data and data.position)
-	end)
-
+	nakama_queue(opts, handle, wants_ranked and true or false)
 	return handle
 end
 
@@ -238,30 +203,13 @@ MPAPI.matchmaking.leave_all = function()
 	-- Clear local handles first
 	local old = mm.handles
 	mm.handles = {}
-	mm.subscribed = false
 
 	-- Mark all as left
 	for _, h in ipairs(old) do
 		h._left = true
 	end
 
-	if on_nakama() then
-		MPAPI.networking.nakama_lobby.unqueue_all()
-		return
-	end
-
-	-- Tell server to leave all queues
-	conn.api:leave_all_matchmaking_queues(conn.jwt_token, function(err)
-		if err then
-			MPAPI.sendWarnMessage('leave_all_matchmaking_queues error: ' .. tostring(err))
-		end
-	end)
-
-	-- Unsubscribe MQTT
-	local mqtt = MPAPI.get_mqtt()
-	if mqtt then
-		mqtt:unsubscribe(mm.topic(conn.player_id))
-	end
+	MPAPI.networking.nakama_lobby.unqueue_all()
 end
 
 -- Queue the entire private lobby as a group. Only callable by the lobby host.
@@ -276,14 +224,9 @@ MPAPI.matchmaking.queue_group = function(opts)
 	return MPAPI.matchmaking.queue(opts)
 end
 
--- With Nakama lobbies on, ratings live on the Nakama server (BalatroMultiplayerServer
--- nakama/src/rating) and are read through its RPCs, handed back in the API's shapes.
--- Its boards are keyed by the bare mode, so a queue's 'ranked:' prefix is dropped.
-local function nakama_ratings_on()
-	local L = MPAPI._internal.lobby
-	return L ~= nil and L.nakama_enabled ~= nil and L.nakama_enabled()
-end
-
+-- Ratings live on the Nakama server (BalatroMultiplayerServer nakama/src/rating)
+-- and are read through its RPCs. Its boards are keyed by the bare mode, so a
+-- queue's 'ranked:' prefix is dropped.
 local function nakama_mode(game_mode)
 	return (tostring(game_mode):gsub('^ranked:', ''))
 end
@@ -305,65 +248,38 @@ end
 -- fetching an arbitrary other player's -- e.g. a current lobby opponent's --
 -- is just as unrestricted server-side).
 MPAPI.matchmaking.get_rating = function(mod_id, game_mode, season, player_id, callback)
-	if nakama_ratings_on() then
-		-- player_id is a lobby roster id, which on Nakama is the Nakama user id.
-		nakama_rating_rpc('rating_get', mod_id, game_mode, callback, player_id)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
-		return
-	end
-	conn.api:get_matchmaking_rating(conn.jwt_token, mod_id, game_mode, season, player_id, callback)
+	-- player_id is a lobby roster id, which is the Nakama user id.
+	nakama_rating_rpc('rating_get', mod_id, game_mode, callback, player_id)
 end
 
 -- Fetch leaderboard for a given mode. season may be nil to use the active season.
 MPAPI.matchmaking.get_leaderboard = function(mod_id, game_mode, season, opts, callback)
-	if nakama_ratings_on() then
-		-- Same shape as the API's: entries sorted by rank, plus the caller's own entry.
-		nakama_rating_rpc('leaderboard_get', mod_id, game_mode, function(err, data)
-			if err then
-				callback(err, nil)
-				return
+	-- Entries sorted by rank, plus the caller's own entry.
+	nakama_rating_rpc('leaderboard_get', mod_id, game_mode, function(err, data)
+		if err then
+			callback(err, nil)
+			return
+		end
+		local own = MPAPI.get_replay_player_id()
+		local entries, player_entry = {}, nil
+		for _, e in ipairs(data.entries or {}) do
+			local entry = {
+				rank = e.rank,
+				playerId = e.playerId,
+				displayName = e.name,
+				rating = e.rating,
+				wins = e.wins,
+				losses = e.losses,
+				gamesPlayed = e.gamesPlayed,
+				seasonBest = e.seasonBest,
+			}
+			entries[#entries + 1] = entry
+			if e.playerId == own then
+				player_entry = entry
 			end
-			local own = MPAPI.get_replay_player_id()
-			local entries, player_entry = {}, nil
-			for _, e in ipairs(data.entries or {}) do
-				local entry = {
-					rank = e.rank,
-					playerId = e.playerId,
-					displayName = e.name,
-					rating = e.rating,
-					wins = e.wins,
-					losses = e.losses,
-					gamesPlayed = e.gamesPlayed,
-					seasonBest = e.seasonBest,
-				}
-				entries[#entries + 1] = entry
-				if e.playerId == own then
-					player_entry = entry
-				end
-			end
-			callback(nil, { entries = entries, playerEntry = player_entry })
-		end)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
-		return
-	end
-	opts = opts or {}
-	conn.api:get_matchmaking_leaderboard(
-		conn.jwt_token,
-		mod_id,
-		game_mode,
-		season,
-		opts.limit or 100,
-		opts.offset or 0,
-		callback
-	)
+		end
+		callback(nil, { entries = entries, playerEntry = player_entry })
+	end)
 end
 
 -- Live "N queued / M in game" counts per gameMode for mod_id. callback(err, data)
@@ -373,20 +289,11 @@ end
 -- instead of calling this directly on a timer themselves.
 MPAPI.matchmaking.get_queue_counts = function(mod_id, callback)
 	-- Nakama queues are matchmaker tickets: the module counts them.
-	if on_nakama() then
-		MPAPI.networking.nakama_lobby.rpc('queue_counts', { modId = mod_id }, function(err, data)
-			if err then
-				callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)), nil)
-				return
-			end
-			callback(nil, data)
-		end)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
-		return
-	end
-	conn.api:get_matchmaking_queue_counts(conn.jwt_token, mod_id, callback)
+	MPAPI.networking.nakama_lobby.rpc('queue_counts', { modId = mod_id }, function(err, data)
+		if err then
+			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)), nil)
+			return
+		end
+		callback(nil, data)
+	end)
 end

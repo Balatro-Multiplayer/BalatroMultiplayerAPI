@@ -1,5 +1,4 @@
--- Server pushes over the Nakama socket (config nakama_only), the counterpart
--- of the MQTT player/{id}/# topics. The server sends them as Nakama
+-- Server pushes over the Nakama socket. The server sends them as Nakama
 -- notifications with a BMP code (BalatroMultiplayerServer nakama/src/notify.ts;
 -- keep both lists in step). Handlers are registered by code and get the
 -- decoded content table.

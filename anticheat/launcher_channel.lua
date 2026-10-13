@@ -17,15 +17,15 @@
     rx_channel are forward-declared as locals above that point too (Lua
     locals aren't hoisted - a function defined before a `local` of the same
     name would otherwise close over an unrelated global). This matters
-    because the server issues a login challenge to every fresh MQTT
-    connection regardless of game mode (see launcher-integrity.service.ts's
+    because the server issues a login challenge to every fresh
+    session regardless of game mode (see launcher-integrity.service.ts's
     handleClientConnected) - a Casual player, or anyone who started the game
     without BET at all, still needs A.answer_challenge to exist and safely
     self-refuse, not be nil.
 
     The actual network/crypto work happens on anticheat/launcher_thread.lua,
-    a dedicated love.thread, following networking/mqtt_client.lua's own
-    thread-spawn/tx_channel/rx_channel convention exactly (see that file).
+    a dedicated love.thread, with the same tx_channel/rx_channel
+    convention as the Nakama I/O threads (networking/nakama_http_thread.lua).
 ]]
 
 MPAPI.anticheat = MPAPI.anticheat or {}
@@ -43,7 +43,7 @@ A.launcher_supervision_lost_at = nil
 -- 'challenge' topic handler on a {type='verified'} message (see
 -- launcher-integrity.service.ts's handleChallengeResponse) - never set
 -- optimistically just because a response was sent. Starts false on every
--- fresh load (a new MQTT connection means a fresh login challenge is coming
+-- fresh load (a new session means a fresh login challenge is coming
 -- regardless), and is the one flag safe for other mods to gate a Ranked
 -- queue button on - see MPAPI.is_launcher_verified() in
 -- api/connection/lifecycle.lua.
@@ -148,8 +148,8 @@ local function run_challenge_answered_callbacks(result)
 	end
 end
 
--- Relays a launcher-integrity challenge (issued by the server over MQTT -
--- see networking/connection.lua) to the launcher for it to sign, and reports
+-- Relays a launcher-integrity challenge (pushed by the server over the
+-- Nakama socket - see api/connection/integrity.lua) to the launcher for it to sign, and reports
 -- the result via MPAPI.on_launcher_challenge_answered(). This module never
 -- computes a signature itself - it has no secret to compute one with - it's
 -- pure relay in both directions.
@@ -257,8 +257,8 @@ end
 
 -- Drains rx_channel and reacts to events pushed by launcher_thread.lua.
 -- Called from MPAPI.update() (see core.lua's chain-wrap of it) - the same
--- "run every frame" hook networking/api/connection/lifecycle.lua already
--- uses for the MQTT client's own update().
+-- "run every frame" hook api/connection/lifecycle.lua already uses for the
+-- Nakama engine's update().
 function A.update()
 	if not rx_channel then
 		return
@@ -348,7 +348,7 @@ function A.update()
 end
 
 -- Chain onto MPAPI.update, same "run every frame" wrap pattern
--- api/connection/lifecycle.lua uses for the MQTT client's own update() -
+-- api/connection/lifecycle.lua uses for the Nakama engine's update() -
 -- MPAPI.update is called once per frame via the no_delete Event core.lua
 -- registers with G.E_MANAGER.
 local MPAPI_update_ref = MPAPI.update

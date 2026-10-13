@@ -1,8 +1,7 @@
 --[[
     Ranked-mode launcher<->mod supervision channel - network thread.
-    Receives commands on tx_channel, sends events on rx_channel, exactly
-    like networking/mqtt_thread.lua's own convention - but unlike that
-    file, messages here are Lua *tables*, not SEP-joined strings: this
+    Receives commands on tx_channel, sends events on rx_channel. Messages
+    here are Lua *tables*, not SEP-joined strings: this
     channel's payloads (nonces, AES-GCM ciphertext) are arbitrary binary
     data that could contain the SEP byte itself, which a string-join
     protocol can't safely carry. Love2D's thread Channels support pushing
@@ -385,7 +384,7 @@ while running do
 			running = false
 		elseif cmd.cmd == 'answer_challenge' then
 			-- Pure relay - this thread never computes a signature itself, it
-			-- only forwards what the server issued (via MQTT, on the main
+			-- only forwards what the server issued (via Nakama, on the main
 			-- thread) to the launcher, which is the only party holding the
 			-- secret needed to answer it. Defensive check: only meaningful
 			-- post-handshake, though launcher_channel.lua's own pending-

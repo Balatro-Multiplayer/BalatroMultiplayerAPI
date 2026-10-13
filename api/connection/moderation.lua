@@ -1,6 +1,5 @@
--- Moderation pushed over the Nakama socket (config nakama_only): bans and
--- the queue tickets they cost. The MQTT path has the API's EMQX kick and
--- matchmaking messages instead.
+-- Moderation pushed over the Nakama socket: bans and the queue tickets they
+-- cost.
 MPAPI._internal.conn = MPAPI._internal.conn or {}
 local C = MPAPI._internal.conn
 
@@ -57,9 +56,8 @@ local function on_banned(ban)
 	end
 end
 
--- A queue was cancelled for this player: handled like the API's
--- queue_cancelled, after giving up the ticket (on MQTT the API dequeued the
--- player itself). A failed ranked-readiness check names no queue and
+-- A queue was cancelled for this player: give up the ticket and end the
+-- handle. A failed ranked-readiness check names no queue and
 -- cancels every ranked one. A refused matched group (requeue) needs nothing
 -- here: its matched message carries no match, which queues again
 -- (api/matchmaking/dispatch.lua on_nakama_matched).
@@ -83,12 +81,7 @@ local function on_queue_cancelled(msg)
 			MPAPI.networking.nakama_lobby.unqueue(handle._nakama_ticket)
 			handle._nakama_ticket = nil
 		end
-		mm.dispatch({
-			type = MPAPI.MatchmakingMessage.QUEUE_CANCELLED,
-			modId = handle.mod_id,
-			gameMode = handle.game_mode,
-			reason = msg.reason,
-		})
+		mm.cancel_handle(handle, msg.reason)
 	end
 end
 

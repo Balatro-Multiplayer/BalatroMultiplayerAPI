@@ -9,10 +9,9 @@ local dp_compat = MPAPI.load_mpapi_file('compatibility/debugplus.lua')
 
 local using_dp = false
 
--- Current lobby reference and whether chat is actively subscribed in it
+-- Current lobby reference and whether chat is active in it
 local _current_lobby = nil
 local _lobby_chat_active = false
-local _chat_topic = nil
 
 -----------------------------
 -- MESSAGE DISPLAY
@@ -50,16 +49,8 @@ local function make_publish_fn(lobby)
 			MPAPI.chat.addMessage(localize('k_chat_client_disabled'), COLOUR_SYSTEM)
 			return
 		end
-		if lobby._nakama then
-			-- The server moderates it and sends it back to everyone, us included.
-			MPAPI.networking.nakama_lobby.rpc('chat_send', { message = text }, function(err, _)
-				if err then
-					MPAPI.chat.addMessage('[!] ' .. tostring(err), COLOUR_SYSTEM)
-				end
-			end)
-			return
-		end
-		MPAPI._internal.send_chat_message(lobby.code, text, function(err, _)
+		-- The server moderates it and sends it back to everyone, us included.
+		MPAPI.networking.nakama_lobby.rpc('chat_send', { message = text }, function(err, _)
 			if err then
 				MPAPI.chat.addMessage('[!] ' .. tostring(err), COLOUR_SYSTEM)
 			end
@@ -67,8 +58,8 @@ local function make_publish_fn(lobby)
 	end
 end
 
--- Shows one chat line from `sender_id` (a muted sender's is dropped). Both
--- transports end here: MQTT's chat topic and a Nakama lobby's CHAT op.
+-- Shows one chat line from `sender_id` (a muted sender's is dropped): a
+-- lobby's CHAT op (api/lobby/nakama.lua).
 function MPAPI.chat.on_message(lobby, sender_id, display_name, message)
 	-- Checked before anything else, per the design doc: a muted sender's
 	-- message is silently dropped.
@@ -83,30 +74,7 @@ function MPAPI.chat.on_message(lobby, sender_id, display_name, message)
 	MPAPI.chat.addMessage(name .. ': ' .. message, colour)
 end
 
-local function subscribe_chat(lobby)
-	-- A Nakama lobby's chat arrives as ops on its match, not on a topic.
-	if lobby._nakama then
-		return
-	end
-	_chat_topic = lobby._mqtt:lobby_topic(lobby.code, 'chat/+')
-	lobby._mqtt:subscribe(_chat_topic, 1, function(topic, payload)
-		local sender_id = topic:match('/chat/([^/]+)$')
-		local ok, data = pcall(MPAPI.json_decode, payload)
-		if not ok or type(data) ~= 'table' then
-			return
-		end
-		MPAPI.chat.on_message(lobby, sender_id, data.displayName, data.message)
-	end)
-end
-
-local function unsubscribe_chat()
-	if _chat_topic and _current_lobby and _current_lobby._mqtt then
-		_current_lobby._mqtt:unsubscribe(_chat_topic)
-	end
-	_chat_topic = nil
-end
-
--- Wire up send callback + subscribe for the current lobby.
+-- Wire up the send callback for the current lobby.
 -- Safe to call mid-session (e.g. after enabling chat while already in a lobby).
 -- No-ops if already active or conditions aren't met.
 local function activate_lobby_chat(announce)
@@ -130,7 +98,6 @@ local function activate_lobby_chat(announce)
 		end)
 	end
 
-	subscribe_chat(lobby)
 	_lobby_chat_active = true
 
 	if announce then
@@ -150,11 +117,10 @@ end
 -- Called when the local client-side chat_enabled config toggle changes.
 function MPAPI.chat.on_config_changed(enabled)
 	if enabled then
-		-- Re-subscribe if we're in a lobby and server has verified chat
+		-- Reactivate if we are in a lobby and the server has verified chat
 		if _lobby_chat_active then return end
 		activate_lobby_chat(false)
 	else
-		unsubscribe_chat()
 		_lobby_chat_active = false
 		-- Reset send callback so sending is blocked
 		if not using_dp then
@@ -204,7 +170,6 @@ end
 function MPAPI.chat.cleanup()
 	MPAPI.chat._send_fn = nil
 	MPAPI.chat._own_name = nil
-	_chat_topic = nil
 	_current_lobby = nil
 	_lobby_chat_active = false
 	if using_dp then

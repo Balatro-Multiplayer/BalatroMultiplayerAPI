@@ -1,6 +1,5 @@
--- Transport for lobbies hosted as server-authoritative Nakama matches (config
--- use_nakama_lobbies; the match is BalatroMultiplayerServer/nakama's
--- bmp_lobby). Owns the one realtime socket and the one lobby match this client
+-- Transport for lobbies hosted as server-authoritative Nakama matches (the
+-- match is BalatroMultiplayerServer/nakama's bmp_lobby). Owns the one realtime socket and the one lobby match this client
 -- is in: RPCs, match join/leave, op-coded match data in and out, and socket
 -- reconnect with rejoin while the server holds the seat (its grace period).
 -- What the ops mean for the lobby object lives in api/lobby/nakama.lua.
@@ -34,7 +33,6 @@ local RECONNECT_BACKOFF = { 0.5, 1, 2, 4 }
 local RECONNECT_GIVE_UP_SECONDS = 130
 -- Refresh the session this long before it expires.
 local SESSION_REFRESH_MARGIN = 60
-local DEV_DEVICE_ID_PREFIX = 'bmp-dev-'
 
 local socket = nil
 local socket_open = false
@@ -78,19 +76,6 @@ local function error_message(result, fallback)
 	return result.message or fallback
 end
 
--- True when lobbies should go through Nakama: the flag is on and there is a
--- Nakama client to talk to (use_nakama_auth on a custom server).
-function NL.enabled()
-	local c = MPAPI.config
-	return c and (c.use_nakama_lobbies or c.nakama_only) and nakama_client() ~= nil or false
-end
-
--- True when the client talks to Nakama alone (config nakama_only): login,
--- account and pushes all go through it, and the socket stays open.
-function NL.only()
-	return MPAPI.config and MPAPI.config.nakama_only and nakama_client() ~= nil or false
-end
-
 ----------------------------------------------------------------------
 -- Session
 ----------------------------------------------------------------------
@@ -98,20 +83,6 @@ end
 local function adopt_session(c, session)
 	c.nakama_session = session
 	c.nakama_client.set_bearer_token(session.token)
-end
-
--- Dev only: impersonated logins have no Steam ticket and so no Nakama
--- session; sign in with a device id derived from the BMP player id instead.
--- The server refuses device login unless ALLOW_DEVICE_AUTH is set.
-local function device_login(c, cb)
-	c.nakama_client.authenticate_device(DEV_DEVICE_ID_PREFIX .. c.player_id, nil, true, nil, function(session)
-		if not session or session.error then
-			cb(nil, 'Nakama device login failed: ' .. error_message(session, 'no response'))
-			return
-		end
-		adopt_session(c, session)
-		cb(session)
-	end)
 end
 
 local function refresh_session(c, cb)
@@ -148,10 +119,6 @@ local function with_session(cb)
 		else
 			cb(session)
 		end
-		return
-	end
-	if MPAPI.config.nakama_dev_device_auth then
-		device_login(c, cb)
 		return
 	end
 	cb(nil, 'No Nakama session')
@@ -325,8 +292,8 @@ NL.ensure_socket = function(cb)
 	with_socket(cb or ignore)
 end
 
--- With nakama_only the socket carries the server's pushes, so it is reopened
--- after a drop even outside a lobby (a lobby rejoin reopens it anyway).
+-- The socket carries the server's pushes, so it is reopened after a drop
+-- even outside a lobby (a lobby rejoin reopens it anyway).
 reopen_socket = function()
 	keep_open_attempt = keep_open_attempt + 1
 	local delay = RECONNECT_BACKOFF[math.min(keep_open_attempt, #RECONNECT_BACKOFF)]
@@ -354,8 +321,7 @@ end
 -- Match
 ----------------------------------------------------------------------
 
--- The per-player info the server shows everyone else (it replaces the API's
--- lobby/{code}/players/{id}/info publish). Nakama join metadata is a
+-- The per-player info the server shows everyone else. Nakama join metadata is a
 -- string-to-string map, so the mods list travels as JSON.
 local function join_metadata(mod_id)
 	local c = conn()
@@ -713,12 +679,3 @@ end
 
 MPAPI.networking.nakama_lobby = NL
 
--- True when lobbies, matchmaking, replays and the rest go through Nakama.
-function MPAPI.networking.on_nakama()
-	return NL.enabled()
-end
-
--- True when nothing goes through the API or MQTT (config nakama_only).
-function MPAPI.networking.nakama_only()
-	return NL.only()
-end

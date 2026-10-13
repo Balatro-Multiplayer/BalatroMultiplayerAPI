@@ -14,18 +14,17 @@
     which can't see inside a mounted zip at all (the only real file on
     disk from the OS's perspective is the opaque .zip itself).
 
-    mqtt_client.lua already demonstrates the correct workaround for its
-    own thread's *bootstrap* file: read the source via NFS.read() (works
-    fine in the main thread) and hand love.thread.newThread() the source
-    text directly, never a path. This module generalizes that same
-    technique to an entire module tree (mqtt's own dependency tree,
-    anticheat.crypto, openssl_ffi, ...): read every .lua file under a
+    The workaround for a thread's *bootstrap* file is to read the source
+    via NFS.read() (works fine in the main thread) and hand
+    love.thread.newThread() the source text directly, never a path. This
+    module generalizes that same technique to an entire module tree
+    (lib/nakama, anticheat.crypto, openssl_ffi, ...): read every .lua file under a
     directory via NFS.read() here in the main thread, and return a flat
     {module_name = source_text} table the caller sends through the
     thread's channel. The receiving thread then registers each entry into
     its own package.preload[module_name] = function(...) return
     load(source)(...) end *before* calling require() - see
-    networking/mqtt_thread.lua and anticheat/launcher_thread.lua for the
+    networking/nakama_http_thread.lua and anticheat/launcher_thread.lua for the
     receiving side (duplicated there, not required from this file, since
     a background thread can't require() a module living in the mount
     either - the same chicken-and-egg problem this file exists to solve

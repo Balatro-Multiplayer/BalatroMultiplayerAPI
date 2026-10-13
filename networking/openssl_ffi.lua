@@ -1,6 +1,6 @@
 --[[
     OpenSSL FFI Bindings for LuaJIT/Love2D
-    Provides TLS support for MQTT connections in Balatro
+    Provides TLS support for the Nakama connections in Balatro
     
     Compatible with OpenSSL 1.1.x and 3.x
 ]]
@@ -268,7 +268,7 @@ local function load_openssl()
 			-- points us at that directory via BET_OPENSSL_DYLIB_DIR, set on
 			-- the game process's environment right before launch (see
 			-- IntroScreen::launchGame() in new-launcher) - env vars are
-			-- process-wide, so this works the same in the MQTT worker's own
+			-- process-wide, so this works the same in a worker thread's own
 			-- Lua state as it does on the main thread.
 			local env_dir = os.getenv('BET_OPENSSL_DYLIB_DIR')
 			if env_dir then
@@ -279,7 +279,7 @@ local function load_openssl()
 			-- an older BET that doesn't set the env var yet): the mod's own
 			-- networking/ folder, if libssl.3.dylib/libcrypto.3.dylib happen
 			-- to be sitting there. We can't read the mod path from MPAPI here
-			-- (the MQTT worker runs in its own Lua state with no MPAPI), but
+			-- (a worker thread runs in its own Lua state with no MPAPI), but
 			-- we don't need to: core.lua adds "<mod>/networking/?.lua" to
 			-- package.path, and that string is forwarded to the worker's
 			-- setup, so the absolute networking/ dir is already available

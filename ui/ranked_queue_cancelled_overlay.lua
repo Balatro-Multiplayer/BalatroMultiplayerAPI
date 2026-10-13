@@ -1,6 +1,6 @@
 -- Shown when a post-queue-join ranked_readiness challenge (see
 -- anticheat/launcher_channel.lua, api/matchmaking/dispatch.lua's
--- on_queue_cancelled) gets the player dequeued for being out of date. Same
+-- cancel_handle) gets the player dequeued for being out of date. Same
 -- small modal shape as ui/kicked_notice_overlay.lua - shown centrally here
 -- (MPAPI already owns the matchmaking dispatch layer both PvP and SPDRN sit
 -- on top of) rather than duplicated into each ranked-queueing mod's own
@@ -67,8 +67,8 @@ end
 
 MPAPI.ranked_queue_cancelled_overlay = MPAPI.ui_element(create_UIBox_ranked_queue_cancelled_overlay)
 
--- reason: 'launcher_outdated' | 'mods_outdated' (msg.reason straight off the
--- queue_cancelled matchmaking message - see dispatch.lua).
+-- reason: 'launcher_outdated' | 'mods_outdated' (straight off the server's
+-- QUEUE_CANCELLED notification - see api/connection/moderation.lua).
 function MPAPI.show_ranked_queue_cancelled_notice(reason)
 	_state.reason = reason
 	MPAPI.ranked_queue_cancelled_overlay:as_overlay()

@@ -104,17 +104,9 @@ G.FUNCS.mpapi_reconnect_prompt_reconnect = function()
 			MPAPI.playback.rejoin(data.active.modId, data.active)
 			return
 		end
-		if lobby_data.nakama then
-			MPAPI._internal.create_reconnected_lobby(lobby_data, function(lobby)
-				MPAPI.lobby_reconnect(lobby_data.modId, lobby)
-			end)
-			return
-		end
-		MPAPI._internal.create_reconnected_lobby(lobby_data)
-		local lobby = MPAPI.get_current_lobby()
-		if lobby then
+		MPAPI._internal.create_reconnected_lobby(lobby_data, function(lobby)
 			MPAPI.lobby_reconnect(lobby_data.modId, lobby)
-		end
+		end)
 	end)
 end
 
@@ -124,29 +116,16 @@ G.FUNCS.mpapi_reconnect_prompt_leave = function()
 	if not lobby_data then
 		return
 	end
-	if lobby_data.nakama then
-		MPAPI._internal.lobby.nakama_leave_current(function(err)
-			if err then
-				MPAPI.sendWarnMessage('[reconnect_prompt] lobby_leave failed: ' .. tostring(err))
-			end
-		end)
-		return
-	end
-	local conn = MPAPI.get_connection()
-	if not conn then
-		return
-	end
-	conn.api:leave_lobby(conn.jwt_token, lobby_data.code, function(err, _data)
+	MPAPI._internal.lobby.nakama_leave_current(function(err)
 		if err then
-			MPAPI.sendWarnMessage('[reconnect_prompt] leave_lobby failed: ' .. tostring(err.message))
+			MPAPI.sendWarnMessage('[reconnect_prompt] lobby_leave failed: ' .. tostring(err))
 		end
 	end)
 end
 
--- CONNECTED fires TWICE in a row on a successful connect
--- (networking/connection.lua's _mqtt_connect_with_credentials): once bare
--- (context = {old_state=...}), then immediately again with
--- {reconnected_lobby=...} if the auth response carried one. Guarding on
+-- CONNECTED fires TWICE on a successful connect (networking/connection.lua's
+-- _nakama_connect): once bare (context = {old_state=...}), then again with
+-- {reconnected_lobby=...} once _check_nakama_lobby_seat finds a seat. Guarding on
 -- "have we seen A CONNECTED event yet" (rather than "have we seen the
 -- reconnected_lobby-carrying one") would latch on the first, contentless
 -- firing and silently skip the second -- confirmed live as a real bug during
