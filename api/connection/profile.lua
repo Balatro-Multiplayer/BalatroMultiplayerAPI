@@ -1,5 +1,5 @@
 -- Account/profile operations that round-trip to the server: discord linking,
--- display-name preference, preferred joker, and chat enablement.
+-- display-name preference, preferred joker, mods, mutes and chat enablement.
 MPAPI._internal.conn = MPAPI._internal.conn or {}
 local C = MPAPI._internal.conn
 
@@ -16,6 +16,32 @@ local function require_connected(callback)
 	return conn
 end
 
+-- Under nakama_only the account lives on Nakama (BalatroMultiplayerServer
+-- nakama/src/player): each call below goes to its RPC instead of the API.
+local function nakama_only()
+	return MPAPI.networking.nakama_only()
+end
+
+-- conn's Nakama RPC; apply(data) runs before callback(nil, data).
+local function nakama_rpc(conn, id, body, callback, apply)
+	conn:_nakama_rpc(id, body, function(err, data)
+		if err then
+			callback(MPAPI.make_error(MPAPI.ErrorKind.SERVER, err), nil)
+			return
+		end
+		if apply then
+			apply(data)
+		end
+		callback(nil, data)
+	end)
+end
+
+local function apply_account(conn)
+	return function(data)
+		conn:_on_account_updated(data)
+	end
+end
+
 MPAPI._internal.get_discord_link_url = function(callback)
 	local conn = require_connected(callback)
 	if not conn then
@@ -27,6 +53,10 @@ end
 MPAPI._internal.set_use_discord_name = function(value, callback)
 	local conn = require_connected(callback)
 	if not conn then
+		return
+	end
+	if nakama_only() then
+		nakama_rpc(conn, 'profile_set_display', { useDiscordName = value }, callback, apply_account(conn))
 		return
 	end
 
@@ -51,6 +81,10 @@ end
 MPAPI._internal.set_preferred_joker = function(value, callback)
 	local conn = require_connected(callback)
 	if not conn then
+		return
+	end
+	if nakama_only() then
+		nakama_rpc(conn, 'profile_set_joker', { preferredJoker = value }, callback, apply_account(conn))
 		return
 	end
 
@@ -89,7 +123,15 @@ end
 -- Failure just leaves that player's Mods tab empty for lobby peers; not fatal.
 MPAPI._internal.send_installed_mods = function()
 	local conn = require_connected(function() end)
-	if not conn or MPAPI.networking.nakama_only() then
+	if not conn then
+		return
+	end
+	if nakama_only() then
+		nakama_rpc(conn, 'profile_set_mods', { mods = MPAPI.collect_installed_mods() }, function(err)
+			if err then
+				MPAPI.sendWarnMessage('[mods] Failed to send installed mods list: ' .. tostring(err.message or err))
+			end
+		end)
 		return
 	end
 
@@ -104,12 +146,23 @@ end
 -- on success, apply the change to conn.mute_list/MPAPI.connection_state.mute_list
 -- directly from the server's returned mutedPlayerIds, rather than re-fetching.
 -- A Nakama lobby's roster ids are Nakama user ids, which the API's mute
--- endpoints don't know: there a mute lasts for the session, kept locally.
+-- endpoints don't know: there a mute lasts for the session, kept locally --
+-- unless the account itself is on Nakama (nakama_only), which keeps it.
 local function set_local_mute(conn, target_id, muted, callback)
 	conn.mute_list = conn.mute_list or {}
 	conn.mute_list[target_id] = muted or nil
 	MPAPI.connection_state.mute_list = conn.mute_list
 	callback(nil, { mutedPlayerIds = conn.mute_list })
+end
+
+local function nakama_mute(conn, target_id, muted, callback)
+	nakama_rpc(conn, 'mute_set', { userId = target_id, muted = muted }, callback, function(data)
+		conn.mute_list = {}
+		for _, id in ipairs(data.mutedPlayerIds or {}) do
+			conn.mute_list[id] = true
+		end
+		MPAPI.connection_state.mute_list = conn.mute_list
+	end)
 end
 
 local function in_nakama_lobby()
@@ -120,6 +173,10 @@ end
 MPAPI._internal.mute_player = function(target_id, callback)
 	local conn = require_connected(callback)
 	if not conn then
+		return
+	end
+	if nakama_only() then
+		nakama_mute(conn, target_id, true, callback)
 		return
 	end
 	if in_nakama_lobby() then
@@ -144,6 +201,10 @@ end
 MPAPI._internal.unmute_player = function(target_id, callback)
 	local conn = require_connected(callback)
 	if not conn then
+		return
+	end
+	if nakama_only() then
+		nakama_mute(conn, target_id, false, callback)
 		return
 	end
 	if in_nakama_lobby() then
@@ -214,6 +275,10 @@ MPAPI._internal.enable_chat = function(callback)
 	if not conn then
 		return
 	end
+	if nakama_only() then
+		nakama_rpc(conn, 'chat_enable', {}, callback, apply_account(conn))
+		return
+	end
 
 	conn.api:enable_chat(conn.jwt_token, function(err, data)
 		if err then
@@ -227,6 +292,8 @@ MPAPI._internal.enable_chat = function(callback)
 			MPAPI.connection_state.chat_enabled = conn.chat_enabled
 			MPAPI.connection_state.chat_blocked = conn.chat_blocked
 		end
+		-- Nakama lobbies' chat checks Nakama's own copy of the consent.
+		conn:_mirror_consent_to_nakama(data.player)
 
 		callback(nil, data)
 	end)
@@ -239,4 +306,17 @@ MPAPI._internal.send_chat_message = function(code, message, callback)
 	end
 
 	conn.api:send_chat_message(conn.jwt_token, code, message, callback)
+end
+
+-- Another session (or the server) changed the account: Nakama's counterpart
+-- of the MQTT account/* topics.
+do
+	local notify = MPAPI.networking.nakama_notify
+	if notify then
+		notify.on(notify.Code.ACCOUNT_UPDATED, function(content)
+			if C.connection then
+				C.connection:_on_account_updated(content)
+			end
+		end)
+	end
 end

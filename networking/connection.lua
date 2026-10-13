@@ -114,6 +114,36 @@ local function set_state(self, new_state, context)
 	fire(self, new_state, context or { old_state = old })
 end
 
+-- The server's player object (the API's playerPayload, or Nakama's
+-- playerView) onto the connection.
+function connection:_apply_player(player)
+	self.steam_name = player.steamName or self.steam_name
+	self.discord_name = player.discordUsername or nil
+	self.display_name = player.displayName or self.steam_name
+	self.use_discord_name = player.useDiscordName or false
+	self.preferred_joker = player.preferredJoker or 'j_joker'
+	self.discord_linked = player.discordLinked or false
+	if player.privileges then
+		self.privileges = player.privileges
+	end
+	self.chat_enabled = player.chatEnabled or false
+	self.chat_blocked = player.chatBlocked or false
+	self.mute_list = {}
+	for _, id in ipairs(player.mutedPlayerIds or {}) do
+		self.mute_list[id] = true
+	end
+end
+
+-- A changed account from Nakama ({player}: an account RPC's answer or an
+-- ACCOUNT_UPDATED push), as the MQTT account/* topics did.
+function connection:_on_account_updated(data)
+	if type(data) ~= 'table' or type(data.player) ~= 'table' or self.state ~= STATES.CONNECTED then
+		return
+	end
+	self:_apply_player(data.player)
+	fire(self, self.state, { player_update = true })
+end
+
 -- Shared handler for a successful auth response from the server.
 function connection:_handle_auth_success(data)
 	self.jwt_token = data.token
@@ -122,21 +152,7 @@ function connection:_handle_auth_success(data)
 	self.is_temp = data.player and data.player.isTemp or false
 
 	if data.player then
-		self.steam_name = data.player.steamName or self.steam_name
-		self.discord_name = data.player.discordUsername or nil
-		self.display_name = data.player.displayName or self.steam_name
-		self.use_discord_name = data.player.useDiscordName or false
-		self.preferred_joker = data.player.preferredJoker or 'j_joker'
-		self.discord_linked = data.player.discordLinked or false
-		if data.player.privileges then
-			self.privileges = data.player.privileges
-		end
-		self.chat_enabled = data.player.chatEnabled or false
-		self.chat_blocked = data.player.chatBlocked or false
-		self.mute_list = {}
-		for _, id in ipairs(data.player.mutedPlayerIds or {}) do
-			self.mute_list[id] = true
-		end
+		self:_apply_player(data.player)
 	end
 
 	self.lobby_data = data.lobby or nil
@@ -149,8 +165,31 @@ function connection:_handle_auth_success(data)
 	if self:_nakama_only() then
 		self:_nakama_connect()
 	else
+		self:_mirror_consent_to_nakama(data.player)
 		self:_mqtt_connect_with_credentials()
 	end
+end
+
+-- An API login with Nakama lobbies on (use_nakama_lobbies, not nakama_only):
+-- Nakama's chat checks its own copy of the ToS and chat consent, so the
+-- API's answer is passed on (tos_accept; chat-eligible only when the API
+-- has chat on, not eligible only when it blocks it).
+function connection:_mirror_consent_to_nakama(player)
+	local NL = MPAPI.networking.nakama_lobby
+	if not player or not NL or not NL.enabled() then
+		return
+	end
+	local body = {}
+	if player.chatEnabled then
+		body.chatEligible = true
+	elseif player.chatBlocked then
+		body.chatEligible = false
+	end
+	NL.rpc('tos_accept', body, function(err)
+		if err then
+			MPAPI.sendWarnMessage('[nakama] Could not pass the ToS on: ' .. tostring(err))
+		end
+	end)
 end
 
 -- §4.2/§4.3: no persisted credentials -- every launch does a fresh, silent
