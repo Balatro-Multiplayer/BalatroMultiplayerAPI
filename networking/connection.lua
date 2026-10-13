@@ -430,6 +430,13 @@ function connection:_nakama_connect()
 			self._check_nakama_lobby = nil
 			self:_check_nakama_lobby_seat()
 		end
+		-- The socket carries the launcher-integrity challenges
+		-- (api/connection/integrity.lua), so they only start now.
+		self:_nakama_rpc('launcher_session_start', {}, function(err)
+			if err then
+				MPAPI.sendWarnMessage('launcher_session_start failed: ' .. tostring(err))
+			end
+		end)
 	end)
 end
 
@@ -802,7 +809,8 @@ function connection:_answer_launcher_challenge(challenge_id, kind, nonce)
 	MPAPI.anticheat.answer_challenge(challenge_id, kind, nonce, self.player_id)
 end
 
--- Publishes a launcher-integrity challenge result to the one topic the
+-- Publishes a launcher-integrity challenge result (under nakama_only, sends
+-- it through the launcher_challenge_answer RPC instead) to the one topic the
 -- server's EMQX ACL lets this client publish to besides its own account
 -- topics - see emqx-auth.service.ts's authorizePlayerNotificationTopic().
 -- `result` is whatever anticheat/launcher_channel.lua's
@@ -831,6 +839,15 @@ function connection:_publish_challenge_response(result)
 		}
 	else
 		body.response = result.signature
+	end
+
+	if self:_nakama_only() then
+		self:_nakama_rpc('launcher_challenge_answer', body, function(err)
+			if err then
+				MPAPI.sendWarnMessage('launcher_challenge_answer failed: ' .. tostring(err))
+			end
+		end)
+		return
 	end
 
 	local topic = 'player/' .. self.player_id .. '/challenge-response'

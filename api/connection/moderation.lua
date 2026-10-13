@@ -58,20 +58,38 @@ local function on_banned(ban)
 end
 
 -- A queue was cancelled for this player: handled like the API's
--- queue_cancelled. A refused matched group (requeue) needs nothing here: its
--- matched message carries no match, which queues again
+-- queue_cancelled, after giving up the ticket (on MQTT the API dequeued the
+-- player itself). A failed ranked-readiness check names no queue and
+-- cancels every ranked one. A refused matched group (requeue) needs nothing
+-- here: its matched message carries no match, which queues again
 -- (api/matchmaking/dispatch.lua on_nakama_matched).
 local function on_queue_cancelled(msg)
 	local mm = MPAPI._internal.mm
 	if not mm or msg.requeue then
 		return
 	end
-	mm.dispatch({
-		type = MPAPI.MatchmakingMessage.QUEUE_CANCELLED,
-		modId = msg.modId,
-		gameMode = msg.mode,
-		reason = msg.reason,
-	})
+	local targets = {}
+	if msg.modId then
+		targets[1] = mm.find_handle_by_mode(msg.modId, msg.mode)
+	else
+		for _, h in ipairs(mm.handles) do
+			if h._nakama_ranked then
+				targets[#targets + 1] = h
+			end
+		end
+	end
+	for _, handle in ipairs(targets) do
+		if handle._nakama_ticket then
+			MPAPI.networking.nakama_lobby.unqueue(handle._nakama_ticket)
+			handle._nakama_ticket = nil
+		end
+		mm.dispatch({
+			type = MPAPI.MatchmakingMessage.QUEUE_CANCELLED,
+			modId = handle.mod_id,
+			gameMode = handle.game_mode,
+			reason = msg.reason,
+		})
+	end
 end
 
 do

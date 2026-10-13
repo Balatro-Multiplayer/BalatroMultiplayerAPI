@@ -71,6 +71,7 @@ local function nakama_queue(opts, handle, ranked)
 	end
 	-- A refused match spends the ticket (api/connection/moderation.lua).
 	handle._nakama_requeue = start
+	handle._nakama_ranked = ranked
 	start()
 end
 
