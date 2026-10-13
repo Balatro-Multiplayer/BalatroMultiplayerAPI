@@ -166,9 +166,70 @@ MPAPI.replay.get_active_run = function(callback)
 	conn.api:get_active_run(conn.jwt_token, callback)
 end
 
+-- On Nakama: watches the lobby as a spectator match (the server's
+-- lobby/spectate.ts). callback(err, data) once the snapshot is in, data being
+-- {snapshot, players, runId, code, nakama = true}; then handlers.event({t,
+-- player_id, opcode, args}) for each participant replay event, and
+-- handlers.ended(reason) once watching stops (lobby closed, connection lost).
+local function nakama_spectate(code, callback, handlers)
+	handlers = handlers or {}
+	local NL = MPAPI.networking.nakama_lobby
+	local answered = false
+	local function answer(err, data)
+		if answered then
+			return
+		end
+		answered = true
+		callback(err and MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)) or nil, data)
+	end
+	local function ended(reason)
+		if not answered then
+			answer(reason, nil)
+		elseif handlers.ended then
+			handlers.ended(reason)
+		end
+	end
+	NL.find(code, function(err, found)
+		if err or not found or not found.matchId then
+			answer(err or 'Lobby not found', nil)
+			return
+		end
+		NL.spectate(found.matchId, {
+			data = function(op, data)
+				if op == NL.ServerOp.SPECTATE_SNAPSHOT then
+					answer(nil, {
+						snapshot = data.snapshot or {},
+						players = data.players or {},
+						runId = data.runId,
+						code = data.code,
+						nakama = true,
+					})
+				elseif op == NL.ServerOp.SPECTATE_EVENT then
+					if handlers.event then
+						handlers.event({ t = data.t, player_id = data.playerId, opcode = data.opcode, args = data.args })
+					end
+				elseif op == NL.ServerOp.EVENT and data.type == 'lobby_closed' then
+					NL.unspectate()
+					ended('Lobby closed')
+				end
+			end,
+			lost = ended,
+		}, function(join_err)
+			if join_err then
+				answer(join_err, nil)
+			end
+		end)
+	end)
+end
+
 -- Phase 7: request a spectator token + one-time snapshot for a lobby.
--- callback(err, data) where data is {token, snapshot}.
-MPAPI.replay.spectate_lobby = function(code, callback)
+-- callback(err, data) where data is {token, snapshot}. On Nakama there is no
+-- token: the live feed comes through `handlers` (see nakama_spectate).
+MPAPI.replay.spectate_lobby = function(code, callback, handlers)
+	if on_nakama() then
+		nakama_spectate(code, callback, handlers)
+		return
+	end
 	local conn = MPAPI.get_connection()
 	if not conn then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)
@@ -177,9 +238,20 @@ MPAPI.replay.spectate_lobby = function(code, callback)
 	conn.api:spectate_lobby(conn.jwt_token, code, callback)
 end
 
+-- Stops a Nakama spectate (an MQTT spectator just disconnects its own feed).
+MPAPI.replay.stop_spectating = function()
+	if on_nakama() then
+		MPAPI.networking.nakama_lobby.unspectate()
+	end
+end
+
 -- §22.3: which live lobbies are currently spectatable. callback(err, data)
 -- where data is {lobbies = [{code, modId, playerCount}, ...]}.
 MPAPI.replay.list_spectatable = function(callback)
+	if on_nakama() then
+		nakama_rpc('spectate_list', {}, callback)
+		return
+	end
 	local conn = MPAPI.get_connection()
 	if not conn then
 		callback(MPAPI.make_error(MPAPI.ErrorKind.NOT_CONNECTED, 'Not connected'), nil)

@@ -20,6 +20,8 @@ NL.ServerOp = {
 	ACTION = 105,
 	ACTION_REJECTED = 106,
 	CHAT = 107,
+	SPECTATE_SNAPSHOT = 108,
+	SPECTATE_EVENT = 109,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'
@@ -38,6 +40,11 @@ local connect_waiters = nil -- callbacks waiting on an in-flight socket connect
 
 -- The lobby match this client is in, or nil.
 local match = nil -- { id, metadata, listener, lost_since, attempt }
+
+-- The lobby match this client watches as a spectator, or nil. Kept apart from
+-- `match`: watching doesn't take a seat, so it can't clash with the lobby (or
+-- rejoin) this client is in.
+local spectating = nil -- { id, listener }
 
 local timers = {} -- { at, fn }
 
@@ -196,7 +203,12 @@ end
 
 local function on_match_data(message)
 	local data_msg = message.match_data
-	if not match or not data_msg or data_msg.match_id ~= match.id then
+	if not data_msg then
+		return
+	end
+	local target = (match and data_msg.match_id == match.id and match)
+		or (spectating and data_msg.match_id == spectating.id and spectating)
+	if not target then
 		return
 	end
 	local op = tonumber(data_msg.op_code)
@@ -205,7 +217,16 @@ local function on_match_data(message)
 		MPAPI.sendWarnMessage('[nakama_lobby] bad payload for op ' .. tostring(op))
 		return
 	end
-	match.listener.data(op, data)
+	target.listener.data(op, data)
+end
+
+-- Ends spectating without a word to the server; listener.lost(reason).
+local function stop_spectating(reason)
+	local watched = spectating
+	spectating = nil
+	if watched and watched.listener.lost then
+		watched.listener.lost(reason)
+	end
 end
 
 local keep_open = false
@@ -215,6 +236,9 @@ local reopen_socket
 local function on_socket_disconnect()
 	socket_open = false
 	socket = nil
+	-- Nothing to rejoin: a spectator holds no seat, and the snapshot a
+	-- rewatch would get can't replay the events missed meanwhile.
+	stop_spectating('Connection lost')
 	if keep_open and not match then
 		reopen_socket()
 	end
@@ -435,6 +459,53 @@ function NL.leave(cb)
 	end)
 end
 
+-- Watches a lobby match without a seat (the server's lobby/spectate.ts).
+-- listener = { data(op, tbl), lost(reason) }; the server sends
+-- SPECTATE_SNAPSHOT first, then SPECTATE_EVENTs. cb(err_message).
+function NL.spectate(match_id, listener, cb)
+	if spectating then
+		cb('Already spectating a lobby')
+		return
+	end
+	spectating = { id = match_id, listener = listener }
+	local this = spectating
+	with_socket(function(ok, err)
+		if spectating ~= this then
+			return
+		end
+		if not ok then
+			spectating = nil
+			cb(err or 'Could not open the Nakama socket')
+			return
+		end
+		socket.match_join(match_id, nil, { role = 'spectator' }, function(result)
+			if spectating ~= this then
+				return
+			end
+			if result and result.error then
+				spectating = nil
+				cb(error_message(result, 'Could not spectate the lobby'))
+				return
+			end
+			cb(nil)
+		end)
+	end)
+end
+
+-- Stops watching. LEAVE (not match_leave): the server lets a spectator go at
+-- once either way, and the op needs no reply.
+function NL.unspectate()
+	local watched = spectating
+	spectating = nil
+	if watched and socket and socket_open then
+		socket.match_data_send(watched.id, NL.ClientOp.LEAVE, '{}', nil, true, ignore)
+	end
+end
+
+function NL.is_spectating()
+	return spectating ~= nil
+end
+
 ----------------------------------------------------------------------
 -- RPC wrappers
 ----------------------------------------------------------------------
@@ -559,6 +630,7 @@ end
 function NL.reset()
 	keep_open = false
 	match = nil
+	spectating = nil
 	tickets = {}
 	timers = {}
 	flush_waiters(false, 'Connection closed')
