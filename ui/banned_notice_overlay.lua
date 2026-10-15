@@ -61,10 +61,15 @@ end
 
 MPAPI.banned_notice_overlay = MPAPI.ui_element(create_UIBox_banned_notice_overlay)
 
--- title_key: a localization key (k_banned_title, k_queue_banned_title,
--- k_chat_banned_title); body: the text to show.
-function MPAPI.show_banned_notice(title_key, body)
-	_state.title_key = title_key or 'k_banned_title'
+-- A titled one-line notice with an OK button. title_key: a localization
+-- key; body: the text to show (usually the server's own wording).
+function MPAPI.show_notice(title_key, body)
+	_state.title_key = title_key
 	_state.body = body or ''
 	MPAPI.banned_notice_overlay:as_overlay()
+end
+
+-- title_key: k_banned_title, k_queue_banned_title or k_chat_banned_title.
+function MPAPI.show_banned_notice(title_key, body)
+	MPAPI.show_notice(title_key or 'k_banned_title', body)
 end

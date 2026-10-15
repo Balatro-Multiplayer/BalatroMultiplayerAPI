@@ -32,6 +32,18 @@ local function tear_down(lobby)
 	end
 end
 
+-- The server refused to open `lobby` for us (creation switched off, no such
+-- code, lobby full, ...): drop the half-made lobby and tell the player why.
+-- Without this the refusal only reached the log and L.current kept pointing
+-- at a lobby that never existed.
+local function refused(lobby, title_key, message)
+	fail(lobby, message)
+	tear_down(lobby)
+	if MPAPI.show_notice then
+		MPAPI.show_notice(title_key, tostring(message))
+	end
+end
+
 local function roster_from(players)
 	local roster = {}
 	for _, p in ipairs(players or {}) do
@@ -198,7 +210,7 @@ local function attach(lobby, match_id, on_ready)
 		end,
 	}, function(err)
 		if err and not lobby._destroyed then
-			fail(lobby, err)
+			refused(lobby, 'k_lobby_join_failed_title', err)
 		end
 	end)
 end
@@ -221,6 +233,9 @@ local function connected_conn(what)
 	local conn = MPAPI.get_connection()
 	if not conn or conn:get_state() ~= MPAPI.ConnectionState.CONNECTED then
 		MPAPI.sendWarnMessage(what .. ': not connected')
+		if MPAPI.show_notice then
+			MPAPI.show_notice('k_status_offline', localize('k_lobby_not_connected'))
+		end
 		return nil
 	end
 	return conn
@@ -237,7 +252,7 @@ L.nakama_create_lobby = function(mod_id, opts)
 			return
 		end
 		if err then
-			fail(lobby, err)
+			refused(lobby, 'k_lobby_create_failed_title', err)
 			return
 		end
 		lobby.code = data.code
@@ -257,7 +272,7 @@ L.nakama_join_lobby = function(mod_id, code)
 			return
 		end
 		if err then
-			fail(lobby, err)
+			refused(lobby, 'k_lobby_join_failed_title', err)
 			return
 		end
 		lobby.code = data.code
