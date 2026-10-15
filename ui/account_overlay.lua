@@ -32,11 +32,13 @@ local _state = {
 	tab = 'account', -- 'account' | 'chat' | 'history'
 	history = {
 		page = 1,
-		page_size = 10,
+		-- cursors[i]: the server cursor page i starts from (false for the newest);
+		-- runs_mine pages by cursor, not by page number.
+		cursors = { false },
+		next_cursor = nil,
 		loading = false,
 		error = nil,
 		runs = {},
-		total = 0,
 	},
 }
 
@@ -423,8 +425,14 @@ format_run_date = function(run)
 	return tostring(run.startedAt or ''):match('^(%d%d%d%d%-%d%d%-%d%d)') or '?'
 end
 
+-- The server's run statuses (Nakama runs_mine): agreed and partial both mean
+-- the match finished with a result. completed/terminated are the old server's.
 match_status_label_and_colour = function(status)
-	if status == 'completed' then return localize('k_match_status_completed'), G.C.GREEN end
+	if status == 'agreed' or status == 'partial' or status == 'completed' then
+		return localize('k_match_status_completed'), G.C.GREEN
+	end
+	if status == 'disputed' then return localize('k_match_status_disputed'), G.C.ORANGE end
+	if status == 'restarted' then return localize('k_match_status_restarted'), G.C.UI.TEXT_INACTIVE end
 	if status == 'active' then return localize('k_match_status_active'), G.C.GOLD end
 	if status == 'abandoned' then return localize('k_match_status_abandoned'), G.C.UI.TEXT_INACTIVE end
 	if status == 'terminated' then return localize('k_match_status_terminated'), G.C.UI.TEXT_INACTIVE end
@@ -520,7 +528,6 @@ build_history_tab_content = function()
 		rows[#rows + 1] = match_history_row(run)
 	end
 
-	local total_pages = math.max(1, math.ceil(h.total / h.page_size))
 	rows[#rows + 1] = {
 		n = G.UIT.R,
 		config = { align = 'cm', padding = 0.1 },
@@ -531,13 +538,13 @@ build_history_tab_content = function()
 			}).node,
 			{ n = G.UIT.C, config = { align = 'cm', padding = 0.1 }, nodes = {
 				{ n = G.UIT.T, config = {
-					text = localize('k_match_history_page_label') .. ' ' .. tostring(h.page) .. ' / ' .. tostring(total_pages),
+					text = localize('k_match_history_page_label') .. ' ' .. tostring(h.page),
 					scale = 0.32, colour = G.C.UI.TEXT_LIGHT,
 				} },
 			} },
 			MPAPI.disableable_button({
 				label = { localize('b_match_history_next') }, button = 'mpapi_match_history_next_page',
-				enabled = h.page < total_pages, minw = 1.8, minh = 0.6, scale = 0.3, colour = G.C.BLUE,
+				enabled = h.next_cursor ~= nil, minw = 1.8, minh = 0.6, scale = 0.3, colour = G.C.BLUE,
 			}).node,
 		},
 	}
@@ -554,14 +561,16 @@ fetch_history_page = function(page)
 	_state.history.error = nil
 	account_overlay_inner:update()
 
-	MPAPI.replay.list_mine({ page = page, page_size = _state.history.page_size }, function(err, data)
-		_state.history.loading = false
+	local h = _state.history
+	MPAPI.replay.list_mine({ cursor = h.cursors[page] or nil }, function(err, data)
+		h.loading = false
 		if err then
-			_state.history.error = err
+			h.error = err
 		else
-			_state.history.runs = (data and data.runs) or {}
-			_state.history.total = (data and data.total) or #_state.history.runs
-			_state.history.page = (data and data.page) or page
+			h.runs = (data and data.runs) or {}
+			h.page = page
+			h.next_cursor = data and data.cursor
+			if h.next_cursor then h.cursors[page + 1] = h.next_cursor end
 		end
 		account_overlay_inner:update()
 	end)
@@ -587,8 +596,7 @@ G.FUNCS.mpapi_match_history_prev_page = function()
 end
 
 G.FUNCS.mpapi_match_history_next_page = function()
-	local total_pages = math.max(1, math.ceil(_state.history.total / _state.history.page_size))
-	if _state.history.page < total_pages then fetch_history_page(_state.history.page + 1) end
+	if _state.history.next_cursor then fetch_history_page(_state.history.page + 1) end
 end
 
 G.FUNCS.mpapi_change_use_discord_name = function(args)
@@ -658,6 +666,6 @@ function MPAPI.open_account_overlay()
 		return
 	end
 	_state.tab = 'account'
-	_state.history = { page = 1, page_size = 10, loading = false, error = nil, runs = {}, total = 0 }
+	_state.history = { page = 1, cursors = { false }, next_cursor = nil, loading = false, error = nil, runs = {} }
 	MPAPI.account_overlay:as_overlay()
 end

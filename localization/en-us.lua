@@ -88,6 +88,8 @@ return {
 			k_match_status_completed = 'Completed',
 			k_match_status_abandoned = 'Abandoned',
 			k_match_status_terminated = 'Terminated',
+			k_match_status_disputed = 'Disputed',
+			k_match_status_restarted = 'Restarted',
 			-- Crash-relaunch reconnect/abandon-or-leave prompt. Generic: fires whenever
 			-- the server says we're still a lobby member, regardless of whether a match
 			-- has actually started yet (waiting room, mid-ban-pick draft, or mid-match).
