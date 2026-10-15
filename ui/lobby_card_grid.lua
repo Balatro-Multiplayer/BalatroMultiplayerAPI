@@ -16,7 +16,7 @@ local _next_instance_id = 0
 
 local function make_card(card_area, joker_key, face_down)
 	local center = G.P_CENTERS[joker_key] or G.P_CENTERS['j_joker']
-	local card = Card(card_area.T.x + card_area.T.w / 2, card_area.T.y, G.CARD_W, G.CARD_H, nil, center, { mpapi_lobby_card = true, bypass_back = G.P_CENTERS['b_black'].pos })
+	local card = Card(card_area.T.x + card_area.T.w / 2, card_area.T.y, G.CARD_W, G.CARD_H, nil, center, { mpapi_lobby_card = true, bypass_back = G.P_CENTERS['b_black'].pos, bypass_discovery_center = true, bypass_lock = true })
 	card.no_ui = true
 	card.states.drag.can = false
 

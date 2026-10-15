@@ -146,7 +146,7 @@ populate_page = function(page)
 			if not center then
 				break
 			end
-			local card = Card(_card_rows[j].T.x + _card_rows[j].T.w / 2, _card_rows[j].T.y, G.CARD_W, G.CARD_H, nil, center, { mpapi_avatar_selectable = true })
+			local card = Card(_card_rows[j].T.x + _card_rows[j].T.w / 2, _card_rows[j].T.y, G.CARD_W, G.CARD_H, nil, center, { mpapi_avatar_selectable = true, bypass_discovery_center = true, bypass_lock = true })
 			card.no_ui = true
 			card.states.drag.can = false
 			_card_rows[j]:emplace(card)

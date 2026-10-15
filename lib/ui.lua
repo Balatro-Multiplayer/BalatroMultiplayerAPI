@@ -41,6 +41,13 @@ end
 MPAPI.create_account_avatar = function(card_parameters)
 	local joker_id = MPAPI.connection_state.preferred_joker or 'j_joker'
 	local center = G.P_CENTERS[joker_id] or G.P_CENTERS['j_joker']
+	-- An avatar is a player's chosen face, not this profile's collection: show
+	-- it whether or not this profile has discovered/unlocked that joker (the
+	-- account overlay is opened from the vanilla menu, where the unlock
+	-- overlay is off).
+	card_parameters = card_parameters or {}
+	card_parameters.bypass_discovery_center = true
+	card_parameters.bypass_lock = true
 	local card = Card(0, 0, G.CARD_W, G.CARD_H, G.P_CARDS.empty, center, card_parameters)
 	card.states.drag.can = false
 	card.states.hover.can = true
