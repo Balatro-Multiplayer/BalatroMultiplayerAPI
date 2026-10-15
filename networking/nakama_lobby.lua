@@ -69,11 +69,10 @@ local function error_message(result, fallback)
 	if type(result) ~= 'table' then
 		return fallback
 	end
+	-- A failed RPC comes back as {error = {stackTrace}, message, code}: the
+	-- server's refusal is the top-level message, not one inside error.
 	local err = result.error
-	if type(err) == 'table' then
-		return err.message or fallback
-	end
-	return result.message or fallback
+	return (type(err) == 'table' and err.message) or result.message or fallback
 end
 
 ----------------------------------------------------------------------
