@@ -74,11 +74,14 @@ local function item_art_key(item)
 	return item
 end
 
--- Default candidate pool: a random sample of deck Back center KEYS.
+-- Default candidate pool: a random sample of deck Back center KEYS, leaving out decks a
+-- consuming mod keeps to its own matches (its isolation gate, as for every other pool).
 local function default_build_pool(size)
 	local keys = {}
 	for _, center in ipairs(G.P_CENTER_POOLS.Back or {}) do
-		keys[#keys + 1] = center.key
+		if not MPAPI.should_exclude_from_pool(center) then
+			keys[#keys + 1] = center.key
+		end
 	end
 	for i = #keys, 2, -1 do
 		local j = math.random(i)
