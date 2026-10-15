@@ -46,6 +46,13 @@ local function on_banned(ban)
 		MPAPI.matchmaking.leave_all()
 	end
 	if kind == 'account' and C.connection then
+		-- The server removes us from our lobby too, but that kick comes after
+		-- this push over the socket we are about to close, so it never
+		-- arrives: leave the lobby view here.
+		local lobby = MPAPI._internal.lobby and MPAPI._internal.lobby.current
+		if lobby then
+			MPAPI._internal.lobby.drop(lobby)
+		end
 		-- The server drops the session too; going DISCONNECTED first keeps the
 		-- socket from being reopened.
 		C.connection.banned = ban

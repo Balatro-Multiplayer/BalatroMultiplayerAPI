@@ -20,6 +20,16 @@ local function on_player_left(lobby, data)
 	lobby:_fire(MPAPI.LobbyEvent.PLAYER_LEFT, data.playerId)
 end
 
+-- This client is out of `lobby` (kicked, banned, lobby closed): tear it down
+-- and send the player back to the mod's menu.
+function L.drop(lobby)
+	L.cleanup(lobby)
+	lobby:_fire(MPAPI.LobbyEvent.DISCONNECTED)
+	if MPAPI._internal.on_lobby_disconnected then
+		MPAPI._internal.on_lobby_disconnected()
+	end
+end
+
 local function on_player_disconnected(lobby, data)
 	if data.playerId and lobby._players[data.playerId] then
 		lobby._players[data.playerId].is_away = true
@@ -57,11 +67,7 @@ local function on_player_kicked(lobby, data)
 	local was_self = data.playerId and data.playerId == lobby.player_id
 
 	if was_self then
-		L.cleanup(lobby)
-		lobby:_fire(MPAPI.LobbyEvent.DISCONNECTED)
-		if MPAPI._internal.on_lobby_disconnected then
-			MPAPI._internal.on_lobby_disconnected()
-		end
+		L.drop(lobby)
 		-- A ban's removal is explained by the ban notice instead.
 		local kick = type(data.data) == 'table' and data.data or nil
 		if MPAPI.show_kicked_notice and not (kick and kick.reason == 'banned') then
@@ -77,11 +83,7 @@ local function on_player_kicked(lobby, data)
 end
 
 local function on_lobby_closed(lobby)
-	L.cleanup(lobby)
-	lobby:_fire(MPAPI.LobbyEvent.DISCONNECTED)
-	if MPAPI._internal.on_lobby_disconnected then
-		MPAPI._internal.on_lobby_disconnected()
-	end
+	L.drop(lobby)
 end
 
 local EVENT_HANDLERS = {
