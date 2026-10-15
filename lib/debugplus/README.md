@@ -66,7 +66,7 @@ when DebugPlus is not installed.
 **Changed:**
 - `require` calls replaced with `MPAPI.load_mpapi_file('lib/debugplus/util.lua')` / `('lib/debugplus/ui.lua')` — same zip-mount reasoning as `ui.lua` above
 - `hookStuffs()` moved before the early-return guard so keybinds are registered on the first rendered frame even when there are no messages yet
-- Open key changed from `/` to `t`
+- Open key changed from `/` to `t`, and ignored while a game text input (`G.CONTROLLER.text_input_hook`) has focus
 - `runCommand()` replaced with `sendMessage()`, which invokes a configurable callback
 - Log store changed from `logger.logs` to a local `messages` table with simplified `{str, time, colour}` entries
 - `firstConsoleRender` timestamp logic replaced with a simple `initialized` boolean flag for hook setup

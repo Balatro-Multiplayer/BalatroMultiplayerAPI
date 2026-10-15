@@ -48,7 +48,10 @@ end
 local orig_keypressed
 local function consoleHandleKey(key, scancode, isrepeat)
 	if not consoleOpen then
-		if key == 't' then
+		-- Not while a game text box (lobby code, seed, ...) has focus: a
+		-- typed 't' there would open the console and swallow the rest.
+		local typing = G and G.CONTROLLER and G.CONTROLLER.text_input_hook
+		if key == 't' and not typing then
 			openNextFrame = true
 		end
 		if orig_keypressed then
