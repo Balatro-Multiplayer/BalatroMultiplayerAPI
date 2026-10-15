@@ -9,6 +9,9 @@ local _target_name = nil
 local _lobby_code = nil
 local _submitting = false
 local _result_report_id = nil
+-- The last submission's refusal (e.g. the server's per-reporter rate limit),
+-- shown above the reason buttons so a refused report isn't silently lost.
+local _error_text = nil
 
 local REASONS = {
 	{ type = 'cheating', label_key = 'k_report_cheating' },
@@ -75,7 +78,13 @@ local create_UIBox_player_report_overlay = function()
 							{ n = G.UIT.T, config = { text = localize('k_report_player') .. ': ' .. (_target_name or ''), scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 						},
 					},
-					{ n = G.UIT.R, config = { minh = 0.15 } },
+					_error_text and {
+						n = G.UIT.R,
+						config = { align = 'cm', padding = 0.05 },
+						nodes = {
+							{ n = G.UIT.T, config = { text = _error_text, scale = 0.4, colour = G.C.RED, shadow = true } },
+						},
+					} or { n = G.UIT.R, config = { minh = 0.15 } },
 					{
 						n = G.UIT.R,
 						config = { align = 'cm' },
@@ -113,11 +122,13 @@ G.FUNCS.mpapi_report_player_reason = function(e)
 	end
 
 	_submitting = true
+	_error_text = nil
 	if MPAPI.player_report_overlay then MPAPI.player_report_overlay:update() end
 
 	MPAPI._internal.report_player(_lobby_code, _target_id, reason.type, nil, function(err, data)
 		_submitting = false
 		if err then
+			_error_text = type(err) == 'table' and err.message or tostring(err)
 			MPAPI.sendWarnMessage('[report] Submission failed: ' .. tostring(err))
 			if MPAPI.player_report_overlay then MPAPI.player_report_overlay:update() end
 			return
@@ -160,5 +171,6 @@ function MPAPI.open_player_report_overlay(player_id, player_name)
 	_lobby_code = lobby and lobby.code or nil
 	_submitting = false
 	_result_report_id = nil
+	_error_text = nil
 	MPAPI.player_report_overlay:as_overlay()
 end
