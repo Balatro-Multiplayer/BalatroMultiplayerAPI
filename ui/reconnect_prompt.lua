@@ -99,12 +99,25 @@ G.FUNCS.mpapi_reconnect_prompt_reconnect = function()
 		return
 	end
 	MPAPI.replay.get_active_run(function(err, data)
-		if not err and data and data.active then
+		-- Only a run with recorded events has anything to fast-forward through. A
+		-- server-refereed lobby opens its game (and its run id) at Start, before a
+		-- pre-run ban/pick draft, so mid-draft the run is already active with no
+		-- events; the mod's playback rejoin can't bootstrap from that and gives
+		-- up, which left the player on the main menu outside their lobby. That
+		-- player rejoins the lobby instead, like one in the waiting room.
+		if not err and data and data.active and #(data.active.events or {}) > 0 then
 			MPAPI.playback.rejoin(data.active.modId, data.active)
 			return
 		end
 		MPAPI._internal.create_reconnected_lobby(lobby_data, function(lobby)
 			MPAPI.lobby_reconnect(lobby_data.modId, lobby)
+			-- A relaunched game is on the vanilla main menu with no mod focused, so
+			-- on_lobby_connected showed no lobby page and the player was left on
+			-- the main menu, outside the waiting room or the draft drawn in it.
+			-- The mod is engaged by now, so activating it opens its lobby page.
+			if G.STAGE == G.STAGES.MAIN_MENU and MPAPI.get_current_view() ~= 'lobby_menu' then
+				MPAPI._internal.activate_mod(lobby_data.modId)
+			end
 		end)
 	end)
 end
