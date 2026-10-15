@@ -126,8 +126,16 @@ MPAPI.end_screen_show = function(config)
 	if config.on_build then
 		config.on_build(config.won)
 	end
+	-- Pause BEFORE building, as vanilla does (and as the restore path below
+	-- does): engine/node.lua captures created_on_pause once, at construction.
+	-- Built unpaused, every DynaText stays frozen at its pop-in offset while
+	-- paused (Moveable:move skips it): the time's-up screen showed its title
+	-- below the box and blank stat values whenever it opened mid-run unpaused.
+	local was_paused = G.SETTINGS.paused
+	G.SETTINGS.paused = true
 	local ok, def = pcall(MPAPI.end_screen_uibox, config)
 	if not ok then
+		G.SETTINGS.paused = was_paused
 		MPAPI.sendWarnMessage('end_screen_show: build error: ' .. tostring(def))
 		return
 	end
@@ -138,7 +146,6 @@ MPAPI.end_screen_show = function(config)
 			play_sound(s.key or s[1], s.pitch or s[2], s.volume or s[3])
 		end
 	end
-	G.SETTINGS.paused = true
 	local no_esc = config.no_esc
 	if no_esc == nil then no_esc = config.won or config.draw end
 	local overlay_config = { no_esc = no_esc }
