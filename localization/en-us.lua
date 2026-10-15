@@ -142,6 +142,7 @@ return {
 			k_banned_title = 'Account Banned',
 			k_lobby_create_failed_title = 'Could Not Create Lobby',
 			k_lobby_join_failed_title = 'Could Not Join Lobby',
+			k_queue_failed_title = 'Could Not Join Queue',
 			k_lobby_not_connected = 'You are not connected to the server.',
 			k_queue_banned_title = 'Matchmaking Banned',
 			k_chat_banned_title = 'Chat Banned',

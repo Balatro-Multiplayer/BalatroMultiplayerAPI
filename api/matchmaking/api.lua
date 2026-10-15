@@ -65,6 +65,11 @@ local function nakama_queue(opts, handle, ranked)
 			if err then
 				MPAPI._internal.mm.remove_handle(handle)
 				handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)))
+				-- The server's refusal (queue ban, queue switched off) is the
+				-- player's only answer to pressing QUEUE; say it on screen.
+				if MPAPI.show_notice then
+					MPAPI.show_notice('k_queue_failed_title', tostring(err))
+				end
 				return
 			end
 			if handle._left then
@@ -126,6 +131,9 @@ MPAPI.matchmaking.queue = function(opts)
 	local conn = MPAPI.get_connection()
 	if not conn or conn:get_state() ~= MPAPI.ConnectionState.CONNECTED then
 		MPAPI.sendWarnMessage('[mmdbg] matchmaking.queue: not connected (conn=' .. tostring(conn ~= nil) .. ' state=' .. tostring(conn and conn:get_state()) .. ')')
+		if MPAPI.show_notice then
+			MPAPI.show_notice('k_status_offline', localize('k_lobby_not_connected'))
+		end
 		return nil
 	end
 
@@ -204,9 +212,14 @@ MPAPI.matchmaking.leave_all = function()
 	local old = mm.handles
 	mm.handles = {}
 
-	-- Mark all as left
+	-- Mark all as left, and tell each handle's subscribers, as handle:leave()
+	-- does: a consumer mod's queue UI (SPDRN's Queue/Cancel pillar) otherwise
+	-- still shows the search as running.
 	for _, h in ipairs(old) do
 		h._left = true
+	end
+	for _, h in ipairs(old) do
+		h:_fire('left')
 	end
 
 	MPAPI.networking.nakama_lobby.unqueue_all()
