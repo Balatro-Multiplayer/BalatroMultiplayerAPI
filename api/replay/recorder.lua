@@ -444,6 +444,56 @@ function RLOG.begin_run()
 	RLOG._run_active = true
 	RLOG._card_ids = {}
 	RLOG._next_card_id = 0
+	RLOG._resumed = false
+end
+
+-- Resume recording a match this client was already recording, after a crash-relaunch
+-- rejoin: a relaunched process starts with no active block, so without this every later
+-- record() is a silent no-op -- the server's log for the rejoined player stopped at the
+-- crash, so their replay (and a second rejoin's fast-forward) ended there. `events` is the
+-- player's own stream as the server holds it (MPAPI.replay.get_active_run's events, the
+-- same ones the rejoin fast-forwarded); `t` carries on from the last of them.
+-- Card ids carry on after the highest first-seen id in `events`, so a card first seen after
+-- the rejoin never reuses a pre-crash card's id (it did: the next new card came out as id 1
+-- again). `cards_by_id` (recorded id -> live Card, a playback driver's resolver state for
+-- this player, when its handlers resolve refs at all -- PvP's are positional) additionally
+-- gives those restored cards their recorded ids back.
+--
+-- A resumed block closes with END but no CHK: the CHK hash covers the whole log the server
+-- holds, and the pre-crash part only comes back parsed (run_active), so its object-valued
+-- args (match_manifest, lobby_info) can't be re-encoded in their original key order -- a
+-- claimed hash would read as tampering ('mismatch' -> flagged, unrated). Without one the
+-- server's check is 'unavailable', as it was for a rejoined player before.
+-- The highest card id first seen in an event's args: a first-seen ref is the only array
+-- shaped { -id, kind, ... } (see card_ref), so it can't be confused with a plain index list.
+local function max_first_seen_id(v, best)
+	if type(v) ~= "table" then return best end
+	if type(v[1]) == "number" and v[1] < 0 and type(v[2]) == "string" then
+		return math.max(best, -v[1])
+	end
+	for _, x in ipairs(v) do
+		best = max_first_seen_id(x, best)
+	end
+	return best
+end
+
+function RLOG.resume_run(events, cards_by_id)
+	RLOG.begin_run()
+	RLOG._resumed = true
+	local last_t = 0
+	for _, ev in ipairs(events or {}) do
+		if type(ev.t) == "number" and ev.t > last_t then last_t = ev.t end
+		RLOG._next_card_id = max_first_seen_id(ev.args, RLOG._next_card_id)
+	end
+	if RLOG._start_ms then
+		RLOG._start_ms = RLOG._start_ms - last_t
+	else
+		RLOG._fallback_seq = last_t
+	end
+	for id, card in pairs(cards_by_id or {}) do
+		RLOG._card_ids[card] = id
+		if id > RLOG._next_card_id then RLOG._next_card_id = id end
+	end
 end
 
 -- Close the current game's block: emit the END line, hash each stream, and emit
@@ -470,6 +520,12 @@ function RLOG.end_run(outcome)
 	local carbon_hash = love.data.encode("string", "hex", love.data.hash("sha256", canonical_hash_input()))
 	local human_hash = cheap_hash(human_str)
 	local bytes = #carbon_str + #human_str
+
+	if RLOG._resumed then
+		-- See resume_run: no hash for a block resumed after a crash-rejoin.
+		RLOG._run_active = false
+		return nil, nil
+	end
 
 	local chk_args = { carbon = carbon_hash, human = human_hash, bytes = bytes }
 	emit_carbon(
