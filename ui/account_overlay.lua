@@ -15,6 +15,10 @@ local match_status_label_and_colour
 local match_history_row
 local build_history_tab_content
 local fetch_history_page
+
+-- Rows per Match History page: what fits the overlay (a server page is 20).
+local HISTORY_ROWS_PER_PAGE = 10
+
 local build_account_overlay_inner
 local account_overlay_inner
 
@@ -31,16 +35,24 @@ local account_overlay_inner
 local _state = {
 	tab = 'account', -- 'account' | 'chat' | 'history'
 	history = {
+		-- page: the shown page (HISTORY_ROWS_PER_PAGE rows of runs).
+		-- runs: every run fetched so far, newest first. runs_mine pages by
+		-- cursor and returns more rows than fit the overlay, so the pages
+		-- shown are slices of it; next_cursor is where the next server page
+		-- starts (nil when there is none).
 		page = 1,
-		-- cursors[i]: the server cursor page i starts from (false for the newest);
-		-- runs_mine pages by cursor, not by page number.
-		cursors = { false },
 		next_cursor = nil,
 		loading = false,
 		error = nil,
 		runs = {},
 	},
 }
+
+-- True when there are runs past the shown page, fetched or still on the server.
+local function history_has_next_page()
+	local h = _state.history
+	return #h.runs > h.page * HISTORY_ROWS_PER_PAGE or h.next_cursor ~= nil
+end
 
 local TABS = {
 	{ key = 'account', label_key = 'k_account_tab_account' },
@@ -524,8 +536,9 @@ build_history_tab_content = function()
 	end
 
 	local rows = {}
-	for _, run in ipairs(h.runs) do
-		rows[#rows + 1] = match_history_row(run)
+	local first = (h.page - 1) * HISTORY_ROWS_PER_PAGE + 1
+	for i = first, math.min(#h.runs, first + HISTORY_ROWS_PER_PAGE - 1) do
+		rows[#rows + 1] = match_history_row(h.runs[i])
 	end
 
 	rows[#rows + 1] = {
@@ -544,7 +557,7 @@ build_history_tab_content = function()
 			} },
 			MPAPI.disableable_button({
 				label = { localize('b_match_history_next') }, button = 'mpapi_match_history_next_page',
-				enabled = h.next_cursor ~= nil, minw = 1.8, minh = 0.6, scale = 0.3, colour = G.C.BLUE,
+				enabled = history_has_next_page(), minw = 1.8, minh = 0.6, scale = 0.3, colour = G.C.BLUE,
 			}).node,
 		},
 	}
@@ -556,21 +569,25 @@ end
 -- LOGIC FUNCTIONS
 -----------------------------
 
+-- Fetches the next server page (the first when nothing is fetched yet) onto
+-- the end of _state.history.runs, then shows `page`.
 fetch_history_page = function(page)
 	_state.history.loading = true
 	_state.history.error = nil
 	account_overlay_inner:update()
 
 	local h = _state.history
-	MPAPI.replay.list_mine({ cursor = h.cursors[page] or nil }, function(err, data)
+	local cursor = #h.runs > 0 and h.next_cursor or nil
+	MPAPI.replay.list_mine({ cursor = cursor }, function(err, data)
 		h.loading = false
 		if err then
 			h.error = err
 		else
-			h.runs = (data and data.runs) or {}
-			h.page = page
+			for _, run in ipairs((data and data.runs) or {}) do
+				h.runs[#h.runs + 1] = run
+			end
 			h.next_cursor = data and data.cursor
-			if h.next_cursor then h.cursors[page + 1] = h.next_cursor end
+			h.page = math.max(1, math.min(page, math.ceil(#h.runs / HISTORY_ROWS_PER_PAGE)))
 		end
 		account_overlay_inner:update()
 	end)
@@ -588,15 +605,27 @@ G.FUNCS.mpapi_account_select_tab = function(e)
 end
 
 G.FUNCS.mpapi_match_history_retry = function()
-	fetch_history_page(_state.history.page)
+	-- Only the failed fetch is retried: the runs fetched before it are kept.
+	local h = _state.history
+	fetch_history_page(#h.runs > 0 and h.page + 1 or 1)
 end
 
 G.FUNCS.mpapi_match_history_prev_page = function()
-	if _state.history.page > 1 then fetch_history_page(_state.history.page - 1) end
+	local h = _state.history
+	if h.loading or h.page <= 1 then return end
+	h.page = h.page - 1
+	account_overlay_inner:update()
 end
 
 G.FUNCS.mpapi_match_history_next_page = function()
-	if _state.history.next_cursor then fetch_history_page(_state.history.page + 1) end
+	local h = _state.history
+	if h.loading or not history_has_next_page() then return end
+	if #h.runs > h.page * HISTORY_ROWS_PER_PAGE then
+		h.page = h.page + 1
+		account_overlay_inner:update()
+	else
+		fetch_history_page(h.page + 1)
+	end
 end
 
 G.FUNCS.mpapi_change_use_discord_name = function(args)
@@ -666,6 +695,6 @@ function MPAPI.open_account_overlay()
 		return
 	end
 	_state.tab = 'account'
-	_state.history = { page = 1, cursors = { false }, next_cursor = nil, loading = false, error = nil, runs = {} }
+	_state.history = { page = 1, next_cursor = nil, loading = false, error = nil, runs = {} }
 	MPAPI.account_overlay:as_overlay()
 end
