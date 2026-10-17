@@ -366,6 +366,8 @@ MPAPI._new_card_grid = function()
 		-- direct reference to a destroyed grid can't report stale ownership.
 		self._cards = {}
 		self._player_card_map = {}
+		-- Its lobby listeners stay registered: with no rows they return at once.
+		self._card_rows = {}
 		self.lobby = nil
 	end
 

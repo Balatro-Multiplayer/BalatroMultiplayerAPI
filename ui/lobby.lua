@@ -9,9 +9,16 @@ local lobby_card_hover_override
 -- API FUNCTIONS
 -----------------------------
 
+-- One lobby view at a time: the grid of the view being replaced is destroyed
+-- here, since nothing else ever does -- each lobby joined (or view rebuilt)
+-- left its grid in MPAPI._active_card_grids for the rest of the session.
+local _lobby_view_grid = nil
 MPAPI.create_lobby_ui = function(lobby)
-	local grid = MPAPI._new_card_grid()
-	return grid:build_element(lobby)
+	if _lobby_view_grid then
+		_lobby_view_grid:destroy()
+	end
+	_lobby_view_grid = MPAPI._new_card_grid()
+	return _lobby_view_grid:build_element(lobby)
 end
 
 -----------------------------
