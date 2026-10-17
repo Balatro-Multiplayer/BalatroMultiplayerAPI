@@ -193,6 +193,17 @@ end
 -- MPAPI._restorable_overlay itself before its own overlay_menu call.
 MPAPI._restorable_overlay = nil -- { id, overlay_config, rebuild_fn } or nil
 
+-- An end screen belongs to the run it was shown in. A run torn down while it is still
+-- up (a new run started under it, or go_to_menu) removes the overlay without going
+-- through exit_overlay_menu, and the next unrelated overlay close would bring the old
+-- screen back over the new run or the main menu, rebuilt from data that is gone
+-- (at the menu, its round-scores row crashed in DynaText:draw).
+local delete_run_ref = Game.delete_run
+function Game:delete_run(...)
+	MPAPI._restorable_overlay = nil
+	return delete_run_ref(self, ...)
+end
+
 local exit_overlay_menu_ref = G.FUNCS.exit_overlay_menu
 G.FUNCS.exit_overlay_menu = function(...)
 	local restorable = MPAPI._restorable_overlay
