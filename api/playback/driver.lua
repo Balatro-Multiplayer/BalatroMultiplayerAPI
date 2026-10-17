@@ -240,8 +240,19 @@ function Driver:_dispatch_next()
 	end
 end
 
+-- Not while paused: a handler that waits on its action (select_blind, skip_blind, a shop
+-- action...) pauses the driver and resumes it with play() once the action has applied. When
+-- that is the LAST entry, completing straight after its dispatch fired on_complete before the
+-- action had applied, and the handler's later play() re-armed the finished driver, so the
+-- next tick completed it again: on_complete ran twice. Live, a SPDRN crash-rejoin whose last
+-- event was a skip joined the lobby twice and was thrown out ("Already in a Nakama lobby").
+-- A paused driver completes on the tick after the handler resumes it, once.
 function Driver:_check_complete()
+	if self._completed or not self._playing then
+		return false
+	end
 	if self._finished_source and not self:has_pending() then
+		self._completed = true
 		self:stop()
 		if self._on_complete then
 			self._on_complete()
