@@ -67,18 +67,24 @@ local function build_reconnect_uibox(lobby_data)
 			{ n = G.UIT.R, config = { align = 'cm', padding = 0.05, minh = 1 }, nodes = {
 				{ n = G.UIT.T, config = { text = localize('k_reconnect_prompt_body'), scale = 0.35, colour = G.C.UI.TEXT_INACTIVE } },
 			} },
+			-- UIBox_button returns a row; each sits in a column so the two
+			-- buttons go side by side instead of stacking off-centre.
 			{ n = G.UIT.R, config = { align = 'cm', padding = 0.15 }, nodes = {
-				UIBox_button({
-					label = { localize('b_reconnect') },
-					button = 'mpapi_reconnect_prompt_reconnect',
-					minw = 3, minh = 0.8, scale = 0.4, colour = G.C.GREEN,
-				}),
+				{ n = G.UIT.C, config = { align = 'cm' }, nodes = {
+					UIBox_button({
+						label = { localize('b_reconnect') },
+						button = 'mpapi_reconnect_prompt_reconnect',
+						minw = 3, minh = 0.8, scale = 0.4, colour = G.C.GREEN,
+					}),
+				} },
 				{ n = G.UIT.C, config = { minw = 0.3 } },
-				UIBox_button({
-					label = { localize(is_public_like(lobby_data) and 'b_abandon' or 'b_leave') },
-					button = 'mpapi_reconnect_prompt_leave',
-					minw = 3, minh = 0.8, scale = 0.4, colour = G.C.RED,
-				}),
+				{ n = G.UIT.C, config = { align = 'cm' }, nodes = {
+					UIBox_button({
+						label = { localize(is_public_like(lobby_data) and 'b_abandon' or 'b_leave') },
+						button = 'mpapi_reconnect_prompt_leave',
+						minw = 3, minh = 0.8, scale = 0.4, colour = G.C.RED,
+					}),
+				} },
 			} },
 		},
 	})
