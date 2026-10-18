@@ -603,6 +603,29 @@ function NL.unqueue(ticket_id, cb)
 	end)
 end
 
+-- Swaps a ticket for `ticket` (a wider ranked window). The old one is
+-- withdrawn first; when the server no longer has it (it matched, or went with
+-- the socket) nothing is added and cb(nil, nil) runs, leaving its on_matched
+-- (or the lost-tickets requeue) to carry on. Otherwise as NL.queue.
+function NL.requeue(old_id, ticket, on_matched, cb)
+	if not (socket and socket_open) or not tickets[old_id] then
+		cb(nil, nil)
+		return
+	end
+	socket.matchmaker_remove(old_id, function(result)
+		if result and result.error then
+			cb(nil, nil)
+			return
+		end
+		-- Kept until the new ticket is in, so a socket dropped meanwhile
+		-- still reports it lost (and the handle queues again).
+		NL.queue(ticket, on_matched, function(err, id)
+			tickets[old_id] = nil
+			cb(err, id)
+		end)
+	end)
+end
+
 function NL.unqueue_all()
 	local ids = {}
 	for id in pairs(tickets) do
@@ -617,7 +640,12 @@ end
 -- Pump / teardown
 ----------------------------------------------------------------------
 
--- Fires due reconnect timers; called from MPAPI.update.
+-- Runs fn after `seconds` of real time, from NL.update. Dropped by NL.reset.
+function NL.after(seconds, fn)
+	after(seconds, fn)
+end
+
+-- Fires due timers (reconnects, ranked window widening); called from MPAPI.update.
 function NL.update()
 	if #timers == 0 then
 		return

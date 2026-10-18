@@ -3,21 +3,48 @@ MPAPI.matchmaking = MPAPI.matchmaking or {}
 -- Queues are Nakama matchmaker tickets (the server makes the lobby, see
 -- BalatroMultiplayerServer nakama/src/matchmaking).
 
--- How far apart two ranked ratings may be to be matched.
-MPAPI.matchmaking.NAKAMA_RATING_SPREAD = 300
+-- How far apart two ranked ratings may be to be matched: the window starts at
+-- RANKED_SPREAD_INITIAL and grows by RANKED_SPREAD_EXPAND_RATE for every
+-- RANKED_SPREAD_EXPAND_SECS spent queueing, up to RANKED_SPREAD_CAP. These are
+-- the pre-Nakama server's numbers and rule (apps/server features/matchmaking
+-- elo.service.ts + queue.ts runRankedQueue on the mqtt branch).
+MPAPI.matchmaking.RANKED_SPREAD_INITIAL = 150
+MPAPI.matchmaking.RANKED_SPREAD_EXPAND_RATE = 50
+MPAPI.matchmaking.RANKED_SPREAD_EXPAND_SECS = 30
+MPAPI.matchmaking.RANKED_SPREAD_CAP = 600
 local DEFAULT_RATING = 600
+
+-- The ranked window after `wait_secs` in the queue. Pure.
+MPAPI.matchmaking.ranked_spread = function(wait_secs)
+	local M = MPAPI.matchmaking
+	local steps = math.floor(math.max(0, wait_secs or 0) / M.RANKED_SPREAD_EXPAND_SECS)
+	return math.min(M.RANKED_SPREAD_INITIAL + steps * M.RANKED_SPREAD_EXPAND_RATE, M.RANKED_SPREAD_CAP)
+end
+
+-- Seconds in the queue at which the ranked ticket is next swapped for a
+-- fresh one: every RANKED_SPREAD_EXPAND_SECS, also once the window is at the
+-- cap. A Nakama ticket searches only on its first matchmaker pass (later it is
+-- only found by others' searches), so the fresh ticket is what lets a long
+-- wait's wide window take in players who queued after it, as the old
+-- server's oldest-entry anchor did. Pure.
+MPAPI.matchmaking.next_requeue_at = function(wait_secs)
+	local M = MPAPI.matchmaking
+	local steps = math.floor(math.max(0, wait_secs or 0) / M.RANKED_SPREAD_EXPAND_SECS)
+	return (steps + 1) * M.RANKED_SPREAD_EXPAND_SECS
+end
 
 -- The matchmaker ticket for a queue attempt. Pure. A ticket only matches
 -- others asking for the same mod, mode and kind; a ranked one also only
--- ones rated within the spread of `rating`. The mode is the bare board name
--- (a 'ranked:' key prefix dropped), like the rating RPCs.
-MPAPI.matchmaking._nakama_ticket = function(opts, ranked, rating)
+-- ones rated within `spread` (default RANKED_SPREAD_INITIAL) of `rating`. The
+-- mode is the bare board name (a 'ranked:' key prefix dropped), like the
+-- rating RPCs.
+MPAPI.matchmaking._nakama_ticket = function(opts, ranked, rating, spread)
 	local mode = tostring(opts.game_mode):gsub('^ranked:', '')
 	local kind = ranked and 'ranked' or 'casual'
 	local query = string.format('+properties.modId:%s +properties.mode:%s +properties.kind:%s', opts.mod_id, mode, kind)
 	local numbers
 	if ranked then
-		local spread = MPAPI.matchmaking.NAKAMA_RATING_SPREAD
+		spread = spread or MPAPI.matchmaking.RANKED_SPREAD_INITIAL
 		rating = rating or DEFAULT_RATING
 		query = query
 			.. string.format(' +properties.rating:>=%d +properties.rating:<=%d', rating - spread, rating + spread)
@@ -53,15 +80,22 @@ MPAPI.matchmaking._on_nakama_tickets_lost = function(lost)
 	end
 end
 
+-- Seconds since the handle first queued (love.timer is real time, unlike the
+-- game's event timers).
+local function queue_wait(handle)
+	return love.timer.getTime() - (handle._queued_at or love.timer.getTime())
+end
+
 local function nakama_queue(opts, handle, ranked)
 	local NL = MPAPI.networking.nakama_lobby
-	local function open(rating)
-		if handle._left then
-			return
-		end
-		NL.queue(MPAPI.matchmaking._nakama_ticket(opts, ranked, rating), function(match_id)
-			MPAPI._internal.mm.on_nakama_matched(handle, match_id)
-		end, function(err, ticket)
+	local function on_matched(match_id)
+		MPAPI._internal.mm.on_nakama_matched(handle, match_id)
+	end
+	local schedule_requeue
+	-- The answer to a ticket add: `first` for a fresh queue attempt (QUEUED
+	-- fires), false for a fresh ticket replacing one.
+	local function on_ticket(first)
+		return function(err, ticket)
 			if err then
 				MPAPI._internal.mm.remove_handle(handle)
 				handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)))
@@ -72,14 +106,58 @@ local function nakama_queue(opts, handle, ranked)
 				end
 				return
 			end
-			if handle._left then
+			if handle._left or handle.match_id then
 				NL.unqueue(ticket)
 				return
 			end
 			handle._nakama_ticket = ticket
-			local mm = MPAPI._internal.mm
-			if mm.queue_timer then mm.queue_timer.start() end
-			handle:_fire(MPAPI.MatchmakingEvent.QUEUED, nil)
+			if first then
+				local mm = MPAPI._internal.mm
+				if mm.queue_timer then mm.queue_timer.start() end
+				handle:_fire(MPAPI.MatchmakingEvent.QUEUED, nil)
+			end
+			if ranked then
+				schedule_requeue(ticket)
+			end
+		end
+	end
+	local function open(rating)
+		if handle._left then
+			return
+		end
+		handle._nakama_rating = rating
+		handle._nakama_spread = ranked and MPAPI.matchmaking.ranked_spread(queue_wait(handle)) or nil
+		NL.queue(MPAPI.matchmaking._nakama_ticket(opts, ranked, rating, handle._nakama_spread), on_matched, on_ticket(true))
+	end
+	-- Nakama can't change a ticket's query, and a ticket searches only on its
+	-- first pass, so each RANKED_SPREAD_EXPAND_SECS the ticket is swapped for a
+	-- fresh one at the window reached by then (the old one is withdrawn
+	-- first: one that already matched carries on to its lobby).
+	-- (_requeue_floor: the step last fired, so float rounding in the clock
+	-- can't count it twice.)
+	schedule_requeue = function(ticket)
+		local at = MPAPI.matchmaking.next_requeue_at(math.max(queue_wait(handle), handle._requeue_floor or 0))
+		NL.after(math.max(0, at - queue_wait(handle)), function()
+			if handle._left or handle.match_id or handle._nakama_ticket ~= ticket then
+				return
+			end
+			handle._requeue_floor = at
+			local spread = MPAPI.matchmaking.ranked_spread(math.max(queue_wait(handle), at))
+			if spread > (handle._nakama_spread or 0) then
+				MPAPI.sendDebugMessage('[matchmaking] widening the ranked window to +-' .. spread)
+			end
+			local fresh = MPAPI.matchmaking._nakama_ticket(opts, ranked, handle._nakama_rating, spread)
+			NL.requeue(ticket, fresh, on_matched, function(err, new_ticket)
+				if err == nil and new_ticket == nil then
+					-- The old ticket was already spent (matched, or lost with
+					-- the socket): its own path carries on.
+					return
+				end
+				if not err then
+					handle._nakama_spread = spread
+				end
+				on_ticket(false)(err, new_ticket)
+			end)
 		end)
 	end
 	local function start()
@@ -93,9 +171,11 @@ local function nakama_queue(opts, handle, ranked)
 		end)
 	end
 	-- A refused match spends the ticket (api/connection/moderation.lua), as
-	-- does a dropped socket (on_tickets_lost below).
+	-- does a dropped socket (on_tickets_lost below). Queueing again keeps the
+	-- time already waited, so the window doesn't shrink back.
 	handle._nakama_requeue = start
 	handle._nakama_ranked = ranked
+	handle._queued_at = love.timer.getTime()
 	start()
 end
 
