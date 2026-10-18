@@ -65,6 +65,17 @@ MPAPI._internal.activate_mod = function(id)
 	MPAPI._internal.mod_registry.update_account_button()
 end
 
+-- Focuses a mod for a run started outside its menu (a crash-rejoin from the
+-- relaunched game's vanilla main menu), without showing any of its pages. The
+-- unlock overlay comes with focus, and pools are built from it: without it the
+-- run's tags/shop/boss rolls use the local profile's real discoveries, not the
+-- everything-discovered state the live match rolled them with.
+MPAPI._internal.focus_mod_for_run = function(id)
+	if not state.registered_mods[id] then return end
+	state.focused_mod = id
+	MPAPI._internal.unlock_overlay.enable_for_mod(id)
+end
+
 -- The account panel's Back button. On a mod's own top-level page (its main menu or lobby),
 -- this leaves the mod entirely, back to the game main menu. On a sub-page reached FROM within
 -- a mod's menu (category outside 'mod_menu'/'lobby_menu'/'vanilla' -- e.g. a gamemode-select

@@ -93,5 +93,7 @@ function MPAPI.playback.rejoin(mod_id, active)
 		MPAPI.sendDebugMessage('MPAPI.playback: no rejoin launcher for ' .. tostring(mod_id) .. ' (ignored)')
 		return
 	end
+	-- The fast-forward must roll from the same pools the live run did.
+	MPAPI._internal.focus_mod_for_run(mod_id)
 	return fn(active)
 end
