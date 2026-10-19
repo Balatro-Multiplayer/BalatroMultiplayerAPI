@@ -11,6 +11,8 @@ N.Code = {
 	QUEUE_CANCELLED = 103,
 	-- 104 and 106 are retired (never sent); don't reuse them.
 	INTEGRITY = 105,
+	-- Persistent: also waits in the notification list for the next login.
+	AVATAR_UNLOCKED = 107,
 }
 
 local handlers = {} -- code -> { fn, ... }
@@ -52,6 +54,39 @@ function N.dispatch(message)
 	for _, notification in ipairs(list) do
 		N.dispatch_one(notification)
 	end
+end
+
+-- Persistent notifications are not re-pushed when the socket connects: they
+-- wait in the account's notification list. cb(list) gets the stored ones with
+-- `code` (decoded content in .content_table), {} when the client can't list.
+local LIST_PAGE = 100
+function N.list_persistent(client, code, cb)
+	if not (client and client.list_notifications) then
+		cb({})
+		return
+	end
+	client.list_notifications(LIST_PAGE, nil, function(result)
+		local found = {}
+		for _, notification in ipairs((result and not result.error and result.notifications) or {}) do
+			if tonumber(notification.code) == code then
+				notification.content_table = decode(notification.content)
+				found[#found + 1] = notification
+			end
+		end
+		cb(found)
+	end)
+end
+
+-- Removes stored notifications once they have been dealt with. Fire and forget.
+function N.delete_persistent(client, ids)
+	if not (client and client.delete_notifications) or not ids or #ids == 0 then
+		return
+	end
+	client.delete_notifications(ids, function(result)
+		if result and result.error then
+			MPAPI.sendDebugMessage('[nakama_notify] delete failed: ' .. tostring(result.error.message or result.error))
+		end
+	end)
 end
 
 MPAPI.networking.nakama_notify = N
