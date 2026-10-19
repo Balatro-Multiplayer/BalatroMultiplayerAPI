@@ -275,8 +275,7 @@ end
 -- TRIGGERS
 -----------------------------
 
-C.state_change_callbacks = C.state_change_callbacks or {}
-table.insert(C.state_change_callbacks, function(new_state, context)
+function Catalog._on_connection_state(new_state, context)
 	-- Only a real transition carries old_state (a player_update or a
 	-- reconnected-lobby notice re-fires CONNECTED without one).
 	local connected = new_state == MPAPI.ConnectionState.CONNECTED
@@ -286,6 +285,11 @@ table.insert(C.state_change_callbacks, function(new_state, context)
 	elseif not connected and _cache.status ~= Catalog.Status.EMPTY then
 		Catalog.clear()
 	end
+end
+
+C.state_change_callbacks = C.state_change_callbacks or {}
+table.insert(C.state_change_callbacks, function(new_state, context)
+	Catalog._on_connection_state(new_state, context)
 end)
 
 do
