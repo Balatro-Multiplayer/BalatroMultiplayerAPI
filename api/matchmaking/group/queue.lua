@@ -605,3 +605,23 @@ MPAPI.matchmaking.queue_group = function(opts)
 end
 
 set_listener()
+
+-- The group queue's line for a lobby view: { text, phase } while the lobby
+-- is queueing (phase forming / queued / away), { text } for how the last one
+-- ended, or nil.
+function Group.status_line(lobby)
+	if not lobby then
+		return nil
+	end
+	local view = lobby.group_queue
+	if type(view) == 'table' and view.phase then
+		return { text = localize('k_group_status_' .. view.phase), phase = view.phase, mode = view.mode }
+	end
+	local last = Group.last_end
+	if last and last.reason and last.home_code == lobby.code then
+		local key = 'k_group_ended_' .. tostring(last.reason)
+		local dict = G and G.localization and G.localization.misc and G.localization.misc.dictionary or {}
+		return { text = dict[key] or localize('k_group_ended_left_lobby') }
+	end
+	return nil
+end
