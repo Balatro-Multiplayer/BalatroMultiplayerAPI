@@ -152,21 +152,29 @@ end
 -- has actually finished creating cards/centers, matching the doc's "the right
 -- point during startup" for each -- previously this ran BEFORE, at the very
 -- front of the whole start_run call stack, before G.GAME was even reset.
+-- (The declared ban keys alone are also applied earlier, inside start_run
+-- before the ante-1 rolls: see MPAPI.ApplyBanKeys in bans.lua.)
+--
+-- Returns (drives, ruleset_key). Only drive the API's rework/ban engines when
+-- the active ruleset is one the API actually owns (an MPAPI.Ruleset), or when
+-- there is no ruleset at all (vanilla reset for base-game / non-lobby play).
+-- Consumer mods that keep their own rework system (e.g. MultiplayerPvP, whose
+-- centers are baked into the SAME mp_reworks/mp_vanilla_* namespace) select
+-- non-API ruleset keys; running LoadReworks for those would reset their
+-- reworked centers back to vanilla and clobber their content. In that case we
+-- leave the centers alone and let the consumer mod's own LoadReworks own them.
+function MPAPI._api_drives_ruleset()
+	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
+	local ruleset_key = lobby and lobby:get_metadata().ruleset or nil
+	return ruleset_key == nil or (MPAPI.Rulesets and MPAPI.Rulesets[ruleset_key]) ~= nil, ruleset_key
+end
+
 local _start_run_ref = Game.start_run
 function Game:start_run(args)
 	local ret = _start_run_ref(self, args)
 
-	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
-	local ruleset_key = lobby and lobby:get_metadata().ruleset or nil
-	-- Only drive the API's rework/ban engines when the active ruleset is one the
-	-- API actually owns (an MPAPI.Ruleset), or when there is no ruleset at all
-	-- (vanilla reset for base-game / non-lobby play). Consumer mods that keep
-	-- their own rework system (e.g. MultiplayerPvP, whose centers are baked into
-	-- the SAME mp_reworks/mp_vanilla_* namespace) select non-API ruleset keys;
-	-- running LoadReworks for those would reset their reworked centers back to
-	-- vanilla and clobber their content. In that case we leave the centers alone
-	-- and let the consumer mod's own LoadReworks own them.
-	if ruleset_key == nil or (MPAPI.Rulesets and MPAPI.Rulesets[ruleset_key]) then
+	local drives, ruleset_key = MPAPI._api_drives_ruleset()
+	if drives then
 		MPAPI.LoadReworks(ruleset_key)
 		MPAPI.ApplyBans()
 	end

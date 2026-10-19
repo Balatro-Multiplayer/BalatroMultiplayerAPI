@@ -65,9 +65,11 @@ end
 -- Query via MPAPI.get_ban_info(key) rather than reading this table directly.
 MPAPI._last_ban_meta = MPAPI._last_ban_meta or {}
 
-function MPAPI.ApplyBans()
+-- Effect: add the declared ban keys (ruleset, gamemode, ban sources) to
+-- G.GAME.banned_keys. Returns the resolved ruleset, or nil when none is active.
+local function apply_ban_keys()
 	local ruleset_key = MPAPI.get_active_ruleset()
-	if not ruleset_key then return end
+	if not ruleset_key then return nil end
 
 	local gamemode_key = MPAPI.get_active_gamemode()
 	local gamemode = gamemode_key and MPAPI.GameModes[gamemode_key] or nil
@@ -78,6 +80,22 @@ function MPAPI.ApplyBans()
 		G.GAME.banned_keys[key] = true
 	end
 	MPAPI._last_ban_meta = meta
+	return ruleset
+end
+
+-- The declared bans only: no apply_bans layer context, modifiers or starting
+-- params (layers use that context for one-shot setup that needs the new run's
+-- card areas). lovely/ban_timing.toml calls this inside start_run, after G.GAME
+-- is reset and before the ante-1 boss, voucher and skip tags are rolled, so
+-- those rolls already honour the bans. The full MPAPI.ApplyBans() still runs
+-- after start_run (reworks.lua) and re-adds the same keys.
+function MPAPI.ApplyBanKeys()
+	if MPAPI._api_drives_ruleset() then apply_ban_keys() end
+end
+
+function MPAPI.ApplyBans()
+	local ruleset = apply_ban_keys()
+	if not ruleset then return end
 
 	MPAPI.calculate_context({ apply_bans = true })
 

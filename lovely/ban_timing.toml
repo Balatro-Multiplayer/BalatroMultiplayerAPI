@@ -1,0 +1,17 @@
+[manifest]
+version = "1.0.0"
+dump_lua = true
+priority = 0
+
+# The ante-1 boss, voucher and skip tags are rolled inside start_run, but
+# MPAPI.ApplyBans() only runs after it (api/ruleset/reworks.lua), so a banned
+# boss/tag/voucher could still show up at ante 1. Apply the declared ban keys
+# here, after G.GAME and the seed are set and before the first roll.
+[[patches]]
+[patches.pattern]
+target = "game.lua"
+pattern = "self.GAME.round_resets.blind_choices.Boss = get_new_boss()"
+position = "before"
+payload = '''MPAPI.ApplyBanKeys()'''
+match_indent = true
+times = 1
