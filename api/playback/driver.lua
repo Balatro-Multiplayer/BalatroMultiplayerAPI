@@ -131,7 +131,10 @@ function MPAPI.playback.new_driver(timeline, opts)
 end
 
 function Driver:play()
-	if self._playing then
+	-- A stopped driver is finished for good: a handler's own deferred resume (a
+	-- pause() then a waiter calling play() once its condition holds) must not
+	-- re-arm it after the session was abandoned -- see go_to_menu below.
+	if self._playing or self._stopped then
 		return
 	end
 	self._playing = true
@@ -156,8 +159,16 @@ function Driver:stop()
 	-- system is allowed to leave clobbered if the player exits the replay viewer mid-seek.
 	self:_ff_cleanup()
 	self._playing = false
+	self._stopped = true
 	MPAPI.playback._active_drivers[self] = nil
 	self:_update_lock()
+end
+
+-- Stops every playback session, e.g. when its run is being torn down.
+function MPAPI.playback.stop_all()
+	for driver in pairs(MPAPI.playback._active_drivers) do
+		driver:stop()
+	end
 end
 
 -- Only clears the shared input lock once no OTHER driver is still active --
@@ -441,6 +452,16 @@ function Driver:_end_fast_forward()
 	if opts and opts.on_done then
 		opts.on_done(cursor)
 	end
+end
+
+-- Leaving the run ends its playback. Confirmed live: a PvP replay left via
+-- go_to_menu mid-playback kept its driver ticking into the menu teardown and
+-- crashed on the next dispatched action (ease_chips with G.HUD already nil),
+-- and the mpapi_playback input lock stayed set.
+local _go_to_menu_ref = G.FUNCS.go_to_menu
+G.FUNCS.go_to_menu = function(...)
+	MPAPI.playback.stop_all()
+	return _go_to_menu_ref(...)
 end
 
 local _game_update_ref = Game.update
