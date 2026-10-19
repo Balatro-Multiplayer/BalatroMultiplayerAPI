@@ -391,7 +391,9 @@ end
 function M.party_join(socket, party_id, callback)
 	assert(socket)
 	assert(party_id == nil or _G.type(party_id) == 'string')
+	socket.cid = socket.cid + 1
 	local message = {
+		cid = tostring(socket.cid),
 		party_join = {
 			party_id = party_id,
 		}
@@ -406,7 +408,9 @@ end
 function M.party_leave(socket, party_id, callback)
 	assert(socket)
 	assert(party_id == nil or _G.type(party_id) == 'string')
+	socket.cid = socket.cid + 1
 	local message = {
+		cid = tostring(socket.cid),
 		party_leave = {
 			party_id = party_id,
 		}
@@ -545,7 +549,9 @@ function M.party_matchmaker_remove(socket, party_id, ticket, callback)
 	assert(socket)
 	assert(party_id == nil or _G.type(party_id) == 'string')
 	assert(ticket == nil or _G.type(ticket) == 'string')
+	socket.cid = socket.cid + 1
 	local message = {
+		cid = tostring(socket.cid),
 		party_matchmaker_remove = {
 			party_id = party_id,
 			ticket = ticket,
