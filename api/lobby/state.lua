@@ -222,4 +222,10 @@ L.cleanup = function(lobby)
 	if L.current == lobby then
 		L.current = nil
 	end
+
+	-- A home lobby left while its group queue was forming or queued.
+	local Group = MPAPI.matchmaking and MPAPI.matchmaking.group
+	if Group and Group._on_lobby_gone then
+		Group._on_lobby_gone(lobby)
+	end
 end

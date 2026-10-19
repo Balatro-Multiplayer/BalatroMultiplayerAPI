@@ -50,9 +50,24 @@ MPAPI.matchmaking._nakama_ticket = function(opts, ranked, rating, spread)
 			.. string.format(' +properties.rating:>=%d +properties.rating:<=%d', rating - spread, rating + spread)
 		numbers = { rating = rating }
 	end
+	local min_count = opts.min_players or 2
+	local max_count = opts.max_players or opts.min_players or 2
+	local count_multiple
+	if opts.teams then
+		-- A Teams game: every ticket says so (the server refuses a match whose
+		-- tickets disagree, nakama/src/matchmaking/matched.ts planMatch) and
+		-- only matches tickets that do, in even numbers.
+		query = query .. ' +properties.teams:>=1'
+		numbers = numbers or {}
+		numbers.teams = 1
+		count_multiple = 2
+		min_count = min_count + (min_count % 2)
+		max_count = math.max(min_count, max_count - (max_count % 2))
+	end
 	return {
-		min_count = opts.min_players or 2,
-		max_count = opts.max_players or opts.min_players or 2,
+		min_count = min_count,
+		max_count = max_count,
+		count_multiple = count_multiple,
 		query = query,
 		strings = { modId = opts.mod_id, mode = mode, kind = kind },
 		numbers = numbers,
@@ -303,19 +318,16 @@ MPAPI.matchmaking.leave_all = function()
 	end
 
 	MPAPI.networking.nakama_lobby.unqueue_all()
-end
 
--- Queue the entire private lobby as a group. Only callable by the lobby host.
-MPAPI.matchmaking.queue_group = function(opts)
-	local lobby = MPAPI.get_current_lobby()
-	if not lobby then
-		MPAPI.sendWarnMessage('matchmaking.queue_group: not in a lobby')
-		return nil
+	-- A group queue (forming or queued) ends for the whole group.
+	local Group = MPAPI.matchmaking.group
+	if Group and Group.is_active and Group.is_active() then
+		Group.cancel()
 	end
-
-	-- queue() will detect the lobbyCode from the session server-side
-	return MPAPI.matchmaking.queue(opts)
 end
+
+-- MPAPI.matchmaking.queue_group (queue the whole private lobby as one group,
+-- host only) lives in api/matchmaking/group/queue.lua.
 
 -- Ratings live on the Nakama server (BalatroMultiplayerServer nakama/src/rating)
 -- and are read through its RPCs. Its boards are keyed by the bare mode, so a

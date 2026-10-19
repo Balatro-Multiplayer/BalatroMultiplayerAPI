@@ -35,4 +35,8 @@ MPAPI.LobbyEvent = {
 	METADATA_CHANGED = 'metadata_changed',
 	HOST_CHANGED = 'host_changed',
 	LOBBY_CLOSED = 'lobby_closed',
+	-- Client-side only: the lobby's group casual queue changed (op 112, or a
+	-- snapshot). Args: lobby.group_queue (nil once over), and for op 112 the
+	-- server's payload (its reason / requeue).
+	GROUP_QUEUE = 'group_queue',
 }
