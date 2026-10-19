@@ -170,15 +170,36 @@ MPAPI.RLOG_CODE {
 	end,
 }
 
+-- args {cost}: what this reroll charges (0 for a free one), read before
+-- vanilla eases the dollars. The server's achievements count rerolls and money
+-- spent from it (BalatroMultiplayerServer nakama/src/achievements/facts/money.ts);
+-- older logs have no args, and replay never reads them.
 MPAPI.RLOG_CODE {
 	key = 'reroll',
 	mods = { 'pvp', 'spdrn' },
-	write = function(self, human)
-		self:record(nil, human)
+	write = function(self, cost, human)
+		self:record({ cost = cost }, human)
 	end,
 	replay = function(self, _args, ctx)
 		if ctx.schema_version >= 1 then
 			if ctx.is_pov then G.FUNCS.reroll_shop({ config = {} }) end
+		end
+	end,
+}
+
+-- args {score}: one played hand's own score (not the round total), once its
+-- scoring has finished. A string, so a Talisman big number ("1e+11",
+-- "e1.2e10", "naneinf") reaches the server intact. Bookkeeping only: the
+-- server reads it (Stuntman), replay has nothing to apply.
+MPAPI.RLOG_CODE {
+	key = 'hand_scored',
+	mods = { 'pvp', 'spdrn' },
+	write = function(self, score)
+		self:record({ score = score })
+	end,
+	replay = function(self, _args, ctx)
+		if ctx.schema_version >= 1 then
+			-- no-op
 		end
 	end,
 }
@@ -467,10 +488,17 @@ function G.FUNCS.cash_out(e)
 	return cash_out_ref(e)
 end
 
+-- A cost as a plain number: Talisman can hand back a big-number table.
+local function plain_number(value)
+	if type(value) == 'number' then return value end
+	return tonumber(tostring(value)) or 0
+end
+
 local reroll_shop_ref = G.FUNCS.reroll_shop
 function G.FUNCS.reroll_shop(e)
 	if RLOG.is_active() then
-		MPAPI.RLOGCodes.reroll:write(string.format("action:rerollShop,cost:%s", G.GAME.current_round.reroll_cost))
+		local cost = plain_number(G.GAME.current_round.reroll_cost)
+		MPAPI.RLOGCodes.reroll:write(cost, string.format("action:rerollShop,cost:%s", cost))
 	end
 	return reroll_shop_ref(e)
 end
@@ -547,6 +575,52 @@ function G.FUNCS.play_cards_from_highlighted(...)
 	if #played > 0 and RLOG.is_active() then
 		MPAPI.RLOGCodes.play:write(played, played_refs, "action:play,cards:" .. table.concat(played, "."))
 	end
+end
+
+-- The hand's own score as a string. SMODS stores it at the end of
+-- evaluate_play (SMODS.last_hand_score, a Talisman big number when Talisman
+-- is installed); tostring keeps every big-number form the server parses.
+function RLOG.hand_score_string(score)
+	if score == nil then return nil end
+	if type(score) == 'number' and score == math.floor(score) and math.abs(score) < 1e15 then
+		return string.format('%d', score)
+	end
+	return tostring(score)
+end
+
+function RLOG.record_hand_scored()
+	if not RLOG.is_active() then return end
+	local score = RLOG.hand_score_string(SMODS.last_hand_score)
+	if score then MPAPI.RLOGCodes.hand_scored:write(score) end
+end
+
+-- Talisman can run evaluate_play as a coroutine spread over several frames
+-- (G.SCORING_COROUTINE); the score is only final once it has finished.
+local function scoring_in_progress()
+	local co = G.SCORING_COROUTINE
+	return co ~= nil and coroutine.status(co) ~= 'dead'
+end
+
+local evaluate_play_ref = G.FUNCS.evaluate_play
+function G.FUNCS.evaluate_play(...)
+	SMODS.last_hand_score = nil
+	local result = evaluate_play_ref(...)
+	if RLOG.is_active() then
+		if scoring_in_progress() then
+			G.E_MANAGER:add_event(Event({
+				blockable = false,
+				blocking = false,
+				func = function()
+					if scoring_in_progress() then return false end
+					RLOG.record_hand_scored()
+					return true
+				end,
+			}))
+		else
+			RLOG.record_hand_scored()
+		end
+	end
+	return result
 end
 
 local discard_cards_ref = G.FUNCS.discard_cards_from_highlighted
