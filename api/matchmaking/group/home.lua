@@ -85,6 +85,13 @@ function Group.return_home()
 	p.returning = true
 	MPAPI.sendDebugMessage('[group] returning to lobby ' .. tostring(p.home_code))
 	local reg = Group._registration(p.mod_id)
+	-- Leaving the public game lands on the game's own main menu with no mod
+	-- focused, where a joined lobby has no page to show: focus the mod first,
+	-- as a player opening its menu would, so CONNECTED shows the lobby page.
+	local registry = MPAPI._internal.mod_registry
+	if at_main_menu() and registry and registry.focused_mod ~= p.mod_id and MPAPI._internal.activate_mod then
+		pcall(MPAPI._internal.activate_mod, p.mod_id)
+	end
 	local lobby
 	local ok, err = pcall(function()
 		if reg and reg.return_home then
