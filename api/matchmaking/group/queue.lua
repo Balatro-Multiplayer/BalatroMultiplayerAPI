@@ -489,6 +489,8 @@ local function on_party_event(kind, message)
 	try_add_ticket()
 end
 
+Group._party_event = on_party_event
+
 local function set_listener()
 	local nl = NL()
 	if nl and nl.set_party_listener then
