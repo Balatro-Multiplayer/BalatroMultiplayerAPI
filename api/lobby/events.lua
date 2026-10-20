@@ -157,6 +157,6 @@ L.apply_player_info = function(lobby, player_id, info)
 	end
 	lobby:_fire(MPAPI.LobbyEvent.PLAYER_INFO, player_id, lobby._players[player_id])
 	if not is_new and info.standing ~= standing_before then
-		lobby:_fire(MPAPI.LobbyEvent.PLAYER_STANDING_CHANGED, player_id, info.standing)
+		lobby:_fire(MPAPI.LobbyEvent.PLAYER_STANDING_CHANGED, player_id, info.standing, standing_before)
 	end
 end

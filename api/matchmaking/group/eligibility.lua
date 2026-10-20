@@ -59,6 +59,12 @@ function Group.mode_fits(mode, size)
 	return max >= size + 1
 end
 
+-- Whether a member's standing going from `before` to `after` can change
+-- member_standing_refusal's answer: only none refuses. Pure.
+function Group.changes_refusal(before, after)
+	return (before == MPAPI.Standing.NONE) ~= (after == MPAPI.Standing.NONE)
+end
+
 -- The member whose standing (domain/standing.lua) refuses the group, as a
 -- MEMBER_REFUSED refusal { code, user_id, name, reason, mods }, or nil. A
 -- group is casual only, so a member counts as refused when the lobby says
