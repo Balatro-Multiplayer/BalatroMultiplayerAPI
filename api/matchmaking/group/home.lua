@@ -35,8 +35,13 @@ local function now()
 	return love and love.timer and love.timer.getTime() or os.clock()
 end
 
+-- At the main menu once it is built: go_to_menu sets the stage at once but
+-- builds the menu (set_main_menu_UI, which rebuilds whatever page is current)
+-- seconds later, so a lobby page shown before that was replaced by the page
+-- current before it (seen live with SPDRN: its main menu on screen while in
+-- the home lobby).
 local function at_main_menu()
-	return G and G.STAGES and G.STAGE == G.STAGES.MAIN_MENU
+	return G and G.STAGES and G.STAGE == G.STAGES.MAIN_MENU and G.STATE == G.STATES.MENU and G.MAIN_MENU_UI ~= nil
 end
 
 -- The return this client still owes its home lobby for `mod_id` (nil for
