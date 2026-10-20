@@ -167,6 +167,29 @@ local function notice(text)
 	end
 end
 
+-- { [user_id] = displayName } for the lobby's players.
+local function player_names(lobby)
+	local names = {}
+	for _, p in ipairs(lobby and not lobby._destroyed and lobby:get_players() or {}) do
+		names[p.id] = p.displayName
+	end
+	return names
+end
+
+-- The server refused the group because of a member's standing
+-- ({ userId, reason, mods }): keep why for the panels, and if that member is
+-- this client, show it the mods overlay (ui/mods_not_allowed_overlay.lua).
+-- Returns the refusal named for the UI.
+local function on_member_refused(lobby, home_code, refused)
+	Group.remember_refusal(home_code, refused)
+	local named = Group.member_refusal_from_server(refused, player_names(lobby))
+	if lobby and refused.userId == lobby.player_id and MPAPI.show_standing_refusal then
+		MPAPI.show_standing_refusal({ code = named.reason, mods = named.mods })
+	end
+	return named
+end
+Group._on_member_refused = on_member_refused
+
 local function finish(reason)
 	local a = active
 	if not a then
@@ -397,8 +420,15 @@ function Group._on_view(lobby, view)
 	if active and active.opening and type(view) ~= 'table' then
 		return
 	end
+	-- Recorded again after the effects run: ending the queue there (finish)
+	-- writes a bare last_end that would drop who was refused.
+	local ended = nil
 	if type(view) == 'table' and view.phase == Group.Phase.IDLE and view.reason then
-		Group.last_end = { reason = view.reason, home_code = lobby.code }
+		ended = { reason = view.reason, home_code = lobby.code }
+		if view.reason == Group.Refusal.MEMBER_REFUSED and type(view.refused) == 'table' then
+			ended.refused = on_member_refused(lobby, lobby.code, view.refused)
+		end
+		Group.last_end = ended
 	end
 	local before = active and active.view
 	local was = before and before.phase
@@ -421,6 +451,9 @@ function Group._on_view(lobby, view)
 		active.teams = view.teams and true or false
 	end
 	run(fx, view)
+	if ended then
+		Group.last_end = ended
+	end
 	if not active or type(view) ~= 'table' then
 		return
 	end
@@ -521,7 +554,10 @@ function Group.queue(opts)
 		return nil, { code = R.RANKED }
 	end
 	local facts = Group.facts_from_lobby(lobby)
-	local refusal = Group.eligibility(facts, nil)
+	-- A member refused for their standing is still asked of the server: the
+	-- lobby only says their standing is none, and the server's refusal says
+	-- why (the mods), or lets the group queue when that word was stale.
+	local refusal = Group.eligibility(Group.without_standings(facts), nil)
 	if refusal then
 		return nil, refusal
 	end
@@ -546,7 +582,8 @@ function Group.queue(opts)
 	}
 	active = a
 
-	local function refused(text, err_kind)
+	-- already_shown: the player has been told another way (the mods overlay).
+	local function refused(text, err_kind, already_shown)
 		if active == a then
 			active = nil
 		end
@@ -556,7 +593,9 @@ function Group.queue(opts)
 		handle._left = true
 		mm().remove_handle(handle)
 		handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(err_kind or MPAPI.ErrorKind.SERVER, text))
-		notice(text)
+		if not already_shown then
+			notice(text)
+		end
 	end
 
 	NL().party_create(Group.MAX_SIZE, function(err, party)
@@ -584,7 +623,13 @@ function Group.queue(opts)
 				return
 			end
 			if data and data.refused then
-				refused(Group.refusal_text(data.refused), MPAPI.ErrorKind.VALIDATION)
+				local why = data.refused
+				local own = false
+				if why.code == Group.Refusal.MEMBER_REFUSED and why.userId and why.reason then
+					why = on_member_refused(MPAPI.get_current_lobby() or lobby, a.home_code, why)
+					own = why.user_id == lobby.player_id
+				end
+				refused(Group.refusal_text(why), MPAPI.ErrorKind.VALIDATION, own)
 				return
 			end
 			-- op 112 usually beats this reply; a reply after it is stale.
@@ -620,6 +665,9 @@ function Group.status_line(lobby)
 		return { text = localize('k_group_status_' .. view.phase), phase = view.phase, mode = view.mode }
 	end
 	local last = Group.last_end
+	if last and last.refused and last.home_code == lobby.code then
+		return { text = Group.refusal_text(last.refused) }
+	end
 	if last and last.reason and last.home_code == lobby.code then
 		local key = 'k_group_ended_' .. tostring(last.reason)
 		local dict = G and G.localization and G.localization.misc and G.localization.misc.dictionary or {}

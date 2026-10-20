@@ -32,6 +32,11 @@ MPAPI.LobbyEvent = {
 	PLAYER_DISCONNECTED = 'player_disconnected',
 	PLAYER_RECONNECTED = 'player_reconnected',
 	PLAYER_INFO = 'player_info',
+	-- Client-side only: a player already in the lobby got a different
+	-- standing (domain/standing.lua) through PLAYER_INFO. Args: player_id,
+	-- standing. Not fired for a player's first info, nor when only their
+	-- mods or name came again.
+	PLAYER_STANDING_CHANGED = 'player_standing_changed',
 	METADATA_CHANGED = 'metadata_changed',
 	HOST_CHANGED = 'host_changed',
 	LOBBY_CLOSED = 'lobby_closed',

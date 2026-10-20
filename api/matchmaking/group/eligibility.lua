@@ -59,11 +59,37 @@ function Group.mode_fits(mode, size)
 	return max >= size + 1
 end
 
+-- The member whose standing (domain/standing.lua) refuses the group, as a
+-- MEMBER_REFUSED refusal { code, user_id, name, reason, mods }, or nil. A
+-- group is casual only, so a member counts as refused when the lobby says
+-- their standing is none, or, for this client itself, when its own standing
+-- refuses casual. reason (an MPAPI.QueueRefusalCode) and mods come from this
+-- client's own standing for itself, else from what the server last said
+-- about that member (facts.known_refusals), else stay unknown. Members are
+-- checked in member_ids order. Pure.
+function Group.member_standing_refusal(facts)
+	for _, id in ipairs(facts.member_ids or {}) do
+		local own = id == facts.own_id and facts.own_refusal or nil
+		if own or (facts.standings or {})[id] == MPAPI.Standing.NONE then
+			local known = own or (facts.known_refusals or {})[id] or {}
+			return {
+				code = Group.Refusal.MEMBER_REFUSED,
+				user_id = id,
+				name = (facts.names or {})[id],
+				reason = known.code,
+				mods = known.mods or {},
+			}
+		end
+	end
+	return nil
+end
+
 -- The first reason the lobby described by `facts` may not queue as a group
 -- for `mode`, or nil. facts = { in_lobby, is_host, is_private, ranked,
--- in_game, queueing, member_ids = {..}, away_ids = {..} }; mode as
--- mode_fits (nil skips that check). Checked in the server's order
--- (refusal.ts homeRefusal). Pure.
+-- in_game, queueing, member_ids = {..}, away_ids = {..}, and for
+-- member_standing_refusal: standings, names, own_id, own_refusal,
+-- known_refusals }; mode as mode_fits (nil skips that check). Checked in the
+-- server's order (refusal.ts homeRefusal, then memberRefusal). Pure.
 function Group.eligibility(facts, mode)
 	local R = Group.Refusal
 	if not facts or not facts.in_lobby then
@@ -95,10 +121,26 @@ function Group.eligibility(facts, mode)
 	if away then
 		return refusal(R.MEMBER_AWAY, away)
 	end
+	local refused = Group.member_standing_refusal(facts)
+	if refused then
+		return refused
+	end
 	if mode and not Group.mode_fits(mode, size) then
 		return refusal(R.MODE_TOO_SMALL)
 	end
 	return nil
+end
+
+-- facts with every member's standing left out, for the checks that don't
+-- depend on it (which modes fit, whether to ask the server at all). Pure.
+function Group.without_standings(facts)
+	local copy = {}
+	for k, v in pairs(facts or {}) do
+		copy[k] = v
+	end
+	copy.standings = {}
+	copy.own_refusal = nil
+	return copy
 end
 
 -- `modes` (a list of { key, max_players, teams, ... }) each with its
@@ -154,16 +196,24 @@ function Group.facts_from_lobby(lobby)
 	if not lobby or lobby._destroyed then
 		return { in_lobby = false }
 	end
-	local member_ids, away_ids = {}, {}
+	local member_ids, away_ids, standings, names = {}, {}, {}, {}
 	for _, p in ipairs(lobby:get_players()) do
 		member_ids[#member_ids + 1] = p.id
 		if p.is_away then
 			away_ids[#away_ids + 1] = p.id
 		end
+		standings[p.id] = p.standing
+		names[p.id] = p.displayName
 	end
 	table.sort(member_ids)
 	table.sort(away_ids)
+	local own_refusal = MPAPI.standing.queue_refusal(MPAPI.account_standing(), MPAPI.QueueKind.CASUAL, MPAPI.is_launcher_verified())
 	return {
+		standings = standings,
+		names = names,
+		own_id = lobby.player_id,
+		own_refusal = own_refusal,
+		known_refusals = Group.known_refusals_for(lobby.code),
 		in_lobby = true,
 		is_host = lobby.is_host and true or false,
 		is_private = (lobby.type or 'private') == 'private' and not lobby._local_mode,
@@ -175,11 +225,74 @@ function Group.facts_from_lobby(lobby)
 	}
 end
 
+-- What the server last said about members refused for their standing, per
+-- home lobby code: { [code] = { [user_id] = { code, mods } } }. The lobby
+-- snapshot only says a member's standing is none; the server's refusal (a
+-- refused open, or op 112 ending the queue) also says why.
+Group._known_refusals = Group._known_refusals or {}
+
+function Group.known_refusals_for(home_code)
+	return Group._known_refusals[home_code or ''] or {}
+end
+
+-- A server refusal ({ userId, reason, mods }, as group_queue_open and op 112
+-- carry it) kept for that home lobby.
+function Group.remember_refusal(home_code, refused)
+	if type(refused) ~= 'table' or not refused.userId or not refused.reason then
+		return
+	end
+	local key = home_code or ''
+	Group._known_refusals[key] = Group._known_refusals[key] or {}
+	local mods = {}
+	for _, m in ipairs(type(refused.mods) == 'table' and refused.mods or {}) do
+		mods[#mods + 1] = tostring(m)
+	end
+	Group._known_refusals[key][refused.userId] = { code = refused.reason, mods = mods }
+end
+
+-- A server MEMBER_REFUSED ({ code, userId, reason, mods, detail, message })
+-- in the shape member_standing_refusal returns, named from `names`
+-- ({ [user_id] = displayName }). Pure.
+function Group.member_refusal_from_server(refused, names)
+	local mods = {}
+	for _, m in ipairs(type(refused.mods) == 'table' and refused.mods or {}) do
+		mods[#mods + 1] = tostring(m)
+	end
+	return {
+		code = Group.Refusal.MEMBER_REFUSED,
+		user_id = refused.userId,
+		name = (names or {})[refused.userId],
+		reason = refused.reason,
+		mods = mods,
+		detail = refused.detail,
+		message = refused.message,
+	}
+end
+
+-- "Player001 has mods that aren't allowed: ClaudeControl" for a member
+-- refused for their standing, by its reason (k_group_member_<reason>).
+function Group.member_refusal_text(r)
+	local name = r.name or r.user_id or r.userId or '?'
+	local text = localize('k_group_member_' .. tostring(r.reason))
+	if text == 'ERROR' then
+		text = localize('k_group_member_unknown')
+	end
+	text = text:gsub('#1#', name)
+	if r.mods and #r.mods > 0 then
+		text = text .. ' ' .. MPAPI.standing.format_mods(MPAPI.standing.mod_names(r.mods))
+	end
+	return text
+end
+
 -- The player-facing text for a refusal: k_group_refused_<code>, else the
--- server's own message, else the code.
+-- server's own message, else the code. A member refused for their standing
+-- is named, with the mods when known.
 function Group.refusal_text(r)
 	if type(r) ~= 'table' then
 		return tostring(r)
+	end
+	if r.code == Group.Refusal.MEMBER_REFUSED and (r.name or r.reason) then
+		return Group.member_refusal_text(r)
 	end
 	local key = 'k_group_refused_' .. tostring(r.code)
 	local text = G and G.localization and G.localization.misc and G.localization.misc.dictionary

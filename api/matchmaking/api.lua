@@ -101,6 +101,30 @@ local function queue_wait(handle)
 	return love.timer.getTime() - (handle._queued_at or love.timer.getTime())
 end
 
+-- The answer to a refused ticket. The socket error is English text only, so
+-- the standing is asked again: when it now refuses, the mods overlay names
+-- the mods (api/connection/standing.lua); otherwise the server's wording is
+-- shown as it is.
+local function show_ticket_refusal(err)
+	local function show_text()
+		if MPAPI.show_notice then
+			MPAPI.show_notice('k_queue_failed_title', tostring(err))
+		end
+	end
+	if not MPAPI.refresh_account_standing then
+		show_text()
+		return
+	end
+	MPAPI.refresh_account_standing(function(_, view)
+		local refusal = view and MPAPI.standing.queue_refusal(view, MPAPI.QueueKind.CASUAL, MPAPI.is_launcher_verified())
+		if refusal then
+			MPAPI.show_standing_refusal(refusal)
+		else
+			show_text()
+		end
+	end)
+end
+
 local function nakama_queue(opts, handle, ranked)
 	local NL = MPAPI.networking.nakama_lobby
 	local function on_matched(match_id)
@@ -114,11 +138,10 @@ local function nakama_queue(opts, handle, ranked)
 			if err then
 				MPAPI._internal.mm.remove_handle(handle)
 				handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(err)))
-				-- The server's refusal (queue ban, queue switched off) is the
-				-- player's only answer to pressing QUEUE; say it on screen.
-				if MPAPI.show_notice then
-					MPAPI.show_notice('k_queue_failed_title', tostring(err))
-				end
+				-- The server's refusal (queue ban, queue switched off, the
+				-- account's standing) is the player's only answer to pressing
+				-- QUEUE; say it on screen.
+				show_ticket_refusal(err)
 				return
 			end
 			if handle._left or handle.match_id then
@@ -254,6 +277,20 @@ MPAPI.matchmaking.queue = function(opts)
 			.. 'queue, pass ranked=true or lobby_type=MPAPI.LobbyType.RANKED explicitly.')
 	end
 
+	-- A handle for a queue refused before any ticket is sent: it fires
+	-- ERROR a tick later (see this function's doc comment) and is never
+	-- added to mm.handles.
+	local function refused_handle(err)
+		local handle = MPAPI.matchmaking._make_handle(opts.mod_id, opts.game_mode)
+		G.E_MANAGER:add_event(Event({
+			func = function()
+				handle:_fire(MPAPI.MatchmakingEvent.ERROR, err)
+				return true
+			end,
+		}))
+		return handle
+	end
+
 	if wants_ranked then
 		local A = MPAPI.anticheat
 		local anticheat_ok = A ~= nil and A.active and A.launcher_connected and not A.launcher_supervision_lost
@@ -262,16 +299,19 @@ MPAPI.matchmaking.queue = function(opts)
 				.. ' launcher_connected=' .. tostring(A and A.launcher_connected)
 				.. ' supervision_lost=' .. tostring(A and A.launcher_supervision_lost) .. ')'
 			MPAPI.sendWarnMessage('matchmaking.queue: refusing a ranked queue attempt - ' .. reason)
-
-			local handle = MPAPI.matchmaking._make_handle(opts.mod_id, opts.game_mode)
-			G.E_MANAGER:add_event(Event({
-				func = function()
-					handle:_fire(MPAPI.MatchmakingEvent.ERROR, MPAPI.make_error(MPAPI.ErrorKind.ANTICHEAT_REQUIRED, reason))
-					return true
-				end,
-			}))
-			return handle
+			return refused_handle(MPAPI.make_error(MPAPI.ErrorKind.ANTICHEAT_REQUIRED, reason))
 		end
+	end
+
+	-- The account's standing (api/connection/standing.lua): a game that
+	-- reported mods outside the allowlist, or none, may not queue either
+	-- kind. This is the mod check only; ranked's verification is the
+	-- anticheat gate above. An unknown standing passes and the server decides.
+	local standing_refusal = MPAPI.standing.queue_refusal(MPAPI.account_standing(), MPAPI.QueueKind.CASUAL, MPAPI.is_launcher_verified())
+	if standing_refusal then
+		MPAPI.sendDebugMessage('[mmdbg] matchmaking.queue: refused by standing (' .. standing_refusal.code .. ')')
+		MPAPI.show_standing_refusal(standing_refusal)
+		return refused_handle(MPAPI.standing_refusal_error(standing_refusal))
 	end
 
 	MPAPI.sendDebugMessage('[mmdbg] matchmaking.queue mod=' .. tostring(opts.mod_id) .. ' gameMode=' .. tostring(opts.game_mode) .. ' min=' .. tostring(opts.min_players) .. ' max=' .. tostring(opts.max_players))

@@ -31,4 +31,10 @@ MPAPI.ErrorKind = {
 	-- pre-launch pipeline redeploys automatically), not by updating BET
 	-- itself.
 	RANKED_MODS_OUTDATED = 'ranked_mods_outdated',
+	-- The account's standing (domain/standing.lua) refuses the queue: a mod
+	-- outside the allowlist, no mod report yet, or ranked without a launcher
+	-- verdict. See api/connection/standing.lua's MPAPI.can_queue.
+	MODS_NOT_ALLOWED = 'mods_not_allowed',
+	MODS_UNREPORTED = 'mods_unreported',
+	INTEGRITY_REQUIRED = 'integrity_required',
 }

@@ -13,6 +13,8 @@ N.Code = {
 	INTEGRITY = 105,
 	-- Persistent: also waits in the notification list for the next login.
 	AVATAR_UNLOCKED = 107,
+	-- The account's queue standing changed (allowlist or enforcement edit).
+	STANDING_CHANGED = 108,
 }
 
 local handlers = {} -- code -> { fn, ... }

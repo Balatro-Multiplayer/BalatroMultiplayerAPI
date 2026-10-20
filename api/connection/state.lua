@@ -57,6 +57,9 @@ C.reset_state_vars = function()
 	MPAPI.connection_state.chat_enabled = false
 	MPAPI.connection_state.chat_blocked = false
 	MPAPI.connection_state.mute_list = {}
+	if C.forget_standing then
+		C.forget_standing()
+	end
 end
 
 C.set_status_text = function()

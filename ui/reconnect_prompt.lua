@@ -98,34 +98,85 @@ local function show_reconnect_prompt(lobby_data)
 	_overlay:as_overlay({ no_esc = true })
 end
 
+-- Seconds a rejoin into a game needing a verified account waits for the
+-- launcher verdict (105) before saying it is still pending. The challenge
+-- starts with the socket (launcher_session_start) and normally lands within
+-- a few seconds.
+local VERDICT_WAIT_SECONDS = 15
+
+-- Back into the lobby the server kept our seat in (no active run: the
+-- waiting room, or mid-draft).
+local function rejoin_lobby(lobby_data)
+	MPAPI._internal.create_reconnected_lobby(lobby_data, function(lobby)
+		MPAPI.lobby_reconnect(lobby_data.modId, lobby)
+		-- A relaunched game is on the vanilla main menu with no mod focused, so
+		-- on_lobby_connected showed no lobby page and the player was left on
+		-- the main menu, outside the waiting room or the draft drawn in it.
+		-- The mod is engaged by now, so activating it opens its lobby page.
+		if G.STAGE == G.STAGES.MAIN_MENU and MPAPI.get_current_view() ~= 'lobby_menu' then
+			MPAPI._internal.activate_mod(lobby_data.modId)
+		end
+	end)
+end
+
+-- Only a run with recorded events has anything to fast-forward through. A
+-- server-refereed lobby opens its game (and its run id) at Start, before a
+-- pre-run ban/pick draft, so mid-draft the run is already active with no
+-- events; the mod's playback rejoin can't bootstrap from that and gives
+-- up, which left the player on the main menu outside their lobby. That
+-- player rejoins the lobby instead, like one in the waiting room.
+local function rejoin(lobby_data, active)
+	if active and #(active.events or {}) > 0 then
+		MPAPI.playback.rejoin(active.modId, active)
+		return
+	end
+	rejoin_lobby(lobby_data)
+end
+
+-- A matchmade game takes back only an account that meets the standing it was
+-- queued with (requiredStanding; nil for a private lobby, never gated). Check
+-- before the playback fast-forward, which would otherwise run the whole
+-- replay only to be refused at the join. A game needing a verified account
+-- waits for the launcher verdict first. The server has the last word either
+-- way (api/lobby/nakama.lua shows its refusal the same way).
+local function rejoin_if_standing_allows(lobby_data, active, view)
+	local S = MPAPI.standing
+	local required = active and active.requiredStanding
+	local function decide()
+		local refusal = S.rejoin_refusal(view or MPAPI.account_standing(), required, MPAPI.is_launcher_verified())
+		if refusal then
+			MPAPI.show_rejoin_refused(refusal)
+			return
+		end
+		rejoin(lobby_data, active)
+	end
+	if required == MPAPI.Standing.VERIFIED and not S.is_verified(view, MPAPI.is_launcher_verified()) then
+		-- decide() reads is_launcher_verified() again, so a verdict that
+		-- landed counts even though `view` predates it.
+		MPAPI._internal.conn.await_launcher_verdict(VERDICT_WAIT_SECONDS, decide)
+		return
+	end
+	decide()
+end
+
+-- The Reconnect decision (see this file's header): the run, if any, then the
+-- standing check, then back in. Also what the rejoin-refused overlay's Retry
+-- runs again.
+function MPAPI._internal.reconnect_to(lobby_data)
+	MPAPI.replay.get_active_run(function(err, data)
+		local active = not err and data and data.active or nil
+		local view = not err and data and data.standing and MPAPI._internal.conn.remember_standing(data.standing) or nil
+		rejoin_if_standing_allows(lobby_data, active, view)
+	end)
+end
+
 G.FUNCS.mpapi_reconnect_prompt_reconnect = function()
 	local lobby_data = _reconnected_lobby
 	close_prompt()
 	if not lobby_data then
 		return
 	end
-	MPAPI.replay.get_active_run(function(err, data)
-		-- Only a run with recorded events has anything to fast-forward through. A
-		-- server-refereed lobby opens its game (and its run id) at Start, before a
-		-- pre-run ban/pick draft, so mid-draft the run is already active with no
-		-- events; the mod's playback rejoin can't bootstrap from that and gives
-		-- up, which left the player on the main menu outside their lobby. That
-		-- player rejoins the lobby instead, like one in the waiting room.
-		if not err and data and data.active and #(data.active.events or {}) > 0 then
-			MPAPI.playback.rejoin(data.active.modId, data.active)
-			return
-		end
-		MPAPI._internal.create_reconnected_lobby(lobby_data, function(lobby)
-			MPAPI.lobby_reconnect(lobby_data.modId, lobby)
-			-- A relaunched game is on the vanilla main menu with no mod focused, so
-			-- on_lobby_connected showed no lobby page and the player was left on
-			-- the main menu, outside the waiting room or the draft drawn in it.
-			-- The mod is engaged by now, so activating it opens its lobby page.
-			if G.STAGE == G.STAGES.MAIN_MENU and MPAPI.get_current_view() ~= 'lobby_menu' then
-				MPAPI._internal.activate_mod(lobby_data.modId)
-			end
-		end)
-	end)
+	MPAPI._internal.reconnect_to(lobby_data)
 end
 
 G.FUNCS.mpapi_reconnect_prompt_leave = function()

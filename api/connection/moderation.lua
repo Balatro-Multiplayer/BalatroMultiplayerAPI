@@ -63,32 +63,71 @@ local function on_banned(ban)
 	end
 end
 
+-- The standing refusal a QUEUE_CANCELLED carries ({code, mods}), or nil
+-- when it was cancelled for another reason. Pure.
+local function standing_refusal_of(msg)
+	for _, code in pairs(MPAPI.QueueRefusalCode) do
+		if msg.code == code then
+			local mods = {}
+			for _, key in ipairs(type(msg.mods) == 'table' and msg.mods or {}) do
+				mods[#mods + 1] = tostring(key)
+			end
+			return { code = code, mods = mods }
+		end
+	end
+	return nil
+end
+M.standing_refusal_of = standing_refusal_of
+
+-- The handles a QUEUE_CANCELLED ends: the named queue, or, for a failed
+-- ranked-readiness check (which names none), every ranked one.
+local function cancelled_handles(mm, msg)
+	if msg.modId then
+		return { mm.find_handle_by_mode(msg.modId, msg.mode) }
+	end
+	local targets = {}
+	for _, h in ipairs(mm.handles) do
+		if h._nakama_ranked then
+			targets[#targets + 1] = h
+		end
+	end
+	return targets
+end
+
 -- A queue was cancelled for this player: give up the ticket and end the
--- handle. A failed ranked-readiness check names no queue and
--- cancels every ranked one. A refused matched group (requeue) needs nothing
--- here: its matched message carries no match, which queues again
--- (api/matchmaking/dispatch.lua on_nakama_matched).
+-- handle. The server can't remove the ticket itself, so the client drops it.
+-- A refused matched group (requeue) needs nothing here: its matched message
+-- carries no match, which queues again (api/matchmaking/dispatch.lua
+-- on_nakama_matched).
 local function on_queue_cancelled(msg)
 	local mm = MPAPI._internal.mm
 	if not mm or msg.requeue then
 		return
 	end
-	local targets = {}
-	if msg.modId then
-		targets[1] = mm.find_handle_by_mode(msg.modId, msg.mode)
-	else
-		for _, h in ipairs(mm.handles) do
-			if h._nakama_ranked then
-				targets[#targets + 1] = h
-			end
-		end
-	end
-	for _, handle in ipairs(targets) do
+	local standing = standing_refusal_of(msg)
+	local ended = false
+	for _, handle in ipairs(cancelled_handles(mm, msg)) do
 		if handle._nakama_ticket then
 			MPAPI.networking.nakama_lobby.unqueue(handle._nakama_ticket)
 			handle._nakama_ticket = nil
 		end
-		mm.cancel_handle(handle, msg.reason)
+		if standing then
+			mm.refuse_handle(handle, standing)
+		elseif msg.code then
+			mm.end_handle(handle, MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(msg.reason)))
+		else
+			mm.cancel_handle(handle, msg.reason)
+		end
+		ended = true
+	end
+	-- One notice for however many handles the cancel ended.
+	if not ended then
+		return
+	end
+	if standing then
+		MPAPI.show_standing_refusal(standing)
+	elseif msg.code and MPAPI.show_notice then
+		MPAPI.show_notice('k_queue_failed_title', tostring(msg.reason))
 	end
 end
 

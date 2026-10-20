@@ -53,6 +53,9 @@ local function roster_from(players)
 				displayName = p.displayName,
 				preferredJoker = p.preferredJoker,
 				mods = p.mods,
+				-- MPAPI.Standing, worked out by the server; nil for a seat
+				-- taken before standings existed.
+				standing = p.standing,
 				is_away = p.isAway or false,
 			}
 		end
@@ -233,9 +236,19 @@ local function attach(lobby, match_id, on_ready)
 			tear_down(lobby)
 		end,
 	}, function(err)
-		if err and not lobby._destroyed then
-			refused(lobby, 'k_lobby_join_failed_title', err)
+		if not err or lobby._destroyed then
+			return
 		end
+		-- A matchmade game refuses an account below its standing but keeps the
+		-- seat: offer Retry (after fixing the mods) or forfeiting it.
+		local rejoin_refusal = MPAPI.standing.parse_rejoin_refusal(err)
+		if rejoin_refusal and MPAPI.show_rejoin_refused then
+			fail(lobby, err)
+			tear_down(lobby)
+			MPAPI.show_rejoin_refused(rejoin_refusal)
+			return
+		end
+		refused(lobby, 'k_lobby_join_failed_title', err)
 	end)
 end
 

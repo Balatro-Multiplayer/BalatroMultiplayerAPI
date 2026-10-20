@@ -25,6 +25,11 @@ local function on_integrity(msg)
 	else
 		A.server_verified = false
 	end
+	-- A verdict makes the account verified for queues and rejoins
+	-- (api/connection/standing.lua).
+	if C.on_launcher_verdict then
+		C.on_launcher_verdict(msg.verified == true)
+	end
 end
 
 do

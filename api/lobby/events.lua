@@ -147,9 +147,16 @@ L.apply_player_info = function(lobby, player_id, info)
 	-- its installed mods, Nakama's profile_set_mods) -- the Lobby Info
 	-- overlay's Mods tab treats absence as "no mod data available yet".
 	lobby._players[player_id].mods = info.mods
+	-- The server's standing for that player (domain/standing.lua); nil
+	-- until it has one.
+	local standing_before = lobby._players[player_id].standing
+	lobby._players[player_id].standing = info.standing
 
 	if is_new then
 		lobby:_fire(MPAPI.LobbyEvent.PLAYER_JOINED, player_id)
 	end
 	lobby:_fire(MPAPI.LobbyEvent.PLAYER_INFO, player_id, lobby._players[player_id])
+	if not is_new and info.standing ~= standing_before then
+		lobby:_fire(MPAPI.LobbyEvent.PLAYER_STANDING_CHANGED, player_id, info.standing)
+	end
 end

@@ -65,6 +65,18 @@ function MPAPI._internal.mm.leave_handle_quietly(handle)
 	handle:_fire(MPAPI.MatchmakingEvent.LEFT, nil)
 end
 
+-- Ends a handle with `err` (ERROR fires) and forgets it. Shows nothing.
+function MPAPI._internal.mm.end_handle(handle, err)
+	handle:_fire(MPAPI.MatchmakingEvent.ERROR, err)
+	MPAPI._internal.mm.remove_handle(handle)
+end
+
+-- Ends a handle the account's standing no longer lets queue
+-- (api/connection/standing.lua). refusal: {code, mods}. The caller shows it.
+function MPAPI._internal.mm.refuse_handle(handle, refusal)
+	MPAPI._internal.mm.end_handle(handle, MPAPI.standing_refusal_error(refusal))
+end
+
 -- A ranked queue the server cancelled (api/connection/moderation.lua), its
 -- ticket already given up. The handle still gets a MatchmakingEvent.ERROR (the
 -- path client-side prechecks use too, so PvP's/SPDRN's handle:on("error", ...)

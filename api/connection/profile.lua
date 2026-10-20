@@ -73,19 +73,25 @@ function MPAPI.collect_installed_mods()
 	return list
 end
 
--- Sent once, fire-and-forget, right after a fresh CONNECTED transition (see
--- api/connection/lifecycle.lua's connection_on_state_change) -- mods are
--- launch-scoped, not lobby-scoped, so there's no need to resend on join.
--- Failure just leaves that player's Mods tab empty for lobby peers; not fatal.
-MPAPI._internal.send_installed_mods = function()
-	local conn = require_connected(function() end)
+-- Sent once per login, right after the socket opens (networking/connection.lua's
+-- _nakama_connect): mods are launch-scoped, not lobby-scoped, so there's no
+-- need to resend on join. The reply carries the account's standing
+-- (api/connection/standing.lua), which gates matchmaking. cb(err, view) when
+-- given; view is nil from a server without standings. A failure leaves the
+-- standing unknown and that player's Mods tab empty for lobby peers.
+MPAPI._internal.send_installed_mods = function(cb)
+	cb = cb or function() end
+	local conn = require_connected(cb)
 	if not conn then
 		return
 	end
-	nakama_rpc(conn, 'profile_set_mods', { mods = MPAPI.collect_installed_mods() }, function(err)
+	nakama_rpc(conn, 'profile_set_mods', { mods = MPAPI.collect_installed_mods() }, function(err, data)
 		if err then
 			MPAPI.sendWarnMessage('[mods] Failed to send installed mods list: ' .. tostring(err.message or err))
+			cb(err, nil)
+			return
 		end
+		cb(nil, C.remember_standing(data and data.standing))
 	end)
 end
 

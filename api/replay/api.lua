@@ -128,7 +128,12 @@ MPAPI.replay.get_active_run = function(callback)
 				lobbyCode = active.code,
 				modId = active.modId,
 				events = active.events or {},
+				-- What the game takes back (MPAPI.Standing 'valid' or
+				-- 'verified'); nil for a private lobby, which never gates.
+				requiredStanding = type(active.requiredStanding) == 'string' and active.requiredStanding or nil,
 			} or nil,
+			-- The caller's StandingView now, to compare against it.
+			standing = data and data.standing or nil,
 		})
 	end)
 end

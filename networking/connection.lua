@@ -293,10 +293,16 @@ function connection:_nakama_connect()
 			return
 		end
 		set_state(self, STATES.CONNECTED)
-		if self._check_nakama_lobby then
-			self._check_nakama_lobby = nil
-			self:_check_nakama_lobby_seat()
-		end
+		-- The seat check waits for the mod report: a matchmade game only
+		-- takes back a player whose report this session meets its standing
+		-- (BalatroMultiplayerServer nakama/src/standing/rejoin.ts).
+		local check_seat = self._check_nakama_lobby
+		self._check_nakama_lobby = nil
+		self:_report_mods(function()
+			if check_seat then
+				self:_check_nakama_lobby_seat()
+			end
+		end)
 		-- The socket carries the launcher-integrity challenges
 		-- (api/connection/integrity.lua), so they only start now.
 		self:_nakama_rpc('launcher_session_start', {}, function(err)
@@ -356,6 +362,19 @@ end
 function connection:decline_tos()
 	self._pending_tos_token = nil
 	set_state(self, STATES.DISCONNECTED)
+end
+
+-- The session's mod report (api/connection/profile.lua); on_reported(), whatever the
+-- answer, once the server has replied.
+function connection:_report_mods(on_reported)
+	local send = MPAPI._internal.send_installed_mods
+	if not send then
+		on_reported()
+		return
+	end
+	send(function()
+		on_reported()
+	end)
 end
 
 -- A seat in a lobby survives a game restart; lobby_current finds it, and it

@@ -11,6 +11,9 @@ return {
 			-- is true (Ranked integrity handshake completed) - see
 			-- ui/main_menu.lua's verified_node and api/connection/lifecycle.lua.
 			k_verified_cap = 'VERIFIED',
+			-- ...or this one while the reported mods may queue casual
+			-- (api/connection/standing.lua).
+			k_valid_cap = 'VALID',
 			k_your_avatar_cap_1 = 'YOUR',
 			k_your_avatar_cap_2 = 'AVATAR',
 			k_click_to_change = 'Click to Change',
@@ -184,6 +187,11 @@ return {
 			k_group_refused_too_many = 'A group can have at most 8 players.',
 			k_group_refused_member_away = 'Every player must be connected.',
 			k_group_refused_member_refused = 'A player may not queue right now.',
+			-- A member refused for their standing: #1# is their name.
+			k_group_member_mods_not_allowed = '#1# has mods that aren\'t allowed:',
+			k_group_member_mods_unreported = '#1# hasn\'t reported their mods yet.',
+			k_group_member_integrity_required = '#1# needs a launcher-verified game.',
+			k_group_member_unknown = '#1# may not queue right now.',
 			k_group_refused_member_queued = 'A player is already in a queue.',
 			k_group_refused_bad_request = 'The server did not understand the request.',
 			k_group_refused_party_in_use = 'That group is already in use.',
@@ -206,6 +214,31 @@ return {
 			-- Ranked queue cancelled overlay (post-queue-join ranked_readiness
 			-- challenge refused/failed - see api/matchmaking/dispatch.lua)
 			k_ranked_queue_cancelled_title = 'Ranked Queue Cancelled',
+			-- Account standing refusals (api/connection/standing.lua,
+			-- ui/mods_not_allowed_overlay.lua, ui/rejoin_refused_overlay.lua).
+			-- k_queue_refused_<code> / k_rejoin_refused_<code> are followed by
+			-- the mods, when there are any.
+			k_mods_and_more = 'and #1# more',
+			k_queue_refused_title_mods_not_allowed = 'Mods Not Allowed',
+			k_queue_refused_title_mods_unreported = 'Mods Not Reported',
+			k_queue_refused_title_integrity_required = 'Verification Required',
+			k_queue_refused_mods_not_allowed = 'These mods aren\'t allowed in matchmaking:',
+			k_queue_refused_mods_unreported = 'Your game hasn\'t reported its mods yet.',
+			k_queue_refused_integrity_required = 'Ranked needs a launcher-verified game.',
+			k_queue_refused_unknown = 'You may not queue right now.',
+			k_queue_refused_hint_mods_not_allowed = 'Disable them and restart the game to queue.',
+			k_queue_refused_hint_mods_unreported = 'Reconnect and try again.',
+			k_queue_refused_hint_integrity_required = 'Launch the game through BET to play Ranked.',
+			k_queue_refused_private_ok = 'Private lobbies allow any mods.',
+			k_rejoin_refused_title = 'Could Not Rejoin',
+			k_rejoin_refused_mods_not_allowed = 'These mods aren\'t allowed in this game:',
+			k_rejoin_refused_mods_unreported = 'Your game hasn\'t reported its mods yet.',
+			k_rejoin_refused_verification_pending = 'Launcher verification is still pending.',
+			k_rejoin_refused_unknown = 'This game won\'t take you back right now.',
+			k_rejoin_refused_hint = 'Your seat is kept for a while: fix this and retry, or leave.',
+			b_retry = 'Retry',
+			b_leave_game_forfeit = 'Leave Game (Forfeit)',
+			k_rejoin_checking = 'Checking your game...',
 			k_ranked_launcher_outdated_body = 'A new version of Balatro Essentials Toolkit is required to continue playing Ranked. Update BET to keep playing.',
 			k_ranked_mods_outdated_body = 'Your Ranked mods are out of date. Relaunch through BET to update them, then queue again.',
 			-- Ready-status hover badge (lobby player list)

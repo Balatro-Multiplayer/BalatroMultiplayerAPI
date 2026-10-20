@@ -97,15 +97,16 @@ local create_UIBox_account_button = function()
 		{ n = G.UIT.T, config = { ref_table = MPAPI.connection_state, ref_value = 'status_text', scale = 0.3, colour = status_colour, shadow = true } },
 	} }
 
-	-- Shown under the connection status once the launcher has completed the
-	-- Ranked integrity handshake (see MPAPI.is_launcher_verified in
-	-- api/connection/lifecycle.lua). Plain gold text, not a badge/pill -
-	-- casual play or a game started outside BET never verifies, so this
-	-- stays hidden with no extra check needed here.
-	local verified_node = nil
-	if MPAPI.is_launcher_verified and MPAPI.is_launcher_verified() then
-		verified_node = { n = G.UIT.R, config = { align = 'cm', minw = inner_width }, nodes = {
-			{ n = G.UIT.T, config = { text = localize('k_verified_cap'), scale = 0.3, colour = G.C.GOLD, shadow = true } },
+	-- The account's standing under the connection status (see
+	-- api/connection/standing.lua): gold VERIFIED once the launcher has
+	-- completed the Ranked integrity handshake (MPAPI.is_launcher_verified in
+	-- api/connection/lifecycle.lua), green VALID while the reported mods may
+	-- queue casual, nothing otherwise. Plain text, not a badge/pill.
+	local standing_node = nil
+	local standing_label = MPAPI._internal.standing_badge()
+	if standing_label then
+		standing_node = { n = G.UIT.R, config = { align = 'cm', minw = inner_width }, nodes = {
+			{ n = G.UIT.T, config = { text = localize(standing_label.key), scale = 0.3, colour = standing_label.colour, shadow = true } },
 		} }
 	end
 
@@ -129,8 +130,8 @@ local create_UIBox_account_button = function()
 	end
 
 	account_button_nodes[#account_button_nodes + 1] = connection_state
-	if verified_node then
-		account_button_nodes[#account_button_nodes + 1] = verified_node
+	if standing_node then
+		account_button_nodes[#account_button_nodes + 1] = standing_node
 	end
 
 	return {
@@ -228,6 +229,19 @@ end
 -----------------------------
 -- LOGIC FUNCTIONS
 -----------------------------
+
+-- The badge for the account's standing: {key, colour}, or nil for none
+-- (also before the server has said; the standing is forgotten offline).
+MPAPI._internal.standing_badge = function()
+	local view = MPAPI.account_standing and MPAPI.account_standing()
+	if MPAPI.standing.is_verified(view, MPAPI.is_launcher_verified()) then
+		return { key = 'k_verified_cap', colour = G.C.GOLD }
+	end
+	if view and view.standing == MPAPI.Standing.VALID then
+		return { key = 'k_valid_cap', colour = G.C.GREEN }
+	end
+	return nil
+end
 
 G.FUNCS.mpapi_account_button = function(e)
 	local state = MPAPI.connection_state.state
