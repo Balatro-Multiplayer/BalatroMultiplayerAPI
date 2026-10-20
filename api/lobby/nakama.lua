@@ -78,6 +78,11 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	lobby._metadata = type(snapshot.metadata) == 'table' and snapshot.metadata or {}
 	lobby._player_state = snapshot.ownState
 	lobby._players = roster
+	-- The group casual queue this (home) lobby is in, or nil; a matchmade
+	-- lobby's team plan ({ {ids}, {ids} } for a Teams match with groups).
+	local had_group = lobby.group_queue
+	lobby.group_queue = type(snapshot.groupQueue) == 'table' and snapshot.groupQueue or nil
+	lobby.team_plan = type(snapshot.teamPlan) == 'table' and snapshot.teamPlan or nil
 
 	local game = type(snapshot.game) == 'table' and snapshot.game or {}
 	local was_started = lobby._game.started ~= nil
@@ -109,6 +114,14 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 		L.apply_game_ended(lobby, { status = 'unknown', placements = {} })
 	else
 		lobby._game.started = nil
+	end
+
+	if had_group or lobby.group_queue then
+		lobby:_fire(MPAPI.LobbyEvent.GROUP_QUEUE, lobby.group_queue)
+	end
+	local Group = MPAPI.matchmaking and MPAPI.matchmaking.group
+	if Group and Group._on_view then
+		Group._on_view(lobby, lobby.group_queue)
 	end
 
 	if not announce then
@@ -174,6 +187,17 @@ local function on_data(lobby, on_ready, op, data)
 		MPAPI.sendWarnMessage('[nakama_lobby] server restarting; rejoining ' .. tostring(lobby.code) .. ' when it is back')
 		lobby._server_restarting = true
 		lobby:_fire(MPAPI.LobbyEvent.SERVER_RESTARTING, { grace_seconds = data.graceSeconds })
+	elseif op == ServerOp.GROUP_QUEUE then
+		-- The group casual queue moved on (forming / queued / away, or idle:
+		-- over, with its reason).
+		if type(data) == 'table' then
+			lobby.group_queue = data.phase ~= 'idle' and data or nil
+			lobby:_fire(MPAPI.LobbyEvent.GROUP_QUEUE, lobby.group_queue, data)
+			local Group = MPAPI.matchmaking and MPAPI.matchmaking.group
+			if Group and Group._on_view then
+				Group._on_view(lobby, data)
+			end
+		end
 	elseif op == ServerOp.REPLAY_TAIL then
 		if type(data.tails) == 'table' then
 			lobby:_fire(MPAPI.LobbyEvent.REPLAY_TAIL, data.tails)

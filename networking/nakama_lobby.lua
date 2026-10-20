@@ -23,6 +23,8 @@ NL.ServerOp = {
 	SPECTATE_EVENT = 109,
 	SERVER_RESTARTING = 110,
 	REPLAY_TAIL = 111,
+	-- The lobby's group queue changed (nakama/src/lobby/group_queue.ts).
+	GROUP_QUEUE = 112,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'
@@ -160,16 +162,35 @@ local tickets = {}
 -- Tickets the server dropped with the socket (it keeps none across a
 -- disconnect), handed to MPAPI.matchmaking once a socket is open again.
 local lost_tickets = {}
+-- Party tickets this client is matched by: ticket -> on_matched(match_id).
+-- The party's leader holds the ticket, but every member is matched by it.
+-- Kept apart from `tickets`: they are not this client's to withdraw or
+-- requeue, and a dropped socket takes the party (and the ticket) with it.
+local party_tickets = {}
+-- The party events' listener (api/matchmaking/group/): fn(kind, message)
+-- with kind 'party', 'presence' or 'leader'.
+local party_listener = nil
 
 local function on_matchmaker_matched(message)
 	local matched = message.matchmaker_matched
 	local ticket = matched and matched.ticket
-	local fn = ticket and tickets[ticket]
+	local fn = ticket and (tickets[ticket] or party_tickets[ticket])
 	if not fn then
 		return
 	end
 	tickets[ticket] = nil
-	fn(matched.match_id)
+	party_tickets[ticket] = nil
+	-- Nakama sends an empty match id when the server's matched hook refused.
+	local match_id = matched.match_id
+	fn(match_id ~= '' and match_id or nil)
+end
+
+local function party_event(kind)
+	return function(message)
+		if party_listener then
+			party_listener(kind, message)
+		end
+	end
 end
 
 local function on_match_data(message)
@@ -214,6 +235,10 @@ local function on_socket_disconnect()
 		lost_tickets[#lost_tickets + 1] = id
 	end
 	tickets = {}
+	party_tickets = {}
+	if party_listener then
+		party_listener('socket_lost', {})
+	end
 	if (keep_open or #lost_tickets > 0) and not match then
 		reopen_socket()
 	end
@@ -254,6 +279,9 @@ local function with_socket(cb)
 		local s = nakama_client().create_socket()
 		s.on_match_data(on_match_data)
 		s.on_matchmaker_matched(on_matchmaker_matched)
+		s.on_party(party_event('party'))
+		s.on_party_presence_event(party_event('presence'))
+		s.on_party_leader(party_event('leader'))
 		s.on_notifications(function(message)
 			MPAPI.networking.nakama_notify.dispatch(message)
 		end)
@@ -475,6 +503,22 @@ function NL.leave(cb)
 	end)
 end
 
+-- Leaves the match socket-wise only (match_leave): the server reads it as a
+-- disconnect and, for a group queue's home lobby that is away, parks the
+-- seat. Unlike NL.leave the seat is kept, so the lobby can be rejoined by
+-- its code. Returns the match id left, or nil.
+function NL.step_out()
+	local left = match
+	match = nil
+	if not left then
+		return nil
+	end
+	if socket and socket_open then
+		socket.match_leave(left.id, ignore)
+	end
+	return left.id
+end
+
 -- Watches a lobby match without a seat (the server's lobby/spectate.ts).
 -- listener = { data(op, tbl), lost(reason) }; the server sends
 -- SPECTATE_SNAPSHOT first, then SPECTATE_EVENTs. cb(err_message).
@@ -573,7 +617,7 @@ function NL.queue(ticket, on_matched, cb)
 			ticket.query,
 			ticket.strings,
 			ticket.numbers,
-			nil,
+			ticket.count_multiple,
 			function(result)
 				local id = result and result.matchmaker_ticket and result.matchmaker_ticket.ticket
 				if result and result.error or not id then
@@ -637,6 +681,103 @@ function NL.unqueue_all()
 end
 
 ----------------------------------------------------------------------
+-- Parties (a group queue: api/matchmaking/group/)
+----------------------------------------------------------------------
+
+-- fn(kind, message) for the socket's party events; nil to stop.
+function NL.set_party_listener(fn)
+	party_listener = fn
+end
+
+-- An open party for up to `max_size`. cb(err, party) with party = { party_id,
+-- self, leader, presences }.
+function NL.party_create(max_size, cb)
+	with_socket(function(ok, err)
+		if not ok then
+			cb(err or 'Could not open the Nakama socket')
+			return
+		end
+		socket.party_create(true, max_size, function(result)
+			local party = result and result.party
+			if (result and result.error) or not party or not party.party_id then
+				cb(error_message(result, 'Could not create the party'))
+				return
+			end
+			cb(nil, party)
+		end)
+	end)
+end
+
+-- cb(err) once the server has taken (or refused) the join.
+function NL.party_join(party_id, cb)
+	with_socket(function(ok, err)
+		if not ok then
+			cb(err or 'Could not open the Nakama socket')
+			return
+		end
+		socket.party_join(party_id, function(result)
+			cb(result and result.error and error_message(result, 'Could not join the party') or nil)
+		end)
+	end)
+end
+
+function NL.party_leave(party_id, cb)
+	cb = cb or ignore
+	if not (socket and socket_open) then
+		cb(nil)
+		return
+	end
+	socket.party_leave(party_id, function(result)
+		cb(result and result.error and error_message(result, 'Could not leave the party') or nil)
+	end)
+end
+
+-- The leader's party ticket. `ticket` as NL.queue's. cb(err, ticket_id);
+-- the ticket is not this client's own (see party_tickets), so register it
+-- with NL.expect_ticket to be told of the match.
+function NL.party_queue(party_id, ticket, cb)
+	if not (socket and socket_open) then
+		cb('Not connected')
+		return
+	end
+	socket.party_matchmaker_add(
+		party_id,
+		ticket.min_count,
+		ticket.max_count,
+		ticket.query,
+		ticket.strings,
+		ticket.numbers,
+		ticket.count_multiple,
+		function(result)
+			local id = result and result.party_matchmaker_ticket and result.party_matchmaker_ticket.ticket
+			if (result and result.error) or not id then
+				cb(error_message(result, 'Could not queue the party'))
+				return
+			end
+			cb(nil, id)
+		end
+	)
+end
+
+function NL.party_unqueue(party_id, ticket_id, cb)
+	party_tickets[ticket_id] = nil
+	cb = cb or ignore
+	if not (socket and socket_open) then
+		cb(nil)
+		return
+	end
+	socket.party_matchmaker_remove(party_id, ticket_id, function(result)
+		cb(result and result.error and error_message(result, 'Could not withdraw the party ticket') or nil)
+	end)
+end
+
+-- on_matched(match_id or nil) when the matchmaker matches `ticket_id`, a
+-- party ticket this client is in; nil on_matched forgets it.
+function NL.expect_ticket(ticket_id, on_matched)
+	party_tickets[ticket_id] = on_matched
+end
+
+----------------------------------------------------------------------
 -- Pump / teardown
 ----------------------------------------------------------------------
 
@@ -676,6 +817,7 @@ function NL.reset()
 	match = nil
 	spectating = nil
 	tickets = {}
+	party_tickets = {}
 	lost_tickets = {}
 	timers = {}
 	flush_waiters(false, 'Connection closed')
