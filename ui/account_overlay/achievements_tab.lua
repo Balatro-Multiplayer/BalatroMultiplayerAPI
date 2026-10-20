@@ -113,7 +113,8 @@ local function status_node(entry, selected)
 	elseif entry.unlocked then
 		label, colour = text('k_avatar_unlocked'), G.C.GREEN
 	else
-		label, colour = Goals.progress_text(entry.goal) or text('k_avatar_locked'), G.C.UI.TEXT_INACTIVE
+		-- TEXT_INACTIVE is too close to the row's grey to read.
+		label, colour = Goals.progress_text(entry.goal) or text('k_avatar_locked'), G.C.UI.TEXT_DARK
 	end
 	return { n = G.UIT.T, config = { text = label, scale = 0.3, colour = colour } }
 end
@@ -122,7 +123,7 @@ entry_row = function(entry, selected)
 	local Goals = goals()
 	local card = avatar_card(entry.id, not entry.unlocked)
 	local show_bar = not entry.unlocked and Goals.has_shown_progress(entry.goal)
-	local name_colour = entry.unlocked and G.C.UI.TEXT_LIGHT or G.C.UI.TEXT_INACTIVE
+	local name_colour = entry.unlocked and G.C.UI.TEXT_LIGHT or G.C.UI.TEXT_DARK
 
 	local status_nodes = { status_node(entry, selected) }
 	local status_col = { n = G.UIT.R, config = { align = 'cr' }, nodes = status_nodes }
