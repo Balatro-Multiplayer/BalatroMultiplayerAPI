@@ -33,7 +33,7 @@ local account_overlay_inner
 -- completion, connection-state changes -- see those call sites' own comments
 -- further down).
 local _state = {
-	tab = 'account', -- 'account' | 'chat' | 'history'
+	tab = 'account', -- 'account' | 'chat' | 'achievements' | 'history'
 	history = {
 		-- page: the shown page (HISTORY_ROWS_PER_PAGE rows of runs).
 		-- runs: every run fetched so far, newest first. runs_mine pages by
@@ -57,6 +57,7 @@ end
 local TABS = {
 	{ key = 'account', label_key = 'k_account_tab_account' },
 	{ key = 'chat', label_key = 'k_account_tab_chat' },
+	{ key = 'achievements', label_key = 'k_account_tab_achievements' },
 	-- { key = 'history', label_key = 'k_account_tab_history' },
 }
 
@@ -126,6 +127,9 @@ build_account_overlay_inner = function()
 		content_nodes = build_chat_tab_content()
 	elseif active_tab == 'history' then
 		content_nodes = build_history_tab_content()
+	elseif active_tab == 'achievements' and MPAPI._internal.account_tabs and MPAPI._internal.account_tabs.achievements then
+		-- ui/account_overlay/achievements_tab.lua
+		content_nodes = MPAPI._internal.account_tabs.achievements.build()
 	else
 		content_nodes = build_account_tab_content()
 	end
@@ -597,6 +601,9 @@ G.FUNCS.mpapi_account_select_tab = function(e)
 	local tab = e.config and e.config.ref_table and e.config.ref_table.tab
 	if not tab or tab == _state.tab then return end
 	_state.tab = tab
+	if tab == 'achievements' and MPAPI._internal.account_tabs and MPAPI._internal.account_tabs.achievements then
+		MPAPI._internal.account_tabs.achievements.on_open()
+	end
 	if tab == 'history' and #_state.history.runs == 0 and not _state.history.loading and not _state.history.error then
 		fetch_history_page(1)
 	else
@@ -678,6 +685,14 @@ end
 
 account_overlay_inner = MPAPI.ui_element(build_account_overlay_inner)
 MPAPI.account_overlay = MPAPI.ui_element(create_UIBox_account_overlay)
+
+-- Re-renders the open overlay's content in place when `tab` is the one shown
+-- (any tab when nil), for a tab whose data arrived after it was built.
+MPAPI._internal.refresh_account_overlay = function(tab)
+	if tab == nil or tab == _state.tab then
+		account_overlay_inner:update()
+	end
+end
 
 -- Fresh-open entry point: resets the tab strip (and any stale Match History
 -- page/error state) back to the Account tab. build_fn (build_account_overlay_inner)

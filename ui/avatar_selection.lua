@@ -6,6 +6,9 @@ local avatar_preview_card_click_override
 local avatar_preview_card_hover_override
 local avatar_selectable_card_click_override
 local avatar_selectable_card_hover_override
+local calculate_avatar_entries
+local locked_avatar_popup
+local refresh_open_picker
 
 -----------------------------
 -- CONSTANTS
@@ -15,46 +18,17 @@ local ROWS = 3
 local COLS = 5
 local CARDS_PER_PAGE = ROWS * COLS
 
-local AVATAR_JOKERS = {
-	'j_joker',
-	'j_mime',
-	'j_chaos',
-	'j_even_steven',
-	'j_odd_todd',
-	'j_scholar',
-	'j_space',
-	'j_egg',
-	'j_burglar',
-	'j_runner',
-	'j_sixth_sense',
-	'j_hiker',
-	'j_card_sharp',
-	'j_madness',
-	'j_vampire',
-	'j_baron',
-	'j_luchador',
-	'j_fortune_teller',
-	'j_lucky_cat',
-	'j_bull',
-	'j_ancient',
-	'j_mr_bones',
-	'j_swashbuckler',
-	'j_troubadour',
-	'j_throwback',
-	'j_ring_master',
-	'j_merry_andy',
-	'j_idol',
-	'j_matador',
-	'j_stuntman',
-}
-
 -----------------------------
 -- STATE VARIABLES
 -----------------------------
 
 local _card_rows = {}
 local _joker_tables = {}
-local _avatar_centers = {}
+-- The catalog entries shown ({ id, unlocked, goal }), in catalog order, and
+-- which one is the current avatar.
+local _avatar_entries = {}
+local _selected = nil
+local _page = 1
 
 -----------------------------
 -- UI FUNCTIONS
@@ -63,11 +37,12 @@ local _avatar_centers = {}
 local create_UIBox_avatar_selection = function()
 	_joker_tables = {}
 
-	calculate_avatar_centers(avatar_jokers_to_use)
+	calculate_avatar_entries()
 	create_card_rows()
-	populate_page(1)
+	local total_pages = math.max(1, math.ceil(#_avatar_entries / CARDS_PER_PAGE))
+	_page = math.max(1, math.min(_page, total_pages))
+	populate_page(_page)
 
-	local total_pages = math.ceil(#_avatar_centers / CARDS_PER_PAGE)
 	local page_options = {}
 	for i = 1, total_pages do
 		page_options[#page_options + 1] = localize('k_page') .. ' ' .. tostring(i) .. '/' .. tostring(total_pages)
@@ -75,9 +50,9 @@ local create_UIBox_avatar_selection = function()
 
 	local contents = {
 		{ n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
-			{ n = G.UIT.T, config = { text = 'Choose Avatar', scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+			{ n = G.UIT.T, config = { text = localize('k_choose_avatar'), scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 		} },
-		{ n = G.UIT.R, config = { align = 'cm', r = 0.1, colour = G.C.BLACK, emboss = 0.05 }, nodes = _joker_tables },
+		{ n = G.UIT.R, config = { id = 'mpapi_avatar_selection', align = 'cm', r = 0.1, colour = G.C.BLACK, emboss = 0.05 }, nodes = _joker_tables },
 		{
 			n = G.UIT.R,
 			config = { align = 'cm' },
@@ -87,7 +62,7 @@ local create_UIBox_avatar_selection = function()
 					w = 4.5,
 					cycle_shoulders = true,
 					opt_callback = 'mpapi_avatar_page',
-					current_option = 1,
+					current_option = _page,
 					colour = MPAPI.C.MP_EDITION,
 					no_pips = true,
 					focus_args = { snap_to = true, nav = 'wide' },
@@ -102,16 +77,22 @@ local create_UIBox_avatar_selection = function()
 	})
 end
 
-calculate_avatar_centers = function()
-	local privilege_jokers = MPAPI.get_privileges()
-	local avatar_jokers_to_use = privilege_jokers.jokers and MPAPI.merge_unique(AVATAR_JOKERS, privilege_jokers.jokers) or AVATAR_JOKERS
-
-	_avatar_centers = {}
-	for _, id in ipairs(avatar_jokers_to_use) do
-		if G.P_CENTERS[id] then
-			_avatar_centers[#_avatar_centers + 1] = G.P_CENTERS[id]
+-- Every catalog avatar this client can draw (api/avatars/catalog.lua: the
+-- server's list, or the fallback for a server without one).
+local function drawable_entries(catalog)
+	local entries = {}
+	for _, entry in ipairs(catalog.avatars) do
+		if G.P_CENTERS[entry.id] then
+			entries[#entries + 1] = entry
 		end
 	end
+	return entries
+end
+
+calculate_avatar_entries = function()
+	local catalog = MPAPI.avatars.catalog.get()
+	_selected = catalog.selected
+	_avatar_entries = drawable_entries(catalog)
 end
 
 create_card_rows = function()
@@ -142,14 +123,26 @@ populate_page = function(page)
 	local page_offset = CARDS_PER_PAGE * (page - 1)
 	for i = 1, COLS do
 		for j = 1, ROWS do
-			local center = _avatar_centers[i + (j - 1) * COLS + page_offset]
-			if not center then
+			local entry = _avatar_entries[i + (j - 1) * COLS + page_offset]
+			if not entry then
 				break
 			end
-			local card = Card(_card_rows[j].T.x + _card_rows[j].T.w / 2, _card_rows[j].T.y, G.CARD_W, G.CARD_H, nil, center, { mpapi_avatar_selectable = true, bypass_discovery_center = true, bypass_lock = true })
+			local locked = not entry.unlocked
+			local card = Card(_card_rows[j].T.x + _card_rows[j].T.w / 2, _card_rows[j].T.y, G.CARD_W, G.CARD_H, nil, G.P_CENTERS[entry.id], {
+				mpapi_avatar_selectable = true,
+				mpapi_avatar_locked = locked or nil,
+				mpapi_avatar_goal = entry.goal,
+				bypass_discovery_center = true,
+				bypass_lock = true,
+			})
 			card.no_ui = true
 			card.states.drag.can = false
+			-- Locked: drawn greyed; the current avatar: raised.
+			card.greyed = locked or nil
 			_card_rows[j]:emplace(card)
+			if entry.id == _selected then
+				card.highlighted = true
+			end
 		end
 	end
 end
@@ -168,27 +161,89 @@ avatar_preview_card_hover_override = function(self)
 	end
 end
 
+-- A locked avatar can't be picked (the server refuses it too). An unlocked
+-- one is sent to the server; the catalog is refreshed either way, so a pick
+-- the server refused shows as it really is.
 avatar_selectable_card_click_override = function(self)
 	if self.params.mpapi_avatar_selectable then
+		if self.params.mpapi_avatar_locked then
+			self:juice_up(0.1, 0.1)
+			play_sound('cancel', 0.8, 0.5)
+			return true
+		end
 		local joker_key = self.config.center.key
 		MPAPI._internal.set_preferred_joker(joker_key, function(err, data)
 			if err then
-				MPAPI.sendWarnMessage('Failed to set avatar: ' .. tostring(err))
-				return true
+				MPAPI.sendWarnMessage('Failed to set avatar: ' .. tostring(err.message or err))
+			else
+				MPAPI.sendDebugMessage('Avatar set to: ' .. joker_key)
+				MPAPI.avatars.catalog.note_selected(joker_key)
 			end
-			MPAPI.sendDebugMessage('Avatar set to: ' .. joker_key)
+			MPAPI.avatars.catalog.refresh()
 		end)
 		G.FUNCS.mpapi_back_to_account_overlay()
 		return true
 	end
 end
 
+-- The hover box for a locked avatar: its name, the goal and how far along.
+locked_avatar_popup = function(card)
+	local Goals = MPAPI.avatars.goals
+	local goal = card.params.mpapi_avatar_goal
+	local rows = {
+		{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+			{ n = G.UIT.T, config = { text = localize({ type = 'name_text', set = 'Joker', key = card.config.center.key }), scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+		} },
+		{ n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+			{ n = G.UIT.T, config = { text = Goals.text(goal), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
+		} },
+	}
+	local progress = Goals.progress_text(goal)
+	if progress then
+		rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.03 }, nodes = {
+			{ n = G.UIT.T, config = { text = progress, scale = 0.32, colour = G.C.GOLD } },
+		} }
+	end
+	return { n = G.UIT.ROOT, config = { align = 'cm', padding = 0.1, r = 0.1, colour = G.C.BLACK, emboss = 0.05 }, nodes = rows }
+end
+
 avatar_selectable_card_hover_override = function(self)
 	if self.params.mpapi_avatar_selectable then
 		self:juice_up(0.05, 0.03)
-		play_sound('paper1', math.random() * 0.2 + 0.9, 0.35)
+		if self.params.mpapi_avatar_locked then
+			self.config.h_popup = locked_avatar_popup(self)
+			self.config.h_popup_config = self:align_h_popup()
+			Node.hover(self)
+		else
+			play_sound('paper1', math.random() * 0.2 + 0.9, 0.35)
+		end
 		return true
 	end
+end
+
+-- What the shown cards depend on, to tell whether a new catalog changes them.
+local function entries_signature(entries, selected)
+	local parts = { tostring(selected) }
+	for _, entry in ipairs(entries) do
+		parts[#parts + 1] = entry.id .. (entry.unlocked and '+' or '-')
+	end
+	return table.concat(parts, ',')
+end
+
+-- A catalog that changes while the picker is open (the fetch it started on
+-- opening): rebuild the picker, which may now have a different page count.
+refresh_open_picker = function()
+	if not (G.OVERLAY_MENU and G.OVERLAY_MENU:get_UIE_by_ID('mpapi_avatar_selection')) then
+		return
+	end
+	local shown = entries_signature(_avatar_entries, _selected)
+	local catalog = MPAPI.avatars.catalog.get()
+	if entries_signature(drawable_entries(catalog), catalog.selected) == shown then
+		return
+	end
+	G.FUNCS.overlay_menu({
+		definition = create_UIBox_avatar_selection(),
+	})
 end
 
 -----------------------------
@@ -199,14 +254,17 @@ G.FUNCS.mpapi_avatar_page = function(args)
 	if not args or not args.cycle_config then
 		return
 	end
+	_page = args.cycle_config.current_option
 	clear_avatar_cards()
-	populate_page(args.cycle_config.current_option)
+	populate_page(_page)
 end
 
 G.FUNCS.mpapi_open_avatar_selection = function(e)
+	_page = 1
 	G.FUNCS.overlay_menu({
 		definition = create_UIBox_avatar_selection(),
 	})
+	MPAPI.avatars.catalog.refresh()
 end
 
 G.FUNCS.mpapi_back_to_account_overlay = function(e)
@@ -237,4 +295,8 @@ function Card:hover()
 		return
 	end
 	_card_hover_ref(self)
+end
+
+if MPAPI.avatars and MPAPI.avatars.catalog then
+	MPAPI.avatars.catalog.on_change(refresh_open_picker)
 end
