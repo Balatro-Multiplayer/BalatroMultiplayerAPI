@@ -84,7 +84,7 @@ local create_UIBox_avatar_unlocked_toast = function()
 					n = G.UIT.R,
 					config = { align = 'cm', padding = 0.06 },
 					nodes = {
-						{ n = G.UIT.T, config = { text = localize('k_avatar_unlocked_body') .. ' ' .. names_text(ids), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
+						{ n = G.UIT.T, config = { text = localize(#ids > 1 and 'k_avatar_unlocked_body_plural' or 'k_avatar_unlocked_body') .. ' ' .. names_text(ids), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
 					},
 				},
 				{ n = G.UIT.R, config = { minh = 0.2 } },
@@ -104,7 +104,8 @@ local create_UIBox_avatar_unlocked_toast = function()
 		},
 	}
 
-	return create_UIBox_generic_options({ snap_back = true, contents = contents })
+	-- OK is the only way out: the generic Back button would duplicate it.
+	return create_UIBox_generic_options({ snap_back = true, no_back = true, contents = contents })
 end
 
 -----------------------------

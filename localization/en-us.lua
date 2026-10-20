@@ -294,6 +294,7 @@ return {
 			k_avatar_selected = 'Selected',
 			k_avatar_unlocked_title = 'Avatar Unlocked!',
 			k_avatar_unlocked_body = 'New avatar:',
+			k_avatar_unlocked_body_plural = 'New avatars:',
 			k_avatar_group_default = 'Starters',
 			k_avatar_group_counter = 'Milestones of play',
 			k_avatar_group_deckGames = 'Decks',
