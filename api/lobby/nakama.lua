@@ -234,6 +234,15 @@ local function attach(lobby, match_id, on_ready)
 		lost = function(reason)
 			MPAPI.sendWarnMessage('[nakama_lobby] lost lobby ' .. tostring(lobby.code) .. ': ' .. tostring(reason))
 			tear_down(lobby)
+			-- A reconnect after a socket drop can be refused for standing too
+			-- (the allowlist changed while the connection was down). The seat
+			-- is kept as for the first join's refusal, so offer the same
+			-- Retry/Leave; without it the player sat in a run whose lobby was
+			-- gone, with nothing on screen.
+			local rejoin_refusal = MPAPI.standing.parse_rejoin_refusal(reason)
+			if rejoin_refusal and MPAPI.show_rejoin_refused then
+				MPAPI.show_rejoin_refused(rejoin_refusal)
+			end
 		end,
 	}, function(err)
 		if not err or lobby._destroyed then
