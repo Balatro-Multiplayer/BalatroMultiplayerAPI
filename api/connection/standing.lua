@@ -40,7 +40,7 @@ local function string_list(list)
 	return out
 end
 
--- A StandingView off the wire ({standing, disallowed, reason, enforced}), or
+-- A StandingView off the wire ({standing, disallowed, reason}), or
 -- nil when it isn't one (an older server sends none). Pure.
 function S.view_of(data)
 	if type(data) ~= 'table' or not is_member(Standing, data.standing) then
@@ -50,7 +50,6 @@ function S.view_of(data)
 		standing = data.standing,
 		disallowed = string_list(data.disallowed),
 		reason = is_member(MPAPI.StandingReason, data.reason) and data.reason or nil,
-		enforced = data.enforced == true,
 	}
 end
 
@@ -273,7 +272,7 @@ end
 -- PUBLIC API
 -----------------------------
 
--- The account's StandingView ({standing, disallowed, reason, enforced}), or
+-- The account's StandingView ({standing, disallowed, reason}), or
 -- nil before the server has said (or on a server without standings).
 function MPAPI.account_standing()
 	return cache.view

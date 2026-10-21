@@ -3,7 +3,7 @@
 -- sets; keep them in step with the server's.
 
 -- verified: a launcher (or dev) verdict, whatever the mods.
--- valid: only allowed mods reported, or enforcement is off.
+-- valid: only allowed mods reported (the check is always on).
 -- none: unreported, or a mod outside the allowlist.
 MPAPI.Standing = {
 	VERIFIED = 'verified',

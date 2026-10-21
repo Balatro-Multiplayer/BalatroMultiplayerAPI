@@ -13,7 +13,7 @@ N.Code = {
 	INTEGRITY = 105,
 	-- Persistent: also waits in the notification list for the next login.
 	AVATAR_UNLOCKED = 107,
-	-- The account's queue standing changed (allowlist or enforcement edit).
+	-- The account's queue standing changed (an allowlist edit).
 	STANDING_CHANGED = 108,
 }
 
