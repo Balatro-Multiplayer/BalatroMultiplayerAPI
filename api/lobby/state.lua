@@ -228,4 +228,8 @@ L.cleanup = function(lobby)
 	if Group and Group._on_lobby_gone then
 		Group._on_lobby_gone(lobby)
 	end
+
+	if L.notify_lobby_gone then
+		L.notify_lobby_gone(lobby)
+	end
 end
