@@ -171,6 +171,19 @@ function MPAPI.playback.stop_all()
 	end
 end
 
+-- True while a driver dispatching through `handler_ns` (the namespace handlers
+-- register under, e.g. 'pvp' or 'spdrn'; not a SMODS mod id) is active. Every
+-- mod's drivers share _active_drivers, so a mod asking "is MY playback
+-- running" must not read next(_active_drivers).
+function MPAPI.playback.is_driving(handler_ns)
+	for driver in pairs(MPAPI.playback._active_drivers) do
+		if driver._mod_id == handler_ns then
+			return true
+		end
+	end
+	return false
+end
+
 -- Only clears the shared input lock once no OTHER driver is still active --
 -- v1 doesn't expect more than one playback session at a time, but this keeps
 -- a stray second session (e.g. a bug reopening a viewer) from unlocking input
