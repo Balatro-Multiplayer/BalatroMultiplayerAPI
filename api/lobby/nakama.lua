@@ -313,7 +313,7 @@ L.nakama_join_lobby = function(mod_id, code)
 		return nil
 	end
 	local lobby = new_lobby(conn, mod_id, {})
-	NL().find(code, function(err, data)
+	NL().find(code, mod_id, function(err, data)
 		if lobby._destroyed then
 			return
 		end

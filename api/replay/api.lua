@@ -143,7 +143,7 @@ end
 -- {snapshot, players, runId, code}; then handlers.event({t,
 -- player_id, opcode, args}) for each participant replay event, and
 -- handlers.ended(reason) once watching stops (lobby closed, connection lost).
-local function nakama_spectate(code, callback, handlers)
+local function nakama_spectate(code, mod_id, callback, handlers)
 	handlers = handlers or {}
 	local NL = MPAPI.networking.nakama_lobby
 	local answered = false
@@ -161,12 +161,12 @@ local function nakama_spectate(code, callback, handlers)
 			handlers.ended(reason)
 		end
 	end
-	NL.find(code, function(err, found)
+	NL.find(code, mod_id, function(err, found)
 		if err or not found or not found.matchId then
 			answer(err or 'Lobby not found', nil)
 			return
 		end
-		NL.spectate(found.matchId, {
+		NL.spectate(found.matchId, mod_id, {
 			data = function(op, data)
 				if op == NL.ServerOp.SPECTATE_SNAPSHOT then
 					answer(nil, {
@@ -194,9 +194,10 @@ local function nakama_spectate(code, callback, handlers)
 end
 
 -- Watches a lobby: callback(err, data) once the snapshot is in, then the live
--- feed through `handlers` (see nakama_spectate).
-MPAPI.replay.spectate_lobby = function(code, callback, handlers)
-	nakama_spectate(code, callback, handlers)
+-- feed through `handlers` (see nakama_spectate). mod_id is the watching mod;
+-- the server refuses a lobby of another mod.
+MPAPI.replay.spectate_lobby = function(code, callback, handlers, mod_id)
+	nakama_spectate(code, mod_id, callback, handlers)
 end
 
 -- Stops watching a lobby.

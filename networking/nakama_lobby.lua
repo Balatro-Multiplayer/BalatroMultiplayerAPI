@@ -522,7 +522,9 @@ end
 -- Watches a lobby match without a seat (the server's lobby/spectate.ts).
 -- listener = { data(op, tbl), lost(reason) }; the server sends
 -- SPECTATE_SNAPSHOT first, then SPECTATE_EVENTs. cb(err_message).
-function NL.spectate(match_id, listener, cb)
+-- mod_id is the watching mod's: the server refuses a spectator of another
+-- mod's lobby.
+function NL.spectate(match_id, mod_id, listener, cb)
 	if spectating then
 		cb('Already spectating a lobby')
 		return
@@ -538,7 +540,7 @@ function NL.spectate(match_id, listener, cb)
 			cb(err or 'Could not open the Nakama socket')
 			return
 		end
-		socket.match_join(match_id, nil, { role = 'spectator' }, function(result)
+		socket.match_join(match_id, nil, { role = 'spectator', modId = mod_id }, function(result)
 			if spectating ~= this then
 				return
 			end
@@ -575,9 +577,10 @@ function NL.create(mod_id, max_players, cb)
 	NL.rpc('lobby_create', { modId = mod_id, maxPlayers = max_players }, cb)
 end
 
--- cb(err, { matchId, code, modId })
-function NL.find(code, cb)
-	NL.rpc('lobby_find', { code = code }, cb)
+-- cb(err, { matchId, code, modId }). With mod_id, a code of another mod's
+-- lobby is refused ("Lobby is for a different mod").
+function NL.find(code, mod_id, cb)
+	NL.rpc('lobby_find', { code = code, modId = mod_id }, cb)
 end
 
 -- The lobby this player still holds a seat in (after a game restart).
