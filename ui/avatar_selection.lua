@@ -1,5 +1,6 @@
 -- Forward declarations for helper functions
 local create_card_rows
+local avatar_center
 local clear_avatar_cards
 local populate_page
 local avatar_preview_card_click_override
@@ -109,6 +110,18 @@ create_card_rows = function()
 	end
 end
 
+-- The center an avatar card is built from. A locked one is a view of the
+-- joker that reads as locked and undiscovered, whatever the player's own
+-- profile says, so the card shows the locked sprite (and no soul layer);
+-- its key and everything else still come from the joker.
+avatar_center = function(id, locked)
+	local center = G.P_CENTERS[id]
+	if not locked then
+		return center
+	end
+	return setmetatable({ unlocked = false, discovered = false }, { __index = center })
+end
+
 clear_avatar_cards = function()
 	for j = 1, #_card_rows do
 		for i = #_card_rows[j].cards, 1, -1 do
@@ -128,17 +141,18 @@ populate_page = function(page)
 				break
 			end
 			local locked = not entry.unlocked
-			local card = Card(_card_rows[j].T.x + _card_rows[j].T.w / 2, _card_rows[j].T.y, G.CARD_W, G.CARD_H, nil, G.P_CENTERS[entry.id], {
+			local card = Card(_card_rows[j].T.x + _card_rows[j].T.w / 2, _card_rows[j].T.y, G.CARD_W, G.CARD_H, nil, avatar_center(entry.id, locked), {
 				mpapi_avatar_selectable = true,
 				mpapi_avatar_locked = locked or nil,
 				mpapi_avatar_goal = entry.goal,
-				bypass_discovery_center = true,
+				-- Locked: Card:set_sprites draws the center as the vanilla
+				-- locked joker, as long as it is not told to bypass that.
+				bypass_discovery_center = not locked or nil,
 				bypass_lock = true,
 			})
 			card.no_ui = true
 			card.states.drag.can = false
-			-- Locked: drawn greyed; the current avatar: raised.
-			card.greyed = locked or nil
+			-- The current avatar: raised.
 			_card_rows[j]:emplace(card)
 			if entry.id == _selected then
 				card.highlighted = true

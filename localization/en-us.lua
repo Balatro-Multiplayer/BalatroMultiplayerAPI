@@ -328,14 +328,6 @@ return {
 			-- the threshold). Wording mirrors the website's
 			-- (BalatroMultiplayerServer apps/web/.../profile/avatar-goals.ts).
 			k_choose_avatar = 'Choose Avatar',
-			k_account_tab_achievements = 'Achievements',
-			k_avatars_unlocked_count = '#1# of #2# unlocked',
-			k_avatars_paused = 'Achievements are paused: games don\'t count toward them right now',
-			k_avatars_unavailable = 'This server has no achievements yet',
-			k_avatars_loading = 'Loading...',
-			k_avatar_unlocked = 'Unlocked',
-			k_avatar_locked = 'Locked',
-			k_avatar_selected = 'Selected',
 			k_avatar_unlocked_title = 'Avatar Unlocked!',
 			k_avatar_unlocked_body = 'New avatar:',
 			k_avatar_unlocked_body_plural = 'New avatars:',
