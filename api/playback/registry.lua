@@ -59,7 +59,28 @@ function MPAPI.playback.launch(mod_id, run_id)
 		MPAPI.sendDebugMessage('MPAPI.playback: no launcher for ' .. tostring(mod_id) .. ' (ignored)')
 		return
 	end
+	if not MPAPI.playback._focus_for_launch(mod_id) then
+		MPAPI.sendDebugMessage('MPAPI.playback: could not switch to ' .. tostring(mod_id) .. ' for its replay (ignored)')
+		return
+	end
 	return fn(run_id)
+end
+
+-- A replay is that mod's run: its pools, unlock overlay and return-to-menu page
+-- must be its own, not those of whichever mod's menu the launch came from (the
+-- account overlay lists every mod's runs). At the main menu this is a real
+-- switch to the mod, as its menu button would do; false when the switch is
+-- refused (committed to another mod's lobby or queue).
+function MPAPI.playback._focus_for_launch(mod_id)
+	if MPAPI.get_focused_mod() == mod_id then
+		return true
+	end
+	if G.STAGE == G.STAGES.MAIN_MENU then
+		MPAPI._internal.activate_mod(mod_id)
+	else
+		MPAPI._internal.focus_mod_for_run(mod_id)
+	end
+	return MPAPI.get_focused_mod() == mod_id
 end
 
 MPAPI.playback._rejoin_launchers = MPAPI.playback._rejoin_launchers or {}
