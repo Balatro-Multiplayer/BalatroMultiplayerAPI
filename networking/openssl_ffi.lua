@@ -179,6 +179,22 @@ local EVP_CTRL_GCM_SET_IVLEN = 0x9
 local EVP_CTRL_GCM_GET_TAG = 0x10
 local EVP_CTRL_GCM_SET_TAG = 0x11
 
+-- The mod's own networking/ directory, which holds the bundled OpenSSL
+-- libraries. A worker thread runs in its own Lua state with no MPAPI, but
+-- core.lua puts "<mod>/networking/?.lua" on package.path and that string is
+-- forwarded to every worker, so the directory is recoverable anywhere.
+local function mod_networking_dir()
+	for entry in (package.path or ''):gmatch('[^;]+') do
+		local dir = entry:match('^(.-[/\\]networking[/\\])%?')
+		if dir then
+			return dir
+		end
+	end
+	if MPAPI and MPAPI.path then
+		return (MPAPI.path:gsub('/*$', '')) .. '/networking/'
+	end
+end
+
 -- Load OpenSSL libraries
 local ssl_lib, crypto_lib
 local openssl_loaded = false
@@ -257,48 +273,36 @@ local function load_openssl()
 		-- Discover base paths to search for the libraries.
 		local search_dirs = {}
 
+		-- Windows and macOS ship OpenSSL inside this mod (networking/), and that
+		-- copy wins over anything next to the game or staged by a launcher.
+		local bundled_dir = mod_networking_dir()
+		if bundled_dir and ffi.os == 'Windows' then
+			bundled_dir = bundled_dir:gsub('/', '\\')
+		end
+
 		if ffi.os == 'OSX' then
 			-- A bare name is not an option on macOS: it resolves to Apple's
 			-- /usr/lib LibreSSL and aborts the process with "loading libcrypto
 			-- in an unsafe way" (Abort trap: 6) - every candidate here is
 			-- always a full ABSOLUTE path, never a bare search-path entry.
-			--
-			-- BET (the launcher) is the primary source now: it stages
-			-- libssl.3.dylib/libcrypto.3.dylib inside its own app bundle and
-			-- points us at that directory via BET_OPENSSL_DYLIB_DIR, set on
-			-- the game process's environment right before launch (see
-			-- IntroScreen::launchGame() in new-launcher) - env vars are
-			-- process-wide, so this works the same in a worker thread's own
-			-- Lua state as it does on the main thread.
+			if bundled_dir then
+				search_dirs[#search_dirs + 1] = bundled_dir
+			end
+
+			-- Fallback for a zip-mounted mod, whose networking/ is not a real
+			-- directory: the launcher stages libssl.3.dylib/libcrypto.3.dylib in
+			-- its own app bundle and exports BET_OPENSSL_DYLIB_DIR. Env vars are
+			-- process-wide, so worker threads see it too.
 			local env_dir = os.getenv('BET_OPENSSL_DYLIB_DIR')
 			if env_dir then
 				search_dirs[#search_dirs + 1] = env_dir:gsub('/*$', '') .. '/'
 			end
-
-			-- Defensive fallback for anyone running this mod without BET (or
-			-- an older BET that doesn't set the env var yet): the mod's own
-			-- networking/ folder, if libssl.3.dylib/libcrypto.3.dylib happen
-			-- to be sitting there. We can't read the mod path from MPAPI here
-			-- (a worker thread runs in its own Lua state with no MPAPI), but
-			-- we don't need to: core.lua adds "<mod>/networking/?.lua" to
-			-- package.path, and that string is forwarded to the worker's
-			-- setup, so the absolute networking/ dir is already available
-			-- wherever this runs. Pull it back out of there.
-			local dir
-			for entry in (package.path or ''):gmatch('[^;]+') do
-				dir = entry:match('^(.-[/\\]networking[/\\])%?')
-				if dir then
-					break
-				end
-			end
-			-- Fallback to MPAPI.path on the main thread if the entry isn't present.
-			if not dir and MPAPI and MPAPI.path then
-				dir = (MPAPI.path:gsub('/*$', '')) .. '/networking/'
-			end
-			if dir then
-				search_dirs[#search_dirs + 1] = dir
-			end
 		elseif ffi.os == 'Windows' then
+			-- libssl imports libcrypto by bare name; try_load loads crypto first by
+			-- full path, so the loader reuses that module instead of searching.
+			if bundled_dir then
+				search_dirs[#search_dirs + 1] = bundled_dir
+			end
 			search_dirs[#search_dirs + 1] = '' -- default DLL search path
 		else
 			-- Linux/BSD: the system OpenSSL is real OpenSSL (not LibreSSL), so the
@@ -316,13 +320,10 @@ local function load_openssl()
 			end
 		end
 
-		-- Search game-relative locations discovered via love.filesystem. This is
-		-- really for Windows, where OpenSSL DLLs are dropped next to the game and
-		-- getSource() returns that folder. On Linux it's just a harmless extra
-		-- fallback (the real libs come from the system path / nix_dirs above).
-		-- macOS is skipped entirely: its libs are bundled in the mod folder
-		-- (found via package.path above), so getSource()/save/'./' only point at
-		-- the wrong places here -- and a bare './name' could even reach the
+		-- Game-relative fallbacks discovered via love.filesystem: older installs
+		-- dropped the DLLs next to Balatro.exe, which getSource() points at. On
+		-- Linux it's a harmless extra fallback. macOS is skipped: these only
+		-- point at the wrong places there, and a bare './name' could reach the
 		-- system LibreSSL and abort the process.
 		if ffi.os ~= 'OSX' then
 			-- love.filesystem.getSource() may return the exe path (e.g.

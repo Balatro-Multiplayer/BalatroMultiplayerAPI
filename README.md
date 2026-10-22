@@ -19,30 +19,29 @@ MPAPI on its own adds an account button and the multiplayer menu. You need at le
 
 ### Players
 
-The easiest route is the Balatro Multiplayer launcher. It installs the mods and the OpenSSL libraries for you, and it is required for ranked play. To install by hand:
+The easiest route is the Balatro Multiplayer launcher. It installs the mods for you, and it is required for ranked play. To install by hand:
 
 1. Install [Lovely](https://github.com/ethangreen-dev/lovely-injector) 0.8 or newer and [Steamodded](https://github.com/Steamodded/smods) 1.0.0~BETA-1221a or newer.
 2. Put this mod's folder (or its release zip) in your Balatro `Mods` directory:
    - **Windows:** `%AppData%\Balatro\Mods\`
    - **Linux (Proton):** `~/.steam/steam/steamapps/compatdata/2379780/pfx/drive_c/users/steamuser/AppData/Roaming/Balatro/Mods/`
    - **macOS:** `~/Library/Application Support/Balatro/Mods/`
-3. Add OpenSSL (see below).
-4. Install the gamemode mods you want to play the same way.
-5. Launch Balatro **through Steam**. Login uses your Steam session ticket, so the multiplayer menu stays offline without the Steam client.
+3. Install the gamemode mods you want to play the same way.
+4. Launch Balatro **through Steam**. Login uses your Steam session ticket, so the multiplayer menu stays offline without the Steam client.
 
 Keep only one copy of each mod in `Mods/`. Two folders with the same mod id stop either one from loading.
 
 ### OpenSSL
 
-MPAPI connects to the server over TLS. It does this by loading OpenSSL through LuaJIT FFI (`networking/openssl_ffi.lua`). The OpenSSL libraries are **not** shipped in this repository. Where they are looked up depends on the platform:
+MPAPI connects to the server over TLS. It does this by loading OpenSSL through LuaJIT FFI (`networking/openssl_ffi.lua`). The Windows and macOS libraries ship in this mod's `networking/` folder (see `networking/NOTICE-OpenSSL.txt`), so a normal install needs nothing extra. Where MPAPI looks, in order:
 
 | Platform | Files | Where MPAPI looks |
 |---|---|---|
-| Windows, Linux via Proton | `libssl-3-x64.dll`, `libcrypto-3-x64.dll` (OpenSSL 1.1 names also accepted) | The default DLL search path, then the folder containing `Balatro.exe`, then the save directory, then the working directory. Put them **next to `Balatro.exe`**; the launcher does this for you. |
-| macOS | `libssl.3.dylib`, `libcrypto.3.dylib` | The directory in `BET_OPENSSL_DYLIB_DIR` (the launcher sets this), then this mod's `networking/` folder. Apple's system `libssl` is LibreSSL and is never loaded. |
+| Windows, Linux via Proton | `libssl-3-x64.dll`, `libcrypto-3-x64.dll` (OpenSSL 1.1 names also accepted) | This mod's `networking/` folder, then the default DLL search path, the folder containing `Balatro.exe`, the save directory and the working directory. |
+| macOS | `libssl.3.dylib`, `libcrypto.3.dylib` (universal x86_64 + arm64) | This mod's `networking/` folder, then the directory in `BET_OPENSSL_DYLIB_DIR` (set by the launcher). Apple's system `libssl` is LibreSSL and is never loaded. |
 | Linux (native) | `libssl.so.3` / `libcrypto.so.3` (or 1.1) | The system OpenSSL from the default library path and the standard lib dirs. Install your distribution's `openssl` package. |
 
-If OpenSSL can't be found, the game still starts, but MPAPI stays offline. The Lovely log shows every path it tried, with lines prefixed `[OpenSSL]`.
+The bundled copy is only loadable when the mod is an extracted folder. A mod left as a zip falls back to the other locations. If OpenSSL can't be found, the game still starts, but MPAPI stays offline. The Lovely log shows every path it tried, with lines prefixed `[OpenSSL]`.
 
 ### Mod developers
 
@@ -219,7 +218,7 @@ Each one has its documentation in the header comment of the file that defines it
 |---|---|
 | `core.lua` | Entry point: load order, the per-frame update, and startup |
 | `domain/` | Enums and pure value types (`MPAPI.LobbyEvent`, `MPAPI.ErrorKind`, `MPAPI.Result`, ...) |
-| `networking/` | Steam ticket, OpenSSL FFI, Nakama transport (`nakama_lobby`, `nakama_notify`) and the I/O worker threads |
+| `networking/` | Steam ticket, OpenSSL FFI and the bundled OpenSSL libraries, Nakama transport (`nakama_lobby`, `nakama_notify`) and the I/O worker threads |
 | `lib/nakama/` | Vendored [nakama-defold](https://github.com/heroiclabs/nakama-defold) SDK, plus `engine/love.lua`, a LÖVE engine adapter |
 | `lib/` | Shared helpers, the thread preloader, and the vendored DebugPlus console (MPL-2.0) |
 | `api/` | The public API, one folder per concept (`lobby/`, `action/`, `matchmaking/`, `gamemode/`, `page/`, `layers/`, `ruleset/`, `replay/`, ...) |
