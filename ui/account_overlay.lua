@@ -57,7 +57,7 @@ end
 local TABS = {
 	{ key = 'account', label_key = 'k_account_tab_account' },
 	{ key = 'chat', label_key = 'k_account_tab_chat' },
-	-- { key = 'history', label_key = 'k_account_tab_history' },
+	{ key = 'history', label_key = 'k_account_tab_history' },
 }
 
 -----------------------------
