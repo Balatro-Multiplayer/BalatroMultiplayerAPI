@@ -217,6 +217,11 @@ return {
 			k_queue_banned_body = 'You are banned from matchmaking',
 			k_chat_banned_body = 'You are banned from chat',
 			k_ok = 'OK',
+			-- Moderator warning notice (ui/warned_notice_overlay.lua)
+			k_warned_title = 'Warning from a Moderator',
+			k_warned_body = 'A moderator has warned you:',
+			k_warned_body_plural = 'Moderators have warned you:',
+			k_warned_ack = 'I Understand',
 			-- Ranked queue cancelled overlay (post-queue-join ranked_readiness
 			-- challenge refused/failed - see api/matchmaking/dispatch.lua)
 			k_ranked_queue_cancelled_title = 'Ranked Queue Cancelled',

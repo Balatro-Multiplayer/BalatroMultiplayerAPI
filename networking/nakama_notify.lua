@@ -15,6 +15,8 @@ N.Code = {
 	AVATAR_UNLOCKED = 107,
 	-- The account's queue standing changed (an allowlist edit).
 	STANDING_CHANGED = 108,
+	-- Persistent: a moderator's warning ({message, itemType, warnedAt}).
+	WARNED = 109,
 }
 
 local handlers = {} -- code -> { fn, ... }
