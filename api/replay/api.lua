@@ -112,6 +112,38 @@ MPAPI.replay.list_mine = function(opts, callback)
 	nakama_list_mine(opts, callback)
 end
 
+-- How many server pages with none of the mod's runs list_mine_of reads past
+-- before showing what it has.
+MPAPI.replay.MOD_PAGE_SKIP_LIMIT = 5
+
+-- Server pages hold every mod's runs (runs_mine has no modId filter), so a
+-- mod's browser filtering only the first page misses its own runs behind
+-- another mod's newer ones. Reads on past pages holding none of `mod_id`'s
+-- runs. callback(err, data): data = {runs, cursor} like list_mine, runs only
+-- `mod_id`'s; data.cursor (nil at the end) continues after them.
+MPAPI.replay.list_mine_of = function(mod_id, opts, callback)
+	local function read(cursor, skipped)
+		nakama_list_mine({ cursor = cursor }, function(err, data)
+			if err then
+				callback(err, nil)
+				return
+			end
+			local runs = {}
+			for _, run in ipairs(data.runs) do
+				if run.modId == mod_id then
+					runs[#runs + 1] = run
+				end
+			end
+			if #runs == 0 and data.cursor and skipped < MPAPI.replay.MOD_PAGE_SKIP_LIMIT then
+				read(data.cursor, skipped + 1)
+				return
+			end
+			callback(nil, { runs = runs, cursor = data.cursor })
+		end)
+	end
+	read(opts and opts.cursor or nil, 0)
+end
+
 -- Crash-relaunch rejoin detection: does the player have a match still in
 -- progress right now. callback(err, data) where data is
 -- {active = {runId, lobbyCode, modId} | nil}.
