@@ -153,6 +153,18 @@ local function when_ready(p, seconds, ready, go)
 	tick()
 end
 
+-- The automatic return may only take a player who is idle at the game's own
+-- main menu or already in the group's mod. One who opened another mod's menu
+-- meanwhile is left there; the group's mod offers "Return to lobby" when they
+-- come back to it (Group.pending_return).
+function Home.may_auto_return(mod_id)
+	if not at_main_menu() or MPAPI.get_current_lobby() then
+		return false
+	end
+	local focused = MPAPI.get_focused_mod()
+	return focused == nil or focused == mod_id
+end
+
 -- The public lobby is behind us (left, closed, or its join failed).
 function Home.on_public_left(match_id)
 	local p = pending
@@ -163,7 +175,7 @@ function Home.on_public_left(match_id)
 	-- The public match was the group queue's last act.
 	Group._finish('away_over')
 	when_ready(p, Home.AUTO_RETURN_SECONDS, function()
-		return at_main_menu() and not MPAPI.get_current_lobby()
+		return Home.may_auto_return(p.mod_id)
 	end, function()
 		Group.return_home()
 	end)
