@@ -101,6 +101,12 @@ return {
 			b_reconnect = 'Reconnect',
 			b_abandon = 'Abandon',
 			b_leave = 'Leave',
+			-- One seat per account across every mod: a create/join refused
+			-- because of a seat held elsewhere. #1# is the seat's mod name.
+			k_seat_held_title = 'Seat Still Held',
+			k_seat_held_body = 'You still have a seat in a #1# game',
+			b_seat_held_rejoin = 'Rejoin',
+			b_seat_held_leave = 'Leave it',
 			-- Chat section in account overlay
 			k_chat_section_title = 'Chat',
 			b_chat_on = 'On',

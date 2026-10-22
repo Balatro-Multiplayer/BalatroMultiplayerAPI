@@ -36,12 +36,26 @@ end
 -- code, lobby full, ...): drop the half-made lobby and tell the player why.
 -- Without this the refusal only reached the log and L.current kept pointing
 -- at a lobby that never existed.
-local function refused(lobby, title_key, message)
-	fail(lobby, message)
-	tear_down(lobby)
+local function show_refusal(title_key, message)
 	if MPAPI.show_notice then
 		MPAPI.show_notice(title_key, tostring(message))
 	end
+end
+
+local function refused(lobby, title_key, message)
+	fail(lobby, message)
+	tear_down(lobby)
+	-- The seat may be in another mod's game, which this mod's UI can't show:
+	-- offer it from MPAPI instead of a dead-end notice.
+	if MPAPI._internal.is_seat_held_refusal(message) then
+		MPAPI._internal.offer_held_seat(function(shown)
+			if not shown then
+				show_refusal(title_key, message)
+			end
+		end)
+		return
+	end
+	show_refusal(title_key, message)
 end
 
 local function roster_from(players)
