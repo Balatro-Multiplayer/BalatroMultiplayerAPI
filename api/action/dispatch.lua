@@ -18,6 +18,10 @@ MPAPI._internal.dispatch_local_action = function(instance, target_id)
 		return
 	end
 
+	if not MPAPI._internal.action_belongs_to_lobby(lobby, action_type) then
+		return
+	end
+
 	local ok, result = pcall(action_type.on_receive, action_type, lobby.player_id, instance.params)
 	if not ok then
 		MPAPI.sendWarnMessage('action on_receive error (local): ' .. tostring(result))

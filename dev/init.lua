@@ -1,6 +1,7 @@
 -- Dev overrides: this file (and the dev/ directory) is stripped from release
 -- builds by CI (.github/workflows/strip-dev.yml).
 local C = MPAPI._internal.conn
+MPAPI._internal.dev_build = true
 local connection = MPAPI.networking.connection
 
 -- Dev builds talk to the local stack (BalatroMultiplayerServer's

@@ -21,6 +21,35 @@ end
 
 local warned_authoritative = {}
 
+-- Actions this client refused to send because they belong to another mod than
+-- the lobby's (newest last, capped). Read by tests; see refuse_foreign_action.
+MPAPI._internal.foreign_actions_dropped = MPAPI._internal.foreign_actions_dropped or {}
+local FOREIGN_DROP_LOG_LIMIT = 50
+local warned_foreign = {}
+
+-- A lobby only carries its own mod's action types and MPAPI's. Another mod's
+-- global hook sending into it (PvP's skip_blind location update inside an
+-- SPDRN lobby) is that mod's bug, not traffic for this lobby, and in a local
+-- lobby it would run the other mod's on_receive in-process.
+function MPAPI._internal.action_belongs_to_lobby(lobby, action_type)
+	return lobby._action_types[action_type.key] == action_type
+end
+
+local function refuse_foreign_action(lobby, action_type)
+	local dropped = MPAPI._internal.foreign_actions_dropped
+	dropped[#dropped + 1] = { action = action_type.key, lobby_mod = lobby.mod_id }
+	if #dropped > FOREIGN_DROP_LOG_LIMIT then
+		table.remove(dropped, 1)
+	end
+	local message = 'action ' .. tostring(action_type.key) .. ' dropped: not an action of the ' .. tostring(lobby.mod_id) .. ' lobby'
+	if MPAPI._internal.dev_build and not warned_foreign[action_type.key] then
+		warned_foreign[action_type.key] = true
+		MPAPI.sendWarnMessage(message)
+	else
+		MPAPI.sendDebugMessage(message)
+	end
+end
+
 local function create_action_instance(lobby, action_type)
 	local instance = {
 		params = nil,
@@ -48,6 +77,11 @@ local function create_action_instance(lobby, action_type)
 		self.params = params
 		local lobby = self._lobby
 		local action_type = self._action_type
+
+		if not MPAPI._internal.action_belongs_to_lobby(lobby, action_type) then
+			refuse_foreign_action(lobby, action_type)
+			return
+		end
 
 		if action_type.authoritative then
 			if lobby._local_mode then
