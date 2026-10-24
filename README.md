@@ -21,7 +21,7 @@ MPAPI on its own adds an account button and the multiplayer menu. You need at le
 
 The easiest route is the Balatro Multiplayer launcher. It installs the mods for you, and it is required for ranked play. To install by hand:
 
-1. Install [Lovely](https://github.com/ethangreen-dev/lovely-injector) 0.8 or newer and [Steamodded](https://github.com/Steamodded/smods) 1.0.0~BETA-1221a or newer.
+1. Install [Lovely](https://github.com/ethangreen-dev/lovely-injector) 0.8 or newer and [Steamodded](https://github.com/Steamodded/smods) 1.0.0~BETA-1814a or newer.
 2. Put this mod's folder (or its release zip) in your Balatro `Mods` directory:
    - **Windows:** `%AppData%\Balatro\Mods\`
    - **Linux (Proton):** `~/.steam/steam/steamapps/compatdata/2379780/pfx/drive_c/users/steamuser/AppData/Roaming/Balatro/Mods/`
@@ -80,7 +80,7 @@ Options passed to `MPAPI.connect{ host, port, secure, server_key, web_url }` tak
 Declare the dependency in your mod's JSON:
 
 ```json
-"dependencies": ["Steamodded (>=1.0.0~BETA-1221a)", "Lovely (>=0.8)", "MultiplayerAPI"]
+"dependencies": ["Steamodded (>=1.0.0~BETA-1814a)", "Lovely (>=0.8)", "MultiplayerAPI"]
 ```
 
 The best reference is the gamemode mods. BalatroMultiplayerSpeedrunning's `core.lua` shows a complete registration.
