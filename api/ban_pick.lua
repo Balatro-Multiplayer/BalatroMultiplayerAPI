@@ -758,11 +758,16 @@ end
 -- drop. The state broadcasts sent while the socket was down are not replayed, so
 -- a client that came back kept an old step and waited for a turn that had gone
 -- by. The rejoin snapshot carries the mirror: apply it when it is AHEAD of the
--- local state (never roll back). Called by the lobby's snapshot handler.
+-- local state (never roll back). Called by the lobby's snapshot handler. Only the
+-- same Draft (same draft_id) is adopted: a mirror left by an earlier Draft in this lobby
+-- would look further along than a new Draft.
 function BP.sync_from_metadata(lobby)
 	local mirror = lobby and lobby._metadata and lobby._metadata._mp_ban_pick_state
 	local local_state = lobby and lobby._ban_pick
 	if type(mirror) ~= "table" or type(local_state) ~= "table" then
+		return
+	end
+	if mirror.draft_id ~= local_state.draft_id then
 		return
 	end
 	if draft_progress(mirror) > draft_progress(local_state) then
@@ -795,6 +800,7 @@ function BP.start(lobby, config, on_complete)
 		local order = build_order(lobby)
 		local schedule = config.schedule or derive_schedule(config.pool_size or #pool, config.keep or 1, #order)
 		lobby._ban_pick = {
+			draft_id = string.format("%d-%d", os.time(), math.random(1, 2 ^ 30)),
 			pool = pool,
 			banned = {},
 			ban_order = {},
