@@ -93,6 +93,9 @@ MPAPI.load_mpapi_dir('domain', true)
 
 MPAPI.networking = {}
 
+-- A zipped mod on macOS has no real networking/ folder: copy the dylibs out first.
+MPAPI.load_mpapi_file('networking/openssl_stage.lua').stage_if_needed()
+
 MPAPI.load_mpapi_file('networking/openssl_ffi.lua')
 
 if MPAPI.networking.openssl_ffi then
