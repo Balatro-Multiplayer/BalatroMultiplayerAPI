@@ -710,8 +710,9 @@ function BP.request_ban(deck_key)
 	else
 		local action_type = MPAPI.ActionTypes[_config.ban_action]
 		if action_type then
-			-- order[1] is the host.
-			lobby:action(action_type):send(s.order[1], { item_key = deck_key })
+			-- order[1] was the host when the draft started; after a host migration (the host
+			-- dropped and came back) the lobby's current host is the one holding the state.
+			lobby:action(action_type):send(lobby.host_id or s.order[1], { item_key = deck_key })
 		end
 	end
 end
@@ -745,6 +746,27 @@ function BP.on_state(lobby, state)
 		if cb then
 			cb(state.survivors or {}, state.ban_order or {})
 		end
+	end
+end
+
+-- How far a draft has got: one number that only grows (bans made, then the end).
+local function draft_progress(state)
+	return #(state.ban_order or {}) * 2 + (state.complete and 1 or 0)
+end
+
+-- Catch up from the host's metadata mirror (see broadcast_state) after a socket
+-- drop. The state broadcasts sent while the socket was down are not replayed, so
+-- a client that came back kept an old step and waited for a turn that had gone
+-- by. The rejoin snapshot carries the mirror: apply it when it is AHEAD of the
+-- local state (never roll back). Called by the lobby's snapshot handler.
+function BP.sync_from_metadata(lobby)
+	local mirror = lobby and lobby._metadata and lobby._metadata._mp_ban_pick_state
+	local local_state = lobby and lobby._ban_pick
+	if type(mirror) ~= "table" or type(local_state) ~= "table" then
+		return
+	end
+	if draft_progress(mirror) > draft_progress(local_state) then
+		BP.on_state(lobby, mirror)
 	end
 end
 

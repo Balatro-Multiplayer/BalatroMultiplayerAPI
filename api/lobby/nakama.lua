@@ -91,6 +91,7 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	lobby.code = snapshot.code or lobby.code
 	lobby.max_players = snapshot.maxPlayers or lobby.max_players
 	lobby.type = snapshot.type or 'private'
+	lobby.host_id = snapshot.hostId
 	lobby.is_host = snapshot.hostId == lobby.player_id
 	lobby._metadata = type(snapshot.metadata) == 'table' and snapshot.metadata or {}
 	lobby._player_state = snapshot.ownState
@@ -157,6 +158,11 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	end
 	if lobby.is_host ~= was_host then
 		lobby:_fire(MPAPI.LobbyEvent.HOST_CHANGED, snapshot.hostId)
+	end
+	-- A rejoin after a socket drop missed the draft's state broadcasts: catch up
+	-- from the host's metadata mirror.
+	if MPAPI.BanPick and MPAPI.BanPick.sync_from_metadata then
+		MPAPI.BanPick.sync_from_metadata(lobby)
 	end
 	lobby:_fire(MPAPI.LobbyEvent.METADATA_CHANGED, lobby._metadata)
 end
