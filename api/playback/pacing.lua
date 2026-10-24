@@ -17,6 +17,12 @@ local CLOCK_MULTIPLIER = {
 	[Speed.X4] = 4,
 }
 
+-- How many times faster than recorded a speed runs the clock: 1 for 1x, nil
+-- for fast-forward (which has no clock).
+function MPAPI.playback.clock_multiplier(speed)
+	return CLOCK_MULTIPLIER[speed]
+end
+
 local Pacing = {}
 Pacing.__index = Pacing
 

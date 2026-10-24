@@ -28,18 +28,6 @@ position = "before"
 payload = '''if self.GAME.pseudorandom.seed:sub(1, 1) ~= "*" and MPAPI.should_use_the_order() then self.GAME.pseudorandom.seed = "*" .. self.GAME.pseudorandom.seed end'''
 match_indent = true
 
-# Ankh compat w/ previous patch
-[[patches]]
-[patches.pattern]
-target = "game.lua"
-pattern = "self.GAME.pseudorandom.seed = hash_seed(self.GAME.pseudorandom.seed)"
-position = "before"
-payload = '''if self.GAME.pseudorandom.seed:sub(1, 1) ~= "*" and MPAPI.should_use_the_order() then self.GAME.pseudorandom.seed = "*" .. self.GAME.pseudorandom.seed end'''
-match_indent = true
-
-
-
-
 # Make hallucination coinflip queue global
 [[patches]]
 [patches.pattern]
