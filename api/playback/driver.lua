@@ -13,6 +13,7 @@
 -- itself to real animation timing instead of instant-applying everything in
 -- one frame.
 MPAPI.playback = MPAPI.playback or {}
+MPAPI.load_mpapi_file('api/playback/pacing.lua')
 MPAPI.playback._active_drivers = MPAPI.playback._active_drivers or {}
 
 local Driver = {}
@@ -98,6 +99,9 @@ end
 --                     client's own current version) so callers that don't
 --                     pass one (e.g. live spectate, which has no recorded
 --                     manifest to read) still get a sane value.
+--   paced          -- true to play at the recorded time between entries (see pacing.lua)
+--                     and let the viewer change speed with Driver:set_speed. Without it
+--                     entries play one per frame, as live spectate and rejoin need.
 --   on_complete    -- called once, when the timeline is fully consumed AND
 --                     the driver was told there's no more live data coming
 --                     (see Driver:finish, used by finite post-hoc replay --
@@ -119,6 +123,7 @@ function MPAPI.playback.new_driver(timeline, opts)
 		_mod_id = opts.mod_id,
 		_pov_player_id = opts.pov_player_id,
 		_schema_version = opts.schema_version or MPAPI.replay.SCHEMA_VERSION,
+		_pacing = opts.paced and MPAPI.playback.new_pacing(timeline and timeline[1] and timeline[1].t) or nil,
 		_on_complete = opts.on_complete,
 		_on_after_dispatch = opts.on_after_dispatch,
 		_finished_source = false, -- true once no more entries will ever arrive
@@ -201,6 +206,22 @@ function Driver:finish()
 	self._finished_source = true
 end
 
+-- Paced drivers only. Fast-forward reuses fast_forward_to, started on the next tick.
+function Driver:set_speed(speed)
+	if not self._pacing then
+		return
+	end
+	self._pacing:set_speed(speed)
+	if speed ~= MPAPI.playback.Speed.FAST_FORWARD and self._ff_for_speed then
+		self._ff_for_speed = nil
+		self:_ff_cleanup()
+	end
+end
+
+function Driver:get_speed()
+	return self._pacing and self._pacing:get_speed() or nil
+end
+
 function Driver:is_playing()
 	return self._playing
 end
@@ -222,6 +243,9 @@ end
 function Driver:_dispatch_next()
 	local entry = self._timeline[self._cursor]
 	self._cursor = self._cursor + 1
+	if self._pacing and entry.t then
+		self._pacing:sync_to(entry.t)
+	end
 
 	-- Confirmed live (crashed a real run): entry.player_id can be nil if a caller builds its own
 	-- timeline off a bad/incomplete connection identity (e.g. SPDRN._launch_rejoin computing
@@ -286,12 +310,23 @@ function Driver:_check_complete()
 	return false
 end
 
-function Driver:_tick()
+function Driver:_tick(dt)
 	if not self._playing or not self:has_pending() then
 		if self._playing then
 			self:_check_complete()
 		end
 		return
+	end
+
+	if self._pacing then
+		self._pacing:advance(dt or 0)
+		if
+			self._pacing:get_speed() == MPAPI.playback.Speed.FAST_FORWARD
+			and not self._ff_active
+		then
+			self._ff_for_speed = true
+			self:fast_forward_to(#self._timeline + 1)
+		end
 	end
 
 	if self._ff_active then
@@ -301,6 +336,10 @@ function Driver:_tick()
 	end
 
 	if not MPAPI.playback._queues_empty() then
+		return
+	end
+
+	if self._pacing and not self._pacing:is_due(self._timeline[self._cursor].t or 0) then
 		return
 	end
 
@@ -481,6 +520,6 @@ local _game_update_ref = Game.update
 function Game:update(dt)
 	_game_update_ref(self, dt)
 	for driver in pairs(MPAPI.playback._active_drivers) do
-		driver:_tick()
+		driver:_tick(dt)
 	end
 end
