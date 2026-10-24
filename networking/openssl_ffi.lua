@@ -370,6 +370,9 @@ local function load_openssl()
 
 		ssl_lib = try_load(ssl_names, 'ssl')
 		if not ssl_lib then
+			if ffi.os == 'OSX' then
+				ssl_warn('macOS: unzip the mod into Mods/ (a zipped mod cannot load the bundled libraries), or set BET_OPENSSL_DYLIB_DIR to a folder holding libssl.3.dylib and libcrypto.3.dylib')
+			end
 			error('Could not load OpenSSL SSL library')
 		end
 	end)

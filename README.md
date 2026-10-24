@@ -25,7 +25,7 @@ The easiest route is the Balatro Multiplayer launcher. It installs the mods for 
 2. Put this mod's folder (or its release zip) in your Balatro `Mods` directory:
    - **Windows:** `%AppData%\Balatro\Mods\`
    - **Linux (Proton):** `~/.steam/steam/steamapps/compatdata/2379780/pfx/drive_c/users/steamuser/AppData/Roaming/Balatro/Mods/`
-   - **macOS:** `~/Library/Application Support/Balatro/Mods/`
+   - **macOS:** `~/Library/Application Support/Balatro/Mods/`. Start Balatro from Steam, not from the app bundle directly.
 3. Install the gamemode mods you want to play the same way.
 4. Launch Balatro **through Steam**. Login uses your Steam session ticket, so the multiplayer menu stays offline without the Steam client.
 
@@ -41,7 +41,7 @@ MPAPI connects to the server over TLS. It does this by loading OpenSSL through L
 | macOS | `libssl.3.dylib`, `libcrypto.3.dylib` (universal x86_64 + arm64) | This mod's `networking/` folder, then the directory in `BET_OPENSSL_DYLIB_DIR` (set by the launcher). Apple's system `libssl` is LibreSSL and is never loaded. |
 | Linux (native) | `libssl.so.3` / `libcrypto.so.3` (or 1.1) | The system OpenSSL from the default library path and the standard lib dirs. Install your distribution's `openssl` package. |
 
-The bundled copy is only loadable when the mod is an extracted folder. A mod left as a zip falls back to the other locations. If OpenSSL can't be found, the game still starts, but MPAPI stays offline. The Lovely log shows every path it tried, with lines prefixed `[OpenSSL]`.
+The bundled copy is only loadable from a real folder. On macOS, a mod left as a zip is handled at start-up: MPAPI copies `libssl.3.dylib` and `libcrypto.3.dylib` out of the zip into `MPAPI_openssl/` in the Balatro save directory, then loads them from there. If that fails, unzip the mod into `Mods/`. On other platforms a zipped mod falls back to the other locations. If OpenSSL can't be found, the game still starts, but MPAPI stays offline. The Lovely log shows every path it tried, with lines prefixed `[OpenSSL]`.
 
 ### Mod developers
 
