@@ -97,6 +97,17 @@ local create_UIBox_account_button = function()
 		{ n = G.UIT.T, config = { ref_table = MPAPI.connection_state, ref_value = 'status_text', scale = 0.3, colour = status_colour, shadow = true } },
 	} }
 
+	-- Why the client is offline, under "Offline" (domain/offline_reason.lua).
+	-- The panel is rebuilt on every state change, so the line comes and goes
+	-- with it.
+	local offline_reason_node = nil
+	local offline_reason = MPAPI.connection_state.offline_reason
+	if offline_reason and MPAPI.connection_state.state == MPAPI.ConnectionState.DISCONNECTED then
+		offline_reason_node = { n = G.UIT.R, config = { align = 'cm', minw = inner_width }, nodes = {
+			{ n = G.UIT.T, config = { text = localize(MPAPI.offline_reason_key(offline_reason)), scale = 0.25, colour = status_colour, shadow = true } },
+		} }
+	end
+
 	-- The account's standing under the connection status (see
 	-- api/connection/standing.lua): gold VERIFIED once the launcher has
 	-- completed the Ranked integrity handshake (MPAPI.is_launcher_verified in
@@ -130,6 +141,9 @@ local create_UIBox_account_button = function()
 	end
 
 	account_button_nodes[#account_button_nodes + 1] = connection_state
+	if offline_reason_node then
+		account_button_nodes[#account_button_nodes + 1] = offline_reason_node
+	end
 	if standing_node then
 		account_button_nodes[#account_button_nodes + 1] = standing_node
 	end

@@ -13,6 +13,9 @@ MPAPI.connection_state = {
 	-- account panel. Keep overrides short — the panel is fixed-width and long
 	-- text forces the whole UIBox to scale down to fit.
 	status_override = nil,
+	-- The MPAPI.OfflineReason of the last failed connection, shown under
+	-- "Offline"; nil when not offline or offline on purpose.
+	offline_reason = nil,
 	player_id = '',
 	display_name = localize('b_retry_connection'),
 	steam_name = '',
