@@ -249,8 +249,10 @@ end
 -- selector from the exact same lobby data instead of two parallel
 -- implementations -- see BalatroMultiplayerPvP/ui/game/game_end.lua and
 -- BalatroMultiplayerSpeed/ui/end_game_panel.lua for the two callers.
-MPAPI.end_screen_default_selection = function(lobby)
-	local players = (lobby and lobby:get_players()) or {}
+-- `players` (optional) replaces the current lobby members, for a caller that
+-- lists who started the match (PvP, so a player who left stays on the list).
+MPAPI.end_screen_default_selection = function(lobby, players)
+	players = players or (lobby and lobby:get_players()) or {}
 	local options = {}
 	local current_option = 1
 	for i, p in ipairs(players) do
