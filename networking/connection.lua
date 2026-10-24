@@ -211,7 +211,7 @@ function connection:_nakama_session_init(session)
 			return
 		end
 		if err then
-			self:_login_refused('Nakama login rejected: ', err, MPAPI.OfflineReason.OTHER)
+			self:_login_refused('Nakama login rejected: ', err, MPAPI.offline_reason_for_server_refusal(err))
 			return
 		end
 		data.token = session.token
@@ -227,7 +227,7 @@ function connection:_nakama_auth_failed(session)
 		message = message.message or 'error'
 	end
 	local answered = session ~= nil and session.code ~= nil
-	local reason = answered and MPAPI.OfflineReason.OTHER or self:_no_answer_reason()
+	local reason = answered and MPAPI.offline_reason_for_server_refusal(message) or self:_no_answer_reason()
 	self:_login_refused('Nakama auth failed: ', message, reason)
 end
 

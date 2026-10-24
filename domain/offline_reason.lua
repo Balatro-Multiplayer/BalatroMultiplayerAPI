@@ -20,6 +20,18 @@ function MPAPI.offline_reason_for_no_answer(secure, openssl_available)
 	return MPAPI.OfflineReason.SERVER_UNREACHABLE
 end
 
+-- The reason for a server that answered with a refusal: "Steam ticket failed"
+-- when the error clearly names the Steam ticket, otherwise `other`.
+function MPAPI.offline_reason_for_server_refusal(message)
+	if type(message) == 'table' then
+		message = message.message
+	end
+	if type(message) == 'string' and message:lower():find('steam ticket', 1, true) then
+		return MPAPI.OfflineReason.STEAM_TICKET_FAILED
+	end
+	return MPAPI.OfflineReason.OTHER
+end
+
 -- The localization key of a reason's menu text.
 function MPAPI.offline_reason_key(reason)
 	return 'k_offline_' .. reason
