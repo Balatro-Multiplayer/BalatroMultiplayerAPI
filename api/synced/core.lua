@@ -43,19 +43,20 @@ function MPAPI._internal.perform_send(obj, card, value)
 	broadcast_raw(obj, 'sync', payload)
 end
 
--- Runs on every client that receives a bus frame. Demuxes to the target object; self-echo
--- (a frame we broadcast ourselves, looped back) is suppressed for sync/phantom. `receive`
--- can itself return { send = value } to reply -- e.g. a request/response exchange is just
--- two of these round trips, distinguished by whatever shape the payload's author gives it.
+-- Runs on every client that receives a bus frame. Demuxes to the target object. The server
+-- echoes every frame back to its sender, so our own frames are dropped before any kind is
+-- handled: a phantom copy shows only on the other players' side, once. `receive` can itself
+-- return { send = value } to reply -- e.g. a request/response exchange is just two of these
+-- round trips, distinguished by whatever shape the payload's author gives it.
 local function demux(_action_type, from, p)
 	if not p or not p.obj then return end
+	if from == self_id() then return end -- suppress our own broadcast loopback
 	local obj = resolve(p.obj)
 	if not obj then return end
 	if p.kind == 'phantom' then
 		if MPAPI._internal.phantom_apply then MPAPI._internal.phantom_apply(obj, p.data) end
 		return
 	end
-	if from == self_id() then return end -- suppress our own broadcast loopback
 	if p.kind == 'sync' and obj.receive then
 		local ret = obj:receive({ from = from, data = p.data })
 		if type(ret) == 'table' and ret.send ~= nil then
