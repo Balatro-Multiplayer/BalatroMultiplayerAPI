@@ -710,8 +710,9 @@ function BP.request_ban(deck_key)
 	else
 		local action_type = MPAPI.ActionTypes[_config.ban_action]
 		if action_type then
-			-- order[1] is the host.
-			lobby:action(action_type):send(s.order[1], { item_key = deck_key })
+			-- order[1] was the host when the draft started; after a host migration (the host
+			-- dropped and came back) the lobby's current host is the one holding the state.
+			lobby:action(action_type):send(lobby.host_id or s.order[1], { item_key = deck_key })
 		end
 	end
 end

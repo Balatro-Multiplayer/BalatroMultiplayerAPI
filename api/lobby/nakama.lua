@@ -91,6 +91,7 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	lobby.code = snapshot.code or lobby.code
 	lobby.max_players = snapshot.maxPlayers or lobby.max_players
 	lobby.type = snapshot.type or 'private'
+	lobby.host_id = snapshot.hostId
 	lobby.is_host = snapshot.hostId == lobby.player_id
 	lobby._metadata = type(snapshot.metadata) == 'table' and snapshot.metadata or {}
 	lobby._player_state = snapshot.ownState

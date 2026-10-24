@@ -53,6 +53,7 @@ end
 
 local function on_host_changed(lobby, data)
 	if data.playerId then
+		lobby.host_id = data.playerId
 		lobby.is_host = (data.playerId == lobby.player_id)
 	end
 	lobby:_fire(MPAPI.LobbyEvent.HOST_CHANGED, data.playerId)
