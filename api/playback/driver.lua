@@ -163,6 +163,7 @@ function Driver:stop()
 	-- G.SETTINGS.GAMESPEED is a genuine player-facing preference, not scratch state this
 	-- system is allowed to leave clobbered if the player exits the replay viewer mid-seek.
 	self:_ff_cleanup()
+	self:_restore_player_gamespeed()
 	self._playing = false
 	self._stopped = true
 	MPAPI.playback._active_drivers[self] = nil
@@ -216,6 +217,36 @@ function Driver:set_speed(speed)
 		self._ff_for_speed = nil
 		self:_ff_cleanup()
 	end
+	self:_scale_gamespeed(MPAPI.playback.clock_multiplier(speed))
+end
+
+-- 2x and 4x scale the player's game speed setting so vanilla animations keep up
+-- with the faster clock. The player's own value is kept aside and comes back
+-- at 1x, at fast-forward (which sets its own game speed) and when playback ends.
+function Driver:_scale_gamespeed(multiplier)
+	if multiplier and multiplier > 1 then
+		self._player_gamespeed = self._player_gamespeed or G.SETTINGS.GAMESPEED
+		G.SETTINGS.GAMESPEED = self._player_gamespeed * multiplier
+	else
+		self:_restore_player_gamespeed()
+	end
+end
+
+function Driver:_restore_player_gamespeed()
+	if self._player_gamespeed then
+		G.SETTINGS.GAMESPEED = self._player_gamespeed
+		self._player_gamespeed = nil
+	end
+end
+
+-- The running driver that has a speed control (a paced one), if any.
+function MPAPI.playback.paced_driver()
+	for driver in pairs(MPAPI.playback._active_drivers) do
+		if driver:get_speed() then
+			return driver
+		end
+	end
+	return nil
 end
 
 function Driver:get_speed()

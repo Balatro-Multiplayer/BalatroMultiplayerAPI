@@ -154,6 +154,7 @@ return {
 			k_report_submitted = 'Report submitted',
 			-- Kick (host-only, lobby player list)
 			k_kick_player = 'Kick Player',
+			k_replay_speed = 'Replay speed',
 			k_kicked_title = 'Removed from Lobby',
 			k_player_kicked_you = 'The host removed you from the lobby.',
 			k_moderator_kicked_you = 'A moderator removed you from the lobby.',
@@ -280,6 +281,8 @@ return {
 			-- of button, not the true-uppercase "_cap" buttons above.
 			b_lobby_info_1 = 'Lobby',
 			b_lobby_info_2 = 'Info',
+			b_replay_settings_1 = 'Replay',
+			b_replay_settings_2 = 'Settings',
 			b_leave_lobby_cap = { 'LEAVE', 'LOBBY' },
 			b_start_game_cap = { 'START', 'GAME' },
 			-- Shared matchmaking / lobby menu strings (used by all consumer mods, e.g.
