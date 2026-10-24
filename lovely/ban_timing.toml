@@ -7,11 +7,13 @@ priority = 0
 # MPAPI.ApplyBans() only runs after it (api/ruleset/reworks.lua), so a banned
 # boss/tag/voucher could still show up at ante 1. Apply the declared ban keys
 # here, after G.GAME and the seed are set and before the first roll.
+# Steamodded 26.x replaces the get_new_boss() line with
+# SMODS.reset_blind_choices(...), so the regex accepts either form.
 [[patches]]
-[patches.pattern]
+[patches.regex]
 target = "game.lua"
-pattern = "self.GAME.round_resets.blind_choices.Boss = get_new_boss()"
+pattern = '''(?:self\.GAME\.round_resets\.blind_choices\.Boss = get_new_boss\(\)|SMODS\.reset_blind_choices\(self\.GAME\.round_resets\.blind_choices\))'''
 position = "before"
-payload = '''MPAPI.ApplyBanKeys()'''
-match_indent = true
+payload = '''MPAPI.ApplyBanKeys()
+'''
 times = 1

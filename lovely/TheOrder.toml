@@ -213,22 +213,17 @@ match_indent = true
 # wasted pseudorandom() draw when a seal is guaranteed is itself an RNG-queue
 # stabilization, the same category of fix as every other patch in this file --
 # it should only change queue behavior for Order matches, not vanilla-RNG ones.
+# Steamodded 26.x folded the roll into one line, so the regex accepts both forms.
 [[patches]]
-[patches.pattern]
+[patches.regex]
 target = '''=[SMODS _ "src/utils.lua"]'''
-pattern = '''
-local seal_poll = pseudorandom(pseudoseed(key or 'stdseal'..G.GAME.round_resets.ante))
-if seal_poll > 1 - (type_weight*mod / total_weight) or guaranteed then -- is a seal generated
-'''
+pattern = '''(?:local seal_poll = pseudorandom\(pseudoseed\(key or 'stdseal'\.\.G\.GAME\.round_resets\.ante\)\)\s*\n\s*if seal_poll > 1 - \(type_weight\*mod / total_weight\) or guaranteed then|if guaranteed or pseudorandom\(pseudoseed\(key or 'stdseal'\.\.G\.GAME\.round_resets\.ante\)\) > 1 - \(type_weight\*mod / total_weight\) then)'''
 position = 'at'
-payload = '''
-local seal_poll
+payload = '''local seal_poll
 if MPAPI.should_use_the_order() then
 	seal_poll = guaranteed and 1 or pseudorandom(pseudoseed(key or 'stdseal'..G.GAME.round_resets.ante))
 else
 	seal_poll = pseudorandom(pseudoseed(key or 'stdseal'..G.GAME.round_resets.ante))
 end
-if seal_poll > 1 - (type_weight*mod / total_weight) or (not MPAPI.should_use_the_order() and guaranteed) then -- is a seal generated
-'''
-match_indent = true
+if seal_poll > 1 - (type_weight*mod / total_weight) or (not MPAPI.should_use_the_order() and guaranteed) then'''
 times = 1
