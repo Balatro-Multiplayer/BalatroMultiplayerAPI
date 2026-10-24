@@ -1,7 +1,7 @@
 -- Shown when a queue is pressed, or a ticket is cancelled, because of the
--- account's standing (api/connection/standing.lua): the mods that aren't
--- allowed, or that the game hasn't reported its mods, or that Ranked needs a
--- launcher-verified game. Same small modal shape as
+-- account's standing (api/connection/standing.lua): every mod that isn't
+-- allowed, by SMODS id, or that the game hasn't reported its mods, or that
+-- Ranked needs a launcher-verified game. Same small modal shape as
 -- ui/ranked_queue_cancelled_overlay.lua; shown centrally here so PvP and
 -- SPDRN don't each word it.
 local S = MPAPI.standing
@@ -32,8 +32,8 @@ local create_UIBox_mods_not_allowed_overlay = function()
 		text_row(localize(title_key(refusal.code)), 0.55),
 		text_row(S.refusal_lead(refusal, S.RefusalContext.QUEUE), 0.35),
 	}
-	if #refusal.mods > 0 then
-		rows[#rows + 1] = text_row(S.format_mods(S.mod_names(refusal.mods)), 0.4, G.C.RED)
+	for _, line in ipairs(S.mod_id_lines(refusal.mods)) do
+		rows[#rows + 1] = text_row(line, 0.4, G.C.RED)
 	end
 	local hint = localize('k_queue_refused_hint_' .. tostring(refusal.code))
 	if hint ~= 'ERROR' then
