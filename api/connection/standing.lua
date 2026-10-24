@@ -145,6 +145,25 @@ function S.format_mods(names)
 	return text
 end
 
+-- Every mod key, by SMODS id, MODS_PER_LINE to a line: what a queue
+-- refusal lists, so a player can find each one in their Mods folder. Pure.
+S.MODS_PER_LINE = 4
+
+function S.mod_id_lines(keys)
+	local lines, line = {}, {}
+	for _, key in ipairs(keys or {}) do
+		line[#line + 1] = tostring(key)
+		if #line == S.MODS_PER_LINE then
+			lines[#lines + 1] = table.concat(line, ', ')
+			line = {}
+		end
+	end
+	if #line > 0 then
+		lines[#lines + 1] = table.concat(line, ', ')
+	end
+	return lines
+end
+
 -- A mod key's display name: its SMODS name when installed, else the key.
 function S.mod_name(key)
 	local mod = SMODS and SMODS.Mods and SMODS.Mods[key]
