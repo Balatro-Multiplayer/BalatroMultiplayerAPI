@@ -48,4 +48,8 @@ if os.getenv('BMP_DEV_SKIP_RANKED_ANTICHEAT') then
 	MPAPI.sendDebugMessage('Dev bypass: local ranked anti-cheat supervision forced active.')
 end
 
+if os.getenv('BMP_SCENARIO') then
+	MPAPI.load_mpapi_file('dev/scenario/runner.lua')
+end
+
 MPAPI.sendDebugMessage('Dev overrides applied')
