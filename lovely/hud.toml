@@ -30,10 +30,10 @@ position = 'after'
 payload = '''
 MPAPI.get_current_lobby() and {n=G.UIT.R, config={id = 'mpapi_lobby_info_button', align = "cm", minh = 1.2, minw = 1.5,padding = 0.05, r = 0.1, hover = true, colour = G.C.BLUE, button = "mpapi_show_lobby_info", func = "mpapi_lobby_button_mode", shadow = true}, nodes={
     {n=G.UIT.R, config={align = "cm", padding = 0, maxw = 1.4}, nodes={
-        {n=G.UIT.T, config={ref_table = MPAPI.lobby_button_label(), ref_value = 'top', scale = 1.2*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true}}
+        {n=G.UIT.T, config={ref_table = MPAPI.refresh_lobby_button_label(), ref_value = 'top', scale = 1.2*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true}}
     }},
     {n=G.UIT.R, config={align = "cm", padding = 0, maxw = 1.4}, nodes={
-        {n=G.UIT.T, config={ref_table = MPAPI.lobby_button_label(), ref_value = 'bottom', scale = 1*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true, focus_args = {button = G.F_GUIDE and 'guide' or 'back', orientation = 'bm'}, func = 'set_button_pip'}}
+        {n=G.UIT.T, config={ref_table = MPAPI.refresh_lobby_button_label(), ref_value = 'bottom', scale = 1*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true, focus_args = {button = G.F_GUIDE and 'guide' or 'back', orientation = 'bm'}, func = 'set_button_pip'}}
     }}
 }} or nil,'''
 match_indent = true

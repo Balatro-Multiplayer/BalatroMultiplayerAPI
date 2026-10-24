@@ -4,10 +4,10 @@
 local Speed = MPAPI.playback.Speed
 
 local SPEED_OPTIONS = {
-	{ speed = Speed.X1, label = '1x' },
-	{ speed = Speed.X2, label = '2x' },
-	{ speed = Speed.X4, label = '4x' },
-	{ speed = Speed.FAST_FORWARD, label = '>>' },
+	{ speed = Speed.X1, label_key = 'k_replay_speed_x1' },
+	{ speed = Speed.X2, label_key = 'k_replay_speed_x2' },
+	{ speed = Speed.X4, label_key = 'k_replay_speed_x4' },
+	{ speed = Speed.FAST_FORWARD, label_key = 'k_replay_speed_fast_forward' },
 }
 
 local function speed_button(option, selected)
@@ -26,7 +26,7 @@ local function speed_button(option, selected)
 			ref_table = { speed = option.speed },
 		},
 		nodes = {
-			{ n = G.UIT.T, config = { text = option.label, scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+			{ n = G.UIT.T, config = { text = localize(option.label_key), scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 		},
 	}
 end

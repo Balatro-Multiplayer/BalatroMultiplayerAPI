@@ -155,6 +155,10 @@ return {
 			-- Kick (host-only, lobby player list)
 			k_kick_player = 'Kick Player',
 			k_replay_speed = 'Replay speed',
+			k_replay_speed_x1 = '1x',
+			k_replay_speed_x2 = '2x',
+			k_replay_speed_x4 = '4x',
+			k_replay_speed_fast_forward = '>>',
 			k_kicked_title = 'Removed from Lobby',
 			k_player_kicked_you = 'The host removed you from the lobby.',
 			k_moderator_kicked_you = 'A moderator removed you from the lobby.',

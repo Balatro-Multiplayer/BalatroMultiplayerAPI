@@ -62,3 +62,14 @@ MPAPI.merge_unique = function(a, b)
 	end
 	return out
 end
+
+-- G.GAME.viewed_back must be a Back object, not a raw center: Steamodded 26.x
+-- Card:set_sprites reads viewed_back.effect.center.sprite_args, and vanilla
+-- start_run reads viewed_back.name. Returns nil when the key is not a center.
+MPAPI.back_for_key = function(key)
+	local center = key and G.P_CENTERS[key]
+	if not center then
+		return nil
+	end
+	return Back(center)
+end

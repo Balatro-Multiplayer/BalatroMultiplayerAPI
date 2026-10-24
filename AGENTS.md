@@ -11,6 +11,7 @@ MultiplayerAPI (`MPAPI`): a Steamodded/Lovely library mod. It gives Balatro game
   - lobby op codes: `networking/nakama_lobby.lua` ↔ `nakama/src/lobby/protocol.ts`
   - notification codes: `networking/nakama_notify.lua` ↔ `nakama/src/notify.ts`
   - authoritative actions: `api/action/builtin.lua` ↔ `nakama/src/actions/registry.ts`
+  - lobby metadata key `drafted_stake` (a mod writes it, `mpapi_restart_game` reads it): `PVP.LOBBY_METADATA.DRAFTED_STAKE` in BalatroMultiplayerPvP and `DRAFTED_STAKE_KEY` in `nakama/src/actions/registry.ts`
 - `lib/nakama/` is vendored upstream nakama-defold; its README is upstream's. The only file of ours in it is `lib/nakama/engine/love.lua`. Make fixes there or in `networking/`, not in the SDK files.
 - `lib/debugplus/` is vendored (MPL-2.0); leave it as upstream wrote it.
 
