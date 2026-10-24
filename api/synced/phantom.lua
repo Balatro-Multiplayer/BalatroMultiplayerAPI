@@ -39,7 +39,12 @@ function MPAPI._internal.phantom_apply(obj, data)
 	if data and data.op == 'add' then
 		local menu = G.OVERLAY_MENU
 		G.OVERLAY_MENU = G.OVERLAY_MENU or true -- spoof a menu: disables duplicate protection
+		-- Vanilla create_card ignores a forced key that is banned and rolls a random joker. A ruleset
+		-- can ban a joker that the opponent still holds, so lift the ban for this one copy.
+		local was_banned = G.GAME.banned_keys[key]
+		G.GAME.banned_keys[key] = nil
 		local new_card = create_card('Joker', area, false, nil, nil, nil, key)
+		G.GAME.banned_keys[key] = was_banned
 		new_card:set_edition(edition)
 		new_card:add_to_deck()
 		area:emplace(new_card)
