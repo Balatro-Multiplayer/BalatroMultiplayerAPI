@@ -207,11 +207,11 @@ MPAPI.RLOG_CODE {
 -- buy/open_pack/voucher share one write shape and one hook site (the opcode
 -- chosen dynamically by the bought card's set, see the buy_from_shop hook
 -- below) but are three distinct RLOG_CODEs, one per opcode string.
-local function shop_purchase_write(self, area, idx, ref, cost, human)
-	-- cost trails the existing {area, idx, ref} positions -- appended, not
-	-- inserted, so any reader keying off args[1]/args[2] (area/idx) is
-	-- unaffected by its presence.
-	self:record({ area, idx, ref, cost }, human)
+local function shop_purchase_write(self, area, idx, ref, cost, human, buy_and_use)
+	-- cost and the buy_and_use flag trail the existing {area, idx, ref}
+	-- positions -- appended, not inserted, so any reader keying off
+	-- args[1]/args[2] (area/idx) is unaffected by their presence.
+	self:record({ area, idx, ref, cost, buy_and_use or false }, human)
 end
 -- Confirmed live: vanilla's own G.FUNCS.buy_from_shop calls
 -- G.FUNCS.check_for_buy_space(c1) unless e.config.id == 'buy_and_use' -- and
@@ -229,7 +229,8 @@ local function shop_purchase_replay(self, args, ctx)
 		local area_id, idx, ref = args and args[1], args and args[2], args and args[3]
 		local card = resolve_own_card(ctx, ref, RLOG.area_object(area_id), idx, 'buy')
 		if card then
-			local id = card.ability and card.ability.set == 'Booster' and 'buy_and_use' or nil
+			-- args[5]: the player pressed "Buy & Use" (a consumable bought and used at once).
+			local id = ((card.ability and card.ability.set == 'Booster') or (args and args[5] == true)) and 'buy_and_use' or nil
 			G.FUNCS.buy_from_shop({ config = { id = id, ref_table = card } })
 		end
 	end
@@ -519,7 +520,7 @@ function G.FUNCS.buy_from_shop(e)
 				key = "voucher"
 			end
 			local ref = RLOG.card_ref(c1)
-			MPAPI.RLOGCodes[key]:write(area, idx, ref, c1.cost, human)
+			MPAPI.RLOGCodes[key]:write(area, idx, ref, c1.cost, human, e.config.id == 'buy_and_use')
 		end
 	end
 	return buy_from_shop_ref(e)
