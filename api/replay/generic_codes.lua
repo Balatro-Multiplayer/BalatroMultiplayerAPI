@@ -456,7 +456,11 @@ MPAPI.RLOG_CODE {
 	end,
 	replay = function(self, _args, ctx)
 		if ctx.schema_version >= 1 then
-			if ctx.is_pov then G.FUNCS.skip_blind({ UIBox = G.blind_select }) end
+			if ctx.is_pov then
+				-- the current blind's own panel: G.blind_select's first tag_container is the Small blind's
+				local panel = G.blind_select_opts and G.blind_select_opts[string.lower(G.GAME.blind_on_deck or 'Small')]
+				G.FUNCS.skip_blind({ UIBox = panel or G.blind_select })
+			end
 		end
 	end,
 }
