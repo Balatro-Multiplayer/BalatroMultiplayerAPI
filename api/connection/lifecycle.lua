@@ -120,6 +120,7 @@ MPAPI.connect = function(opts)
 	C.connection = MPAPI.networking.connection.new({
 		steam = MPAPI.networking.steam,
 		nakama_client = create_nakama_client(C.server),
+		config = { secure = C.server.secure },
 	})
 
 	C.connection.on_state_change = connection_on_state_change
@@ -133,6 +134,7 @@ MPAPI.disconnect = function()
 	end
 	C.connection = nil
 	MPAPI.connection_state.state = MPAPI.ConnectionState.DISCONNECTED
+	MPAPI.connection_state.offline_reason = nil
 	C.reset_state_vars()
 	C.set_status_text()
 end
@@ -213,6 +215,7 @@ connection_on_state_change = function(new_state, context)
 	context = context or {}
 
 	MPAPI.connection_state.state = new_state
+	MPAPI.connection_state.offline_reason = new_state == MPAPI.ConnectionState.DISCONNECTED and context.offline_reason or nil
 	if new_state == MPAPI.ConnectionState.CONNECTED or context.player_update then
 		MPAPI.connection_state.player_id = C.connection.player_id or ''
 		MPAPI.connection_state.steam_name = MPAPI.truncate(C.connection.steam_name or '', 20)

@@ -6,6 +6,14 @@ return {
 			k_status_connecting = 'Connecting...',
 			k_status_signing_in = 'Signing In...',
 			k_status_connected = 'Connected',
+			-- The offline reason under k_status_offline (domain/offline_reason.lua):
+			-- k_offline_<MPAPI.OfflineReason value>. Keep them short, the panel is
+			-- fixed-width.
+			k_offline_openssl_not_found = 'OpenSSL not found',
+			k_offline_steam_not_running = 'Steam not running',
+			k_offline_steam_ticket_failed = 'Steam ticket failed',
+			k_offline_server_unreachable = 'Server unreachable',
+			k_offline_other = 'Connection failed',
 			k_status_queueing = 'Queueing',
 			-- Main menu account panel: shown only once MPAPI.is_launcher_verified()
 			-- is true (Ranked integrity handshake completed) - see

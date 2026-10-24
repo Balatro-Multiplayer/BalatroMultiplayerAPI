@@ -99,6 +99,19 @@ local function set_state(self, new_state, context)
 	fire(self, new_state, context or { old_state = old })
 end
 
+-- A failed connection: DISCONNECTED with the raw error for the log and the
+-- MPAPI.OfflineReason the menu shows.
+local function fail(self, offline_reason, message)
+	set_state(self, STATES.DISCONNECTED, { error = message, offline_reason = offline_reason })
+end
+
+-- The offline reason for a request the server never answered
+-- (config.secure: the endpoint uses TLS).
+function connection:_no_answer_reason()
+	local ossl = MPAPI.networking.openssl_ffi
+	return MPAPI.offline_reason_for_no_answer(self.config.secure, ossl ~= nil and ossl.available())
+end
+
 -- The server's player object (Nakama's playerView) onto the connection.
 function connection:_apply_player(player)
 	self.steam_name = player.steamName or self.steam_name
@@ -140,7 +153,7 @@ function connection:_handle_auth_success(data)
 	end
 
 	if not self.player_id or not self.session_token then
-		set_state(self, STATES.DISCONNECTED, { error = 'Auth response missing player ID or token' })
+		fail(self, MPAPI.OfflineReason.OTHER, 'Auth response missing player ID or token')
 		return
 	end
 
@@ -198,7 +211,7 @@ function connection:_nakama_session_init(session)
 			return
 		end
 		if err then
-			self:_login_refused('Nakama login rejected: ', err)
+			self:_login_refused('Nakama login rejected: ', err, MPAPI.OfflineReason.OTHER)
 			return
 		end
 		data.token = session.token
@@ -206,23 +219,27 @@ function connection:_nakama_session_init(session)
 	end)
 end
 
+-- A Nakama error answer carries a code; a request that never reached the
+-- server (refused, timed out, not JSON) has none.
 function connection:_nakama_auth_failed(session)
 	local message = session and (session.message or session.error) or 'no response'
 	if type(message) == 'table' then
 		message = message.message or 'error'
 	end
-	self:_login_refused('Nakama auth failed: ', message)
+	local answered = session ~= nil and session.code ~= nil
+	local reason = answered and MPAPI.OfflineReason.OTHER or self:_no_answer_reason()
+	self:_login_refused('Nakama auth failed: ', message, reason)
 end
 
 -- A refused Nakama login. A banned account's refusal ("Account banned ...",
 -- see api/connection/moderation.lua) is shown to the player as a ban.
-function connection:_login_refused(prefix, message)
+function connection:_login_refused(prefix, message, offline_reason)
 	local moderation = MPAPI._internal.moderation
 	local ban = moderation and moderation.account_ban_message(message)
 	if ban and MPAPI.show_banned_notice then
 		MPAPI.show_banned_notice('k_banned_title', ban)
 	end
-	set_state(self, STATES.DISCONNECTED, { error = prefix .. tostring(message), banned = ban })
+	set_state(self, STATES.DISCONNECTED, { error = prefix .. tostring(message), banned = ban, offline_reason = offline_reason })
 end
 
 -- The Steam ticket goes to Nakama as a custom login: Nakama's built-in Steam
@@ -231,13 +248,13 @@ end
 -- "steam:<steamid>".
 function connection:_try_steam_auth()
 	if not self.steam or not self.steam.available() then
-		set_state(self, STATES.DISCONNECTED, { error = 'Steam is not available' })
+		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam is not available')
 		return
 	end
 
 	local ticket_data, ticket_err = self.steam.get_auth_ticket()
 	if not ticket_data then
-		set_state(self, STATES.DISCONNECTED, { error = 'Steam ticket failed: ' .. tostring(ticket_err) })
+		fail(self, MPAPI.OfflineReason.STEAM_TICKET_FAILED, 'Steam ticket failed: ' .. tostring(ticket_err))
 		return
 	end
 
@@ -289,7 +306,7 @@ function connection:_nakama_connect()
 		end
 		if not ok then
 			NL.keep_socket_open(false)
-			set_state(self, STATES.DISCONNECTED, { error = 'Nakama socket failed: ' .. tostring(err) })
+			fail(self, self:_no_answer_reason(), 'Nakama socket failed: ' .. tostring(err))
 			return
 		end
 		set_state(self, STATES.CONNECTED)
@@ -321,7 +338,7 @@ function connection:connect()
 	end
 
 	if not self.steam or not self.steam.available() then
-		set_state(self, STATES.DISCONNECTED, { error = 'Steam is not available' })
+		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam is not available')
 		return
 	end
 
@@ -349,7 +366,7 @@ function connection:accept_tos(chat_eligible)
 			return
 		end
 		if err then
-			set_state(self, STATES.DISCONNECTED, { error = 'ToS acceptance failed: ' .. tostring(err) })
+			fail(self, MPAPI.OfflineReason.OTHER, 'ToS acceptance failed: ' .. tostring(err))
 			return
 		end
 		data.token = token
