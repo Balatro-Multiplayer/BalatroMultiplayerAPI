@@ -118,7 +118,7 @@ MPAPI.get_focused_mod = function()
 	return state.focused_mod
 end
 
--- Returns the focused mod's custom title config ({ base, extra }), or nil. Drives the
+-- Returns the focused mod's custom title atlas key, or nil. Drives the
 -- title-logo swap in api/title.lua.
 MPAPI._internal.get_active_title = function()
 	local mod = state.focused_mod and state.registered_mods[state.focused_mod]

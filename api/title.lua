@@ -1,7 +1,5 @@
 -- Swaps the BALATRO title logo for the focused mod's custom title while its menu is shown.
--- A mod opts in via register_mod{ title = { base = <atlas_key>, extra = <atlas_key>? } }. The
--- base atlas becomes G.SPLASH_LOGO (drawn last, so on top); the optional extra atlas is a second
--- sprite drawn in the moveable loop, which runs before SPLASH_LOGO (so it sits behind the base).
+-- A mod opts in via register_mod{ title = <atlas_key> }; that atlas becomes G.SPLASH_LOGO.
 -- The title_top cards are hidden while a custom title is shown so they don't poke through it.
 
 local function atlas(key)
@@ -20,25 +18,7 @@ local function title_sprite(a)
 	return s
 end
 
-local _extra = nil
 local _hidden_cards = {}
-
--- Exposed so MPAPI.set_logo_offset (api/mod_registry/view.lua) can reposition this sprite too --
--- it previously only touched G.title_top/G.SPLASH_LOGO, silently leaving a mod's "extra" title
--- sprite (register_mod{title={base,extra}}'s second atlas) exactly where apply_title first put
--- it, since _extra was a plain module-local with no accessor at all. Confirmed live: PvP's own
--- two-part title showed the "base" half correctly nudged up by a page's on_enter but the
--- "extra" half stayed in its original spot, overlapping that page's own content underneath it.
-function MPAPI._internal.get_title_extra_sprite()
-	return _extra
-end
-
-local function remove_extra()
-	if not _extra then return end
-	local s = _extra
-	_extra = nil
-	pcall(function() s:remove() end)
-end
 
 local function set_logo(a, tag)
 	if G.SPLASH_LOGO then pcall(function() G.SPLASH_LOGO:remove() end) end
@@ -46,24 +26,14 @@ local function set_logo(a, tag)
 	G.SPLASH_LOGO._mpapi_title = tag
 end
 
-local function apply_title(cfg)
+local function apply_title(key)
 	if not G.title_top then return end
-	local base = atlas(cfg.base)
-	if not (base and base.image) then return end
-
-	set_logo(base, cfg)
-
-	remove_extra()
-	local ex = atlas(cfg.extra)
-	if ex and ex.image then
-		local s = title_sprite(ex)
-		table.insert(G.I.MOVEABLE, s)
-		_extra = s
-	end
+	local a = atlas(key)
+	if not (a and a.image) then return end
+	set_logo(a, key)
 end
 
 local function restore_vanilla()
-	remove_extra()
 	if G.title_top and G.ASSET_ATLAS['balatro'] then
 		set_logo(G.ASSET_ATLAS['balatro'], nil)
 	end
@@ -87,10 +57,7 @@ local function show_title_cards()
 end
 
 local function manage_title()
-	if not G.SPLASH_LOGO then
-		remove_extra()
-		return
-	end
+	if not G.SPLASH_LOGO then return end
 	local cfg = MPAPI._internal.get_active_title and MPAPI._internal.get_active_title()
 	if cfg then
 		if G.SPLASH_LOGO._mpapi_title ~= cfg then apply_title(cfg) end
@@ -101,8 +68,7 @@ local function manage_title()
 		-- G.SPLASH_LOGO fresh at fire time, not by a reference captured when it was scheduled
 		-- -- if our custom title has already been swapped in by then (which happens almost
 		-- immediately, since this function runs every frame), the event dissolves OUR base
-		-- logo to invisible instead of vanilla's, while the separately-tracked `extra` sprite
-		-- (vanilla's code has no idea it exists) is left alone. Confirmed live, on both cold
+		-- logo to invisible instead of vanilla's. Confirmed live, on both cold
 		-- boot and returning from a practice run: G.SPLASH_LOGO.dissolve reads -1 (fully
 		-- dissolved) afterward, with the correct atlas/tag still attached -- only this one
 		-- field is wrong. Re-asserting it every frame is simpler and more robust than racing
