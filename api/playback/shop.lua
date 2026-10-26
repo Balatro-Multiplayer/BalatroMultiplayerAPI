@@ -39,8 +39,9 @@ end
 
 MPAPI.playback.SHOP_READY_TIMEOUT_SECONDS = 10
 
+-- G.shop_jokers exists one frame before its starting cards do (api/playback/shop_built.lua).
 local function shop_is_ready()
-	return G.shop_jokers ~= nil and G.shop_jokers.cards ~= nil
+	return MPAPI.playback.shop_is_built()
 end
 
 -- A shop action can be dispatched while the shop is still being built: cash_out flips G.STATE at
