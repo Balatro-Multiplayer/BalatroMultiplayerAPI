@@ -22,6 +22,9 @@
 
 MPAPI.BanPick = MPAPI.BanPick or {}
 local BP = MPAPI.BanPick
+-- api/ban_pick.lua loads before api/setup.lua (the api/ scan is alphabetical), so
+-- create the shared table here; setup.lua fills it in.
+MPAPI.Setup = MPAPI.Setup or {}
 local Setup = MPAPI.Setup
 
 local DEFAULT_ID = "draft"
