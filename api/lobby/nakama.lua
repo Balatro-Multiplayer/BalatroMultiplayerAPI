@@ -186,9 +186,14 @@ end
 -- rebuilt from the player's own log) takes the snapshot, then holds every
 -- other message. The game is not in that lobby yet, so a held action must not
 -- reach its mod, and a held event must not fire before the mod listens. They
--- play in order when the lobby is attached (L.attach_detached).
+-- play in order when the lobby is attached (L.attach_detached). An event that
+-- ends this client's seat (a forfeit at the catch-up limit, a closed lobby) is
+-- not held: the lobby is dropped at once, which aborts the catch-up.
 local function hold(lobby, op, data)
 	if not (lobby._holding and lobby._nakama_ready) then
+		return false
+	end
+	if op == NL().ServerOp.EVENT and L.ends_own_seat(lobby, data) then
 		return false
 	end
 	lobby._held_messages[#lobby._held_messages + 1] = { op = op, data = data }
