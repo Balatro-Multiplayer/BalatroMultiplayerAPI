@@ -33,6 +33,8 @@ function connection.new(opts)
 		nakama_client = opts.nakama_client,
 		nakama_session = nil,
 		config = opts.config or {},
+		-- Official server: Steam login. Any other server: Device login.
+		official = opts.official ~= false,
 		state = STATES.DISCONNECTED,
 
 		-- The Nakama user id and session token.
@@ -164,7 +166,13 @@ end
 -- Steam ticket handshake instead of preferring a cached refresh token.
 function connection:_do_auth()
 	set_state(self, STATES.AUTHENTICATING)
-	self:_try_steam_auth()
+	if self.official then
+		MPAPI.sendDebugMessage('Login: Steam (Official server)')
+		self:_try_steam_auth()
+	else
+		MPAPI.sendDebugMessage('Login: Device (server is not Official)')
+		self:_try_device_auth()
+	end
 end
 
 function connection:_handle_login_response(data)
@@ -274,6 +282,33 @@ function connection:_try_steam_auth()
 	end, NAKAMA_LOGIN_RETRY_INTERVALS)
 end
 
+-- A Nakama session from a Device login.
+function connection:_on_device_session(session)
+	if self.state ~= STATES.AUTHENTICATING then
+		return
+	end
+	if not session or session.error then
+		self:_nakama_auth_failed(session)
+		return
+	end
+	self:_nakama_session_init(session)
+end
+
+-- A server that is not Official takes a Device login keyed by the raw
+-- SteamID64, with no username: the server gives the same Steam id the same
+-- account and takes the Steam name from session_init. Nothing proves either,
+-- so any player there can log in as anyone.
+function connection:_try_device_auth()
+	local steam_id, err = self.steam.get_steam_id()
+	if not steam_id then
+		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam id unavailable: ' .. tostring(err))
+		return
+	end
+	self.nakama_client.authenticate_device(steam_id, nil, true, nil, function(session)
+		self:_on_device_session(session)
+	end)
+end
+
 -- Dev only: log in as another player with a device login keyed by the
 -- target (needs the server's ALLOW_DEVICE_AUTH). target is a table with one
 -- of: playerId, steamId, discordId, steamName. Lets a second instance act as
@@ -283,14 +318,7 @@ function connection:_try_impersonate_auth(target)
 	local key = target.playerId or target.steamId or target.discordId or target.steamName or 'dev'
 	self.steam_name = target.steamName or ('Dev-' .. tostring(key):sub(1, 8))
 	self.nakama_client.authenticate_device(NAKAMA_DEV_DEVICE_PREFIX .. tostring(key), nil, true, nil, function(session)
-		if self.state ~= STATES.AUTHENTICATING then
-			return
-		end
-		if not session or session.error then
-			self:_nakama_auth_failed(session)
-			return
-		end
-		self:_nakama_session_init(session)
+		self:_on_device_session(session)
 	end)
 end
 
