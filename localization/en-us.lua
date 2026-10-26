@@ -107,6 +107,8 @@ return {
 			k_reconnect_prompt_title = 'Reconnect?',
 			k_reconnect_prompt_body = 'You are still connected to a lobby. Reconnect to pick up where you left off, or leave to forfeit your spot.',
 			b_reconnect = 'Reconnect',
+			-- Badge on a player who rejoined after a crash and is replaying their run.
+			k_catching_up = 'catching up',
 			b_abandon = 'Abandon',
 			b_leave = 'Leave',
 			-- One seat per account across every mod: a create/join refused

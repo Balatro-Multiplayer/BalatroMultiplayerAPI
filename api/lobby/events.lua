@@ -44,6 +44,14 @@ local function on_player_reconnected(lobby, data)
 	lobby:_fire(MPAPI.LobbyEvent.PLAYER_RECONNECTED, data.playerId)
 end
 
+local function on_player_catching_up(lobby, data)
+	local catching_up = type(data.data) == 'table' and data.data.catchingUp == true
+	if data.playerId and lobby._players[data.playerId] then
+		lobby._players[data.playerId].catching_up = catching_up
+	end
+	lobby:_fire(MPAPI.LobbyEvent.PLAYER_CATCHING_UP, data.playerId, catching_up)
+end
+
 local function on_metadata_changed(lobby, data)
 	if data.data then
 		lobby._metadata = data.data
@@ -93,6 +101,7 @@ local EVENT_HANDLERS = {
 	[MPAPI.LobbyEvent.PLAYER_KICKED] = on_player_kicked,
 	[MPAPI.LobbyEvent.PLAYER_DISCONNECTED] = on_player_disconnected,
 	[MPAPI.LobbyEvent.PLAYER_RECONNECTED] = on_player_reconnected,
+	[MPAPI.LobbyEvent.PLAYER_CATCHING_UP] = on_player_catching_up,
 	[MPAPI.LobbyEvent.METADATA_CHANGED] = on_metadata_changed,
 	[MPAPI.LobbyEvent.HOST_CHANGED] = on_host_changed,
 	[MPAPI.LobbyEvent.LOBBY_CLOSED] = on_lobby_closed,

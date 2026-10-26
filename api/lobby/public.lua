@@ -63,6 +63,13 @@ MPAPI.get_current_lobby = function()
 	return L.current
 end
 
+-- Takes the seat in the lobby the server kept without making it the current lobby, and holds
+-- what the server sends until L.attach_detached (api/playback/rejoin.lua). Returns the lobby;
+-- on_ready(lobby) runs on the first snapshot.
+MPAPI._internal.create_detached_lobby = function(lobby_data, on_ready)
+	return L.nakama_rejoin_detached(lobby_data, on_ready)
+end
+
 -- Rejoins the lobby this player still has a seat in (the reconnect prompt);
 -- on_ready(lobby) runs once its state is in.
 MPAPI._internal.create_reconnected_lobby = function(lobby_data, on_ready)

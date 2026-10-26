@@ -9,7 +9,7 @@
 local NL = {}
 
 -- Must match nakama/src/lobby/protocol.ts.
-NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5 }
+NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6 }
 NL.ServerOp = {
 	SNAPSHOT = 100,
 	EVENT = 101,
