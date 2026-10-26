@@ -19,9 +19,6 @@ return {
 			-- is true (Ranked integrity handshake completed) - see
 			-- ui/main_menu.lua's verified_node and api/connection/lifecycle.lua.
 			k_verified_cap = 'VERIFIED',
-			-- ...or this one while the reported mods may queue casual
-			-- (api/connection/standing.lua).
-			k_valid_cap = 'VALID',
 			k_your_avatar_cap_1 = 'YOUR',
 			k_your_avatar_cap_2 = 'AVATAR',
 			k_click_to_change = 'Click to Change',

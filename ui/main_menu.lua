@@ -98,21 +98,27 @@ local create_UIBox_account_button = function()
 	} }
 
 	-- Why the client is offline, under "Offline" (domain/offline_reason.lua).
-	-- The panel is rebuilt on every state change, so the line comes and goes
+	-- The panel is rebuilt on every state change, so the lines come and go
 	-- with it.
-	local offline_reason_node = nil
+	local offline_reason_nodes = {}
 	local offline_reason = MPAPI.connection_state.offline_reason
 	if offline_reason and MPAPI.connection_state.state == MPAPI.ConnectionState.DISCONNECTED then
-		offline_reason_node = { n = G.UIT.R, config = { align = 'cm', minw = inner_width }, nodes = {
-			{ n = G.UIT.T, config = { text = localize(MPAPI.offline_reason_key(offline_reason)), scale = 0.25, colour = status_colour, shadow = true } },
-		} }
+		local server_message = MPAPI.connection_state.offline_server_message
+		for _, line in ipairs(MPAPI.offline_reason_lines(offline_reason, server_message)) do
+			local text = { n = G.UIT.T, config = { text = line, scale = 0.25, colour = status_colour, shadow = true } }
+			offline_reason_nodes[#offline_reason_nodes + 1] = {
+				n = G.UIT.R,
+				config = { align = 'cm', minw = inner_width },
+				nodes = { text },
+			}
+		end
 	end
 
 	-- The account's standing under the connection status (see
 	-- api/connection/standing.lua): gold VERIFIED once the launcher has
 	-- completed the Ranked integrity handshake (MPAPI.is_launcher_verified in
-	-- api/connection/lifecycle.lua), green VALID while the reported mods may
-	-- queue casual, nothing otherwise. Plain text, not a badge/pill.
+	-- api/connection/lifecycle.lua), nothing otherwise. Plain text, not a
+	-- badge/pill.
 	local standing_node = nil
 	local standing_label = MPAPI._internal.standing_badge()
 	if standing_label then
@@ -141,8 +147,8 @@ local create_UIBox_account_button = function()
 	end
 
 	account_button_nodes[#account_button_nodes + 1] = connection_state
-	if offline_reason_node then
-		account_button_nodes[#account_button_nodes + 1] = offline_reason_node
+	for _, node in ipairs(offline_reason_nodes) do
+		account_button_nodes[#account_button_nodes + 1] = node
 	end
 	if standing_node then
 		account_button_nodes[#account_button_nodes + 1] = standing_node
@@ -244,15 +250,13 @@ end
 -- LOGIC FUNCTIONS
 -----------------------------
 
--- The badge for the account's standing: {key, colour}, or nil for none
--- (also before the server has said; the standing is forgotten offline).
+-- The badge for the account's standing: {key, colour} for a verified
+-- account, else nil (also before the server has said; the standing is
+-- forgotten offline).
 MPAPI._internal.standing_badge = function()
 	local view = MPAPI.account_standing and MPAPI.account_standing()
 	if MPAPI.standing.is_verified(view, MPAPI.is_launcher_verified()) then
 		return { key = 'k_verified_cap', colour = G.C.GOLD }
-	end
-	if view and view.standing == MPAPI.Standing.VALID then
-		return { key = 'k_valid_cap', colour = G.C.GREEN }
 	end
 	return nil
 end
