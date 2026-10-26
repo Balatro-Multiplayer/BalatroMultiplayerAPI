@@ -266,6 +266,9 @@ return {
 			k_forfeited_title = 'Match Forfeited',
 			k_forfeited_body = 'You forfeited this match.',
 			k_forfeited_menu = 'Main Menu',
+			k_connection_lost_title = 'Connection Lost',
+			k_connection_lost_body = 'Connection lost. The match is over.',
+			k_connection_lost_menu = 'Main Menu',
 			k_ranked_launcher_outdated_body = 'A new version of Balatro Essentials Toolkit is required to continue playing Ranked. Update BET to keep playing.',
 			k_ranked_mods_outdated_body = 'Your Ranked mods are out of date. Relaunch through BET to update them, then queue again.',
 			-- Ready-status hover badge (lobby player list)

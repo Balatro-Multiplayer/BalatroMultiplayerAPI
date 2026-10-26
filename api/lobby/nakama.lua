@@ -88,6 +88,7 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	local was_host = lobby.is_host
 	local roster = roster_from(snapshot.players)
 
+	NL().set_grace_seconds(snapshot.graceSeconds)
 	lobby.code = snapshot.code or lobby.code
 	lobby.max_players = snapshot.maxPlayers or lobby.max_players
 	lobby.type = snapshot.type or 'private'
@@ -257,7 +258,7 @@ local function attach(lobby, match_id, on_ready)
 			L.flush_log_events(lobby)
 			MPAPI.sendDebugMessage('[nakama_lobby] rejoined ' .. tostring(lobby.code))
 		end,
-		lost = function(reason)
+		lost = function(reason, gave_up)
 			MPAPI.sendWarnMessage('[nakama_lobby] lost lobby ' .. tostring(lobby.code) .. ': ' .. tostring(reason))
 			tear_down(lobby)
 			-- A reconnect after a socket drop can be refused for standing too
@@ -267,6 +268,11 @@ local function attach(lobby, match_id, on_ready)
 			-- gone, with nothing on screen.
 			if MPAPI.is_forfeited_refusal(reason) and MPAPI.show_forfeited_notice then
 				MPAPI.show_forfeited_notice()
+				return
+			end
+			-- Reconnecting ran out of time: the server forfeited the seat.
+			if gave_up and MPAPI.show_connection_lost_notice then
+				MPAPI.show_connection_lost_notice()
 				return
 			end
 			local rejoin_refusal = MPAPI.standing.parse_rejoin_refusal(reason)
