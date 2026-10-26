@@ -107,6 +107,8 @@ return {
 			k_reconnect_prompt_title = 'Reconnect?',
 			k_reconnect_prompt_body = 'You are still connected to a lobby. Reconnect to pick up where you left off, or leave to forfeit your spot.',
 			b_reconnect = 'Reconnect',
+			-- Badge on a player who rejoined after a crash and is replaying their run.
+			k_catching_up = 'catching up',
 			b_abandon = 'Abandon',
 			b_leave = 'Leave',
 			-- One seat per account across every mod: a create/join refused
@@ -263,6 +265,12 @@ return {
 			b_retry = 'Retry',
 			b_leave_game_forfeit = 'Leave Game (Forfeit)',
 			k_rejoin_checking = 'Checking your game...',
+			k_forfeited_title = 'Match Forfeited',
+			k_forfeited_body = 'You forfeited this match.',
+			k_forfeited_menu = 'Main Menu',
+			k_connection_lost_title = 'Connection Lost',
+			k_connection_lost_body = 'Connection lost. The match is over.',
+			k_connection_lost_menu = 'Main Menu',
 			k_ranked_launcher_outdated_body = 'A new version of Balatro Essentials Toolkit is required to continue playing Ranked. Update BET to keep playing.',
 			k_ranked_mods_outdated_body = 'Your Ranked mods are out of date. Relaunch through BET to update them, then queue again.',
 			-- Ready-status hover badge (lobby player list)

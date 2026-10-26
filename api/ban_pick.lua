@@ -607,6 +607,10 @@ local function finish(result)
 	local cb = _on_complete
 	_on_complete = nil
 	close()
+	if not cb then
+		-- A finished Draft with nobody to tell: the run will not start on this client.
+		MPAPI.sendWarnMessage('BanPick: the Draft completed with no on_complete registered (resume not called?)')
+	end
 	if cb then
 		local survivors = {}
 		for i, candidate in ipairs(result.survivors or {}) do
@@ -671,6 +675,18 @@ local function listen(lobby)
 	lobby:on(MPAPI.LobbyEvent.HOST_CHANGED, function()
 		open_if_host(lobby)
 	end)
+end
+
+-- What this module remembers, for live diagnosis of a Draft that finished
+-- without a run start (ticket rejoin-unify/18). Read only.
+function BP.debug_snapshot()
+	return {
+		fired = _fired,
+		has_config = _config ~= nil,
+		has_on_complete = _on_complete ~= nil,
+		has_overlay = _overlay ~= nil,
+		has_render = _render ~= nil,
+	}
 end
 
 -----------------------------

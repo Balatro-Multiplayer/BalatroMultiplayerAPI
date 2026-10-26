@@ -108,7 +108,13 @@ end
 -- Passed through whole rather than destructured, since a rejoin launcher
 -- needs every field: lobbyCode to MPAPI.join_lobby back into once the local
 -- fast-forward completes, events to actually fast-forward with.
-function MPAPI.playback.rejoin(mod_id, active)
+function MPAPI.playback.rejoin(mod_id, active, lobby_data)
+	local hooks = mod_id and MPAPI.playback._rejoin_hooks and MPAPI.playback._rejoin_hooks[mod_id]
+	if hooks and lobby_data then
+		-- The fast-forward must roll from the same pools the live run did.
+		MPAPI._internal.focus_mod_for_run(mod_id)
+		return MPAPI.playback.run_rejoin(active, lobby_data, hooks)
+	end
 	local fn = mod_id and MPAPI.playback._rejoin_launchers[mod_id]
 	if not fn then
 		MPAPI.sendDebugMessage('MPAPI.playback: no rejoin launcher for ' .. tostring(mod_id) .. ' (ignored)')
