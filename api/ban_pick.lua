@@ -683,6 +683,20 @@ local function listen(lobby)
 	lobby:on(MPAPI.LobbyEvent.HOST_CHANGED, function()
 		open_if_host(lobby)
 	end)
+	-- The game ended before the Draft did (every other player left): drop the
+	-- Draft with no result, then let an inline render draw once without it.
+	lobby:on(MPAPI.LobbyEvent.GAME_ENDED, function()
+		if _fired or not _config or lobby.code ~= _lobby_code then
+			return
+		end
+		local render = _render
+		_config = nil
+		_on_complete = nil
+		close()
+		if render then
+			render()
+		end
+	end)
 end
 
 -- What this module remembers, for live diagnosis of a Draft that finished
