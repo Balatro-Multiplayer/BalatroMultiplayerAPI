@@ -308,30 +308,31 @@ L.start_game = function(lobby, opts, cb)
 	}, cb)
 end
 
+-- An action that ends the game. Events recorded this frame go first: the server stores no event
+-- after the end.
+local function ask_server_at_game_end(lobby, key, params, cb)
+	L.flush_log_events(lobby)
+	ask_server(lobby, key, params, cb)
+end
+
 -- Every participant reports the placements once the game is over; the
 -- server ends it (GAME_ENDED) when they're all in. cb(err).
 L.report_result = function(lobby, placements, cb)
-	-- Events recorded this frame go first: the server stores no event after the end.
-	L.flush_log_events(lobby)
-	ask_server(lobby, 'mpapi_report_result', { placements = placements }, cb and function(err)
+	ask_server_at_game_end(lobby, 'mpapi_report_result', { placements = placements }, cb and function(err)
 		cb(err)
 	end)
 end
 
 -- Host only: ends the game with no result (GAME_ENDED, status 'abandoned').
 L.abandon_game = function(lobby, cb)
-	-- Events recorded this frame go first: the server stores no event after the end.
-	L.flush_log_events(lobby)
-	ask_server(lobby, 'mpapi_abandon_game', {}, cb and function(err)
+	ask_server_at_game_end(lobby, 'mpapi_abandon_game', {}, cb and function(err)
 		cb(err)
 	end)
 end
 
 -- Host only: a new game on a new seed (GAME_STARTED again). cb(err, started).
 L.restart_game = function(lobby, cb)
-	-- Events recorded this frame go first: the server stores no event after the end.
-	L.flush_log_events(lobby)
-	ask_server(lobby, 'mpapi_restart_game', {}, cb)
+	ask_server_at_game_end(lobby, 'mpapi_restart_game', {}, cb)
 end
 
 -- Replay events for a server-refereed lobby go to the server, which keeps
