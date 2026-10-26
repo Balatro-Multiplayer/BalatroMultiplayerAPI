@@ -271,7 +271,7 @@ L.LOG_BATCH_MAX = LOG_BATCH_MAX
 L.LOG_BATCH_BYTES = LOG_BATCH_BYTES
 
 local function event_bytes(event)
-	local ok, encoded = pcall(json.encode, event)
+	local ok, encoded = pcall(require("json").encode, event)
 	return ok and type(encoded) == 'string' and #encoded or 200
 end
 
