@@ -21,9 +21,10 @@
 --   start_run(bootstrap, on_ready)    -- boots a local run from `bootstrap`; on_ready() once it can
 --                                        be played (blind select). Refuses to run while a real
 --                                        lobby is current, which is why the join is detached.
---   checkpoint_options()       -- (optional) { boundary_opcodes, run_index, pause_gate } for
---                                 MPAPI.playback.build_checkpoint_index
---   before_play(session)       -- (optional) called once the first local run is up
+--   checkpoint_options()       -- (optional) { boundary_opcodes, pause_gate }: the opcodes that
+--                                 end a run attempt (MPAPI.playback.timeline_ante_starts) and the
+--                                 fast-forward's pause gate
+--   before_play(session)       -- (optional) called once the local run is up, before the seek
 --   attach(lobby, ctx)         -- the caught-up run is about to go live. Wire the mod's lobby
 --                                 events and mirrors onto `lobby` (not current yet) and restore
 --                                 the mod's state (clocks, lives). ctx = { events, session,
@@ -108,10 +109,10 @@ end
 -- The event index to skip to: the start of the second-to-last known ante, so the tail left for
 -- normal pace is at least one full ante and starts at a clean blind-select or shop boundary. A run
 -- with fewer than two ante boundaries has nothing worth skipping: play it all.
-function MPAPI.playback.rejoin_cutoff(index)
-	local ante_boundaries = MPAPI.playback.checkpoint_ante_boundaries(index)
-	local n = #ante_boundaries
-	return n >= 2 and ante_boundaries[n - 1].event_index or 1
+-- `starts` is a list of ante-start event indexes (MPAPI.playback.timeline_ante_starts).
+function MPAPI.playback.rejoin_cutoff(starts)
+	local n = #starts
+	return n >= 2 and starts[n - 1] or 1
 end
 
 -- Reopens the player's own log block once the last replayed action's animations have drained (an
@@ -219,24 +220,33 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 		pause_gate = hooks.checkpoint_options and hooks.checkpoint_options().pause_gate or nil,
 	}
 
+	-- One fast-forward to the cutoff, read from the timeline. A checkpoint-index pass first would
+	-- play the whole run once more before the seek: about 40 percent of a run-2 catch-up.
+	restart_opts.on_run_started = function()
+		if hooks.before_play then
+			hooks.before_play(session)
+		end
+	end
+
 	local function catch_up()
-		hooks.start_run(bootstrap, function()
-			if hooks.before_play then
-				hooks.before_play(session)
+		-- A relaunched game can still show its splash (about 11 s, confirmed live 2026-10-26): the
+		-- run start waits behind it. A mouse click on Reconnect skips it already (vanilla
+		-- Controller:queue_L_cursor_press); a key or controller press does not. Skip it the
+		-- same way.
+		if G.STATE == G.STATES.SPLASH then
+			G:delete_run()
+			G:main_menu()
+		end
+		local options = hooks.checkpoint_options and hooks.checkpoint_options() or {}
+		local starts = MPAPI.playback.timeline_ante_starts(timeline, options.boundary_opcodes)
+		MPAPI.playback.restart_session_and_seek(session, MPAPI.playback.rejoin_cutoff(starts), function(driver)
+			session.driver = driver
+			if aborted then
+				driver:stop()
+				return
 			end
-			local options = hooks.checkpoint_options and hooks.checkpoint_options() or {}
-			options.mod_id = hooks.playback_mod_id
-			MPAPI.playback.build_checkpoint_index(session, options, function(index)
-				if aborted then
-					return
-				end
-				session.checkpoint_index = index
-				MPAPI.playback.restart_session_and_seek(session, MPAPI.playback.rejoin_cutoff(index), function(driver)
-					session.driver = driver
-					driver:play()
-				end, restart_opts)
-			end)
-		end)
+			driver:play()
+		end, restart_opts)
 	end
 
 	lobby = MPAPI._internal.create_detached_lobby(lobby_data, function()
