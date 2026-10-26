@@ -127,7 +127,7 @@ end
 -- player rejoins the lobby instead, like one in the waiting room.
 local function rejoin(lobby_data, active)
 	if active and #(active.events or {}) > 0 then
-		MPAPI.playback.rejoin(active.modId, active)
+		MPAPI.playback.rejoin(active.modId, active, lobby_data)
 		return
 	end
 	rejoin_lobby(lobby_data)
