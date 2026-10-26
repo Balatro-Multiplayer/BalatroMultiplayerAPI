@@ -11,7 +11,8 @@ C.state_change_callbacks = C.state_change_callbacks or {}
 -- (log and report links). Each can be overridden by MPAPI.connect{...} opts
 -- or, with the config key use_custom_server set, the mod config keys
 -- server_host, server_port, server_secure, nakama_server_key and web_url;
--- dev/init.lua points dev builds at the local stack. For a server inside WSL2 prefer the literal 127.0.0.1 over
+-- the Dev mod replaces the defaults (MPAPI.dev.set_server_defaults). For a
+-- server inside WSL2 prefer the literal 127.0.0.1 over
 -- 'localhost': on Windows 'localhost' resolves to IPv6 ::1 first, which does
 -- not reach WSL2 and eats a ~21s TCP SYN timeout before falling back to IPv4.
 C.SERVER_DEFAULTS = {
@@ -30,8 +31,8 @@ local CONFIG_KEYS = {
 	web_url = 'web_url',
 }
 
--- Set by the Dev mod (ticket 04: MPAPI.dev.set_server_defaults) when it
--- points the client at its own server.
+-- Set through MPAPI.dev (api/dev.lua) by the Dev mod: the server is not
+-- Official, the test account to log in as, and Steam login forced anyway.
 C.not_official_marked = C.not_official_marked or false
 
 local function uses_custom_server()
@@ -138,7 +139,8 @@ MPAPI.connect = function(opts)
 	C.connection = MPAPI.networking.connection.new({
 		steam = MPAPI.networking.steam,
 		nakama_client = create_nakama_client(C.server),
-		official = C.is_official_server(),
+		official = C.is_official_server() or C.force_steam_login == true,
+		impersonate = C.dev_identity,
 		config = { secure = C.server.secure },
 	})
 

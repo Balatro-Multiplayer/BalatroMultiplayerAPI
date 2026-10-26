@@ -35,6 +35,9 @@ function connection.new(opts)
 		config = opts.config or {},
 		-- Official server: Steam login. Any other server: Device login.
 		official = opts.official ~= false,
+		-- A test account from the Dev mod (MPAPI.dev.set_identity): Device
+		-- login as that account, on any server.
+		impersonate = opts.impersonate,
 		state = STATES.DISCONNECTED,
 
 		-- The Nakama user id and session token.
@@ -166,7 +169,10 @@ end
 -- Steam ticket handshake instead of preferring a cached refresh token.
 function connection:_do_auth()
 	set_state(self, STATES.AUTHENTICATING)
-	if self.official then
+	if self.impersonate then
+		MPAPI.sendDebugMessage('Login: Device as a Dev mod test account')
+		self:_try_impersonate_auth(self.impersonate)
+	elseif self.official then
 		MPAPI.sendDebugMessage('Login: Steam (Official server)')
 		self:_try_steam_auth()
 	else
@@ -309,7 +315,7 @@ function connection:_try_device_auth()
 	end)
 end
 
--- Dev only: log in as another player with a device login keyed by the
+-- Dev mod only: log in as another player with a device login keyed by the
 -- target (needs the server's ALLOW_DEVICE_AUTH). target is a table with one
 -- of: playerId, steamId, discordId, steamName. Lets a second instance act as
 -- a different account for multiplayer testing.

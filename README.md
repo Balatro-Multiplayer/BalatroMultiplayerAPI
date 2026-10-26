@@ -51,15 +51,15 @@ Clone the repository straight into `Mods/`, or symlink it there. The folder name
 git clone https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI.git
 ```
 
-When `dev/init.lua` is present, the mod loads it. It switches the client to a local server stack (Nakama on `127.0.0.1:7350`, plain HTTP) and turns on a few developer switches, all read from environment variables:
+To work against a Dev server, also install the Dev mod from BalatroMultiplayerServer's `dev/client/` folder (copy or symlink that folder into `Mods/`). It points the client at the Dev server (Nakama on `127.0.0.1:7350`, plain HTTP) and reads these environment variables:
 
 | Variable | Effect |
 |---|---|
-| `BMP_SERVER_HOST`, `BMP_SERVER_PORT` | Use this server instead of the local stack |
-| `BMP_IMPERSONATE_ID` / `BMP_IMPERSONATE_NAME` | Log in as another account with a Nakama device login (the server must allow device auth). This lets you run several game instances on one Steam account. |
-| `BMP_DEV_SKIP_RANKED_ANTICHEAT` | Treat the launcher's ranked supervision as present so ranked queues can be tested |
+| `BMP_SERVER_HOST`, `BMP_SERVER_PORT` | Use this server instead of `127.0.0.1:7350` |
+| `BMP_IMPERSONATE_ID` / `BMP_IMPERSONATE_NAME` | Log in as that test account with a Device login. This lets you run several game instances on one Steam account. |
+| `BMP_DEV_STEAM_LOGIN=1` | Log in with Steam login (the Dev server needs a Steam Web API key) |
 
-Follow BalatroMultiplayerServer's README to run the server stack locally. Players never get `dev/`: release builds strip it.
+The Dev mod reaches MPAPI only through `MPAPI.dev` (`api/dev.lua`). Follow BalatroMultiplayerServer's README to run the server stack locally. Players never get the Dev mod: it is not part of MPAPI.
 
 ## Configuration
 
@@ -227,7 +227,6 @@ Each one has its documentation in the header comment of the file that defines it
 | `lovely/` | Lovely patches to the base game (The Order, pool gating, HUD, ban timing, crash guards) |
 | `localization/` | UI strings |
 | `compatibility/` | Integrations with other mods (DebugPlus) |
-| `dev/` | Developer-only overrides; stripped from release builds |
 
 ## License
 

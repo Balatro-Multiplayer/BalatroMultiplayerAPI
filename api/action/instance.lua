@@ -42,7 +42,8 @@ local function refuse_foreign_action(lobby, action_type)
 		table.remove(dropped, 1)
 	end
 	local message = 'action ' .. tostring(action_type.key) .. ' dropped: not an action of the ' .. tostring(lobby.mod_id) .. ' lobby'
-	if MPAPI._internal.dev_build and not warned_foreign[action_type.key] then
+	-- Loud only with the Dev mod (api/dev.lua), where it points at a mod bug.
+	if MPAPI._internal.dev_mod_loaded and not warned_foreign[action_type.key] then
 		warned_foreign[action_type.key] = true
 		MPAPI.sendWarnMessage(message)
 	else

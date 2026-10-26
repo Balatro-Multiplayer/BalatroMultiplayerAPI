@@ -270,7 +270,7 @@ local function selection_randomize(state, rng)
 	return out
 end
 
--- Exposed for the standalone test harness (dev/test_banpick_selection.lua).
+-- Exposed for standalone tests of the selection rules.
 BP._selection = {
 	needed = selection_needed,
 	contains = selection_contains,
