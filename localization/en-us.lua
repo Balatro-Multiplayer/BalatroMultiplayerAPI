@@ -19,9 +19,6 @@ return {
 			-- is true (Ranked integrity handshake completed) - see
 			-- ui/main_menu.lua's verified_node and api/connection/lifecycle.lua.
 			k_verified_cap = 'VERIFIED',
-			-- ...or this one while the reported mods may queue casual
-			-- (api/connection/standing.lua).
-			k_valid_cap = 'VALID',
 			k_your_avatar_cap_1 = 'YOUR',
 			k_your_avatar_cap_2 = 'AVATAR',
 			k_click_to_change = 'Click to Change',
@@ -43,10 +40,16 @@ return {
 			k_tos_blocked_title = 'Account creation is unavailable.',
 			k_tos_birth_section = 'Your birthday',
 			k_tos_birth_hint = "We won't store it, we just need to check that you are old enough to play.",
+			k_age_birth_hint = "We won't store it. We only use it to decide if chat is open to you.",
 			k_tos_agreement_section = 'What you\'re agreeing to',
-			k_tos_bullet_1 = 'We save your Steam display name, hashed identifiers, and match results.',
+			-- k_tos_bullet_1 and _3 match the website's bullets
+			-- (BalatroMultiplayerServer apps/web/src/app/auth/tos/page.tsx).
+			k_tos_bullet_1 = {
+				'We save your Steam display name, hashed identifiers, match results and chat.',
+				'Chat is checked by a model we run ourselves.',
+			},
 			k_tos_bullet_2 = "We don't sell your data or use it for ads. Ever.",
-			k_tos_bullet_3 = 'You can delete your account from the account overlay at any time.',
+			k_tos_bullet_3 = 'You can delete your account from your profile page at any time.',
 			k_tos_agree = 'I have read and agree to the Privacy & Terms Notice',
 			b_open_download_page = 'Open Download Page',
 			b_coming_soon = 'Coming Soon',
@@ -107,6 +110,8 @@ return {
 			k_reconnect_prompt_title = 'Reconnect?',
 			k_reconnect_prompt_body = 'You are still connected to a lobby. Reconnect to pick up where you left off, or leave to forfeit your spot.',
 			b_reconnect = 'Reconnect',
+			-- Badge on a player who rejoined after a crash and is replaying their run.
+			k_catching_up = 'catching up',
 			b_abandon = 'Abandon',
 			b_leave = 'Leave',
 			-- One seat per account across every mod: a create/join refused
@@ -164,6 +169,7 @@ return {
 			k_moderator_kicked_you = 'A moderator removed you from the lobby.',
 			-- Ban notice (Nakama: api/connection/moderation.lua)
 			k_banned_title = 'Account Banned',
+			k_network_banned_title = 'Network Banned',
 			k_lobby_create_failed_title = 'Could Not Create Lobby',
 			k_lobby_join_failed_title = 'Could Not Join Lobby',
 			k_queue_failed_title = 'Could Not Join Queue',
@@ -263,6 +269,12 @@ return {
 			b_retry = 'Retry',
 			b_leave_game_forfeit = 'Leave Game (Forfeit)',
 			k_rejoin_checking = 'Checking your game...',
+			k_forfeited_title = 'Match Forfeited',
+			k_forfeited_body = 'You forfeited this match.',
+			k_forfeited_menu = 'Main Menu',
+			k_connection_lost_title = 'Connection Lost',
+			k_connection_lost_body = 'Connection lost. The match is over.',
+			k_connection_lost_menu = 'Main Menu',
 			k_ranked_launcher_outdated_body = 'A new version of Balatro Essentials Toolkit is required to continue playing Ranked. Update BET to keep playing.',
 			k_ranked_mods_outdated_body = 'Your Ranked mods are out of date. Relaunch through BET to update them, then queue again.',
 			-- Ready-status hover badge (lobby player list)

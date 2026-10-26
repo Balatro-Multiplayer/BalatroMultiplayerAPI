@@ -42,7 +42,8 @@ local function refuse_foreign_action(lobby, action_type)
 		table.remove(dropped, 1)
 	end
 	local message = 'action ' .. tostring(action_type.key) .. ' dropped: not an action of the ' .. tostring(lobby.mod_id) .. ' lobby'
-	if MPAPI._internal.dev_build and not warned_foreign[action_type.key] then
+	-- Loud only with the Dev mod (api/dev.lua), where it points at a mod bug.
+	if MPAPI._internal.dev_mod_loaded and not warned_foreign[action_type.key] then
 		warned_foreign[action_type.key] = true
 		MPAPI.sendWarnMessage(message)
 	else
@@ -119,10 +120,13 @@ local function create_action_instance(lobby, action_type)
 				end
 			end
 		end
+		return sent
 	end
 
+	-- Returns false when the action was valid but the lobby's socket is down
+	-- (nil when it was refused or delivered locally).
 	function instance:send(target_id, params)
-		dispatch(self, target_id, params, 'send')
+		return dispatch(self, target_id, params, 'send')
 	end
 
 	function instance:broadcast(params)

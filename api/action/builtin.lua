@@ -191,6 +191,31 @@ L.apply_setup = function(lobby, view, quiet)
 	end
 end
 
+-- Up to LOG_BATCH_MAX replay events in one message, in order (the same events
+-- mpapi_log_event takes one by one). The server tells the others once:
+-- { playerId, t, opcode, args, count } of the last event kept. A batch costs the
+-- server's log budget one token per event, as single events do.
+MPAPI.ActionType({
+	key = 'mpapi_log_events',
+	authoritative = true,
+	parameters = {
+		{ key = 'events', type = 'table', required = true },
+	},
+	on_receive = function(_, _, result)
+		local lobby = MPAPI.get_current_lobby()
+		if not (lobby and type(result) == 'table' and type(result.playerId) == 'string') then
+			return
+		end
+		if result.playerId == lobby.player_id or type(result.t) ~= 'number' then
+			return
+		end
+		local seen = MPAPI.replay._last_seen_t
+		if result.t > (seen[result.playerId] or 0) then
+			seen[result.playerId] = result.t
+		end
+	end,
+})
+
 L.apply_game_started = function(lobby, started)
 	lobby._game.started = {
 		run_id = started.runId,
@@ -283,29 +308,146 @@ L.start_game = function(lobby, opts, cb)
 	}, cb)
 end
 
+-- An action that ends the game. Events recorded this frame go first: the server stores no event
+-- after the end.
+local function ask_server_at_game_end(lobby, key, params, cb)
+	L.flush_log_events(lobby)
+	ask_server(lobby, key, params, cb)
+end
+
 -- Every participant reports the placements once the game is over; the
 -- server ends it (GAME_ENDED) when they're all in. cb(err).
 L.report_result = function(lobby, placements, cb)
-	ask_server(lobby, 'mpapi_report_result', { placements = placements }, cb and function(err)
+	ask_server_at_game_end(lobby, 'mpapi_report_result', { placements = placements }, cb and function(err)
 		cb(err)
 	end)
 end
 
 -- Host only: ends the game with no result (GAME_ENDED, status 'abandoned').
 L.abandon_game = function(lobby, cb)
-	ask_server(lobby, 'mpapi_abandon_game', {}, cb and function(err)
+	ask_server_at_game_end(lobby, 'mpapi_abandon_game', {}, cb and function(err)
 		cb(err)
 	end)
 end
 
 -- Host only: a new game on a new seed (GAME_STARTED again). cb(err, started).
 L.restart_game = function(lobby, cb)
-	ask_server(lobby, 'mpapi_restart_game', {}, cb)
+	ask_server_at_game_end(lobby, 'mpapi_restart_game', {}, cb)
 end
 
 -- Replay events for a server-refereed lobby go to the server, which keeps
 -- them with the run. Only while a game is on: the server has nowhere to put
 -- them otherwise.
+--
+-- An event that can't be sent because the socket is down is kept, and sent in
+-- order once the seat is back (flush_log_events, after the rejoin snapshot).
+-- Without that, the server's log for this player has a gap and its hash check
+-- fails. Every send goes through transmit_log_events, so the way events leave
+-- the client is changed in this one place.
+--
+-- Events leave in batches (mpapi_log_events): one message per
+-- LOG_BATCH_MAX events, or fewer when their JSON passes LOG_BATCH_BYTES (the
+-- server refuses a message with more than 16KB of params). A flush is also
+-- deferred to the end of the frame, so a burst made in one frame goes out as
+-- a few messages, not one per event.
+local LOG_BATCH_MAX = 50
+local LOG_BATCH_BYTES = 12000
+L.LOG_BATCH_MAX = LOG_BATCH_MAX
+L.LOG_BATCH_BYTES = LOG_BATCH_BYTES
+
+local function event_bytes(event)
+	local ok, encoded = pcall(require("json").encode, event)
+	return ok and type(encoded) == 'string' and #encoded or 200
+end
+
+-- Sends one batch (a single event goes as plain mpapi_log_event); false when the socket is down.
+local function transmit_log_events(lobby, batch)
+	if #batch == 1 then
+		return lobby:action(MPAPI.ActionTypes.mpapi_log_event):send(nil, batch[1]) ~= false
+	end
+	return lobby:action(MPAPI.ActionTypes.mpapi_log_events):send(nil, { events = batch }) ~= false
+end
+
+-- Drops kept events of a run that is not the current one (or when no game is on).
+local function keep_current_run(lobby)
+	local kept = lobby._unsent_log_events
+	if not kept then
+		return
+	end
+	local started = lobby._game.started
+	local current = {}
+	for _, event in ipairs(kept) do
+		if started and event.run == started.run_id then
+			current[#current + 1] = event
+		end
+	end
+	lobby._unsent_log_events = #current > 0 and current or nil
+end
+
+-- Sends the kept events in order, in batches; stops at the first batch that
+-- can't go, and keeps it and the rest for the next flush.
+L.flush_log_events = function(lobby)
+	keep_current_run(lobby)
+	local kept = lobby._unsent_log_events
+	if not kept then
+		return
+	end
+	local sent = 0
+	while sent < #kept do
+		local batch, bytes = {}, 0
+		for i = sent + 1, math.min(#kept, sent + LOG_BATCH_MAX) do
+			local size = event_bytes(kept[i])
+			if #batch > 0 and bytes + size > LOG_BATCH_BYTES then
+				break
+			end
+			batch[#batch + 1] = kept[i]
+			bytes = bytes + size
+		end
+		if not transmit_log_events(lobby, batch) then
+			break
+		end
+		sent = sent + #batch
+	end
+	if sent == #kept then
+		lobby._unsent_log_events = nil
+		return
+	end
+	local rest = {}
+	for i = sent + 1, #kept do
+		rest[#rest + 1] = kept[i]
+	end
+	lobby._unsent_log_events = rest
+end
+
+-- Flushes at the end of this frame (once however many events are recorded
+-- before it); at once when there is no event manager (headless tests).
+-- no_delete: a run start or a return to the menu clears the event queue. A
+-- cleared flush would leave _log_flush_pending set for ever, and no later
+-- event would leave the client.
+local function flush_soon(lobby)
+	if lobby._log_flush_pending then
+		return
+	end
+	if not (G and G.E_MANAGER and Event) then
+		L.flush_log_events(lobby)
+		return
+	end
+	lobby._log_flush_pending = true
+	G.E_MANAGER:add_event(Event({
+		trigger = 'immediate',
+		blocking = false,
+		blockable = false,
+		no_delete = true,
+		func = function()
+			lobby._log_flush_pending = nil
+			if not lobby._destroyed then
+				L.flush_log_events(lobby)
+			end
+			return true
+		end,
+	}))
+end
+
 L.send_log_event = function(lobby, t, opcode, args)
 	if not lobby._game.started then
 		return
@@ -315,10 +457,15 @@ L.send_log_event = function(lobby, t, opcode, args)
 	end
 	-- Tagged with the run, so an event still in flight when the server
 	-- restarts the game isn't kept in the new run's log.
-	lobby:action(MPAPI.ActionTypes.mpapi_log_event):send(nil, {
+	local event = {
 		t = t,
 		opcode = opcode,
 		args = args,
 		run = lobby._game.started.run_id,
-	})
+	}
+	-- Behind anything already kept, so the order holds.
+	local kept = lobby._unsent_log_events or {}
+	kept[#kept + 1] = event
+	lobby._unsent_log_events = kept
+	flush_soon(lobby)
 end

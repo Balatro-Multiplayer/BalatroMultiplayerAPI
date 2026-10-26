@@ -4,7 +4,7 @@
     Entirely gated on two env vars BET only ever sets for a Ranked launch
     (BET_RANKED_SUPERVISOR_PORT / BET_RANKED_SUPERVISOR_SECRET, read once
     via os.getenv at load time, same one-shot-env-var-at-startup
-    precedent as dev/init.lua's BMP_IMPERSONATE_ID). Their absence -
+    precedent as the Dev mod's BMP_IMPERSONATE_ID). Their absence -
     Casual launches, or the game started manually outside BET entirely -
     means this whole module stays completely inert: no thread, no
     socket, MPAPI.anticheat.active stays false. That's the mechanism that

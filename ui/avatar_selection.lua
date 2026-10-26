@@ -79,11 +79,12 @@ local create_UIBox_avatar_selection = function()
 end
 
 -- Every catalog avatar this client can draw (api/avatars/catalog.lua: the
--- server's list, or the fallback for a server without one).
+-- server's list, or the fallback for a server without one), except a locked
+-- one the player can never earn (MPAPI.avatars.goals.obtainable).
 local function drawable_entries(catalog)
 	local entries = {}
 	for _, entry in ipairs(catalog.avatars) do
-		if G.P_CENTERS[entry.id] then
+		if G.P_CENTERS[entry.id] and MPAPI.avatars.goals.obtainable(entry) then
 			entries[#entries + 1] = entry
 		end
 	end

@@ -16,6 +16,8 @@ MPAPI.connection_state = {
 	-- The MPAPI.OfflineReason of the last failed connection, shown under
 	-- "Offline"; nil when not offline or offline on purpose.
 	offline_reason = nil,
+	-- The server's own message when it refused that connection, else nil.
+	offline_server_message = nil,
 	player_id = '',
 	display_name = localize('b_retry_connection'),
 	steam_name = '',
@@ -25,6 +27,8 @@ MPAPI.connection_state = {
 	preferred_joker = 'j_joker',
 	privileges = {},
 	tos_is_update = false,
+	-- TOS_REQUIRED on a server without the Notice: only the age question.
+	tos_age_only = false,
 	chat_enabled = false,
 	chat_blocked = false,
 	mute_list = {},

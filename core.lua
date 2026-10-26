@@ -154,6 +154,7 @@ MPAPI.load_mpapi_dir('lib')
 -- Ordered preload for api/replay's load-order-sensitive files (see
 -- load_mpapi_file's dedup comment above) -- everything else under api/ has no
 -- such dependency and is fine left to the general recursive scan below.
+MPAPI.load_mpapi_file('api/replay/opcodes.lua')
 MPAPI.load_mpapi_file('api/replay/recorder.lua')
 MPAPI.load_mpapi_file('api/replay/codes.lua')
 MPAPI.load_mpapi_file('api/replay/area_utils.lua')
@@ -167,13 +168,6 @@ MPAPI.load_mpapi_file('api/page/definition.lua')
 
 MPAPI.load_mpapi_dir('api', true)
 MPAPI.load_mpapi_dir('ui', true)
-
--- Load dev overrides if the dev/ directory exists (stripped in release builds) --
--- absence here is expected, so guard explicitly rather than relying on
--- load_mpapi_file's (now-fatal) missing-file path.
-if NFS.getInfo(MPAPI.path .. '/dev/init.lua') then
-	MPAPI.load_mpapi_file('dev/init.lua')
-end
 
 G.E_MANAGER:add_event(Event({
 	blockable = false,

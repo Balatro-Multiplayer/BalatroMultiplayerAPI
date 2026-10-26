@@ -51,29 +51,61 @@ Clone the repository straight into `Mods/`, or symlink it there. The folder name
 git clone https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI.git
 ```
 
-When `dev/init.lua` is present, the mod loads it. It switches the client to a local server stack (Nakama on `127.0.0.1:7350`, plain HTTP) and turns on a few developer switches, all read from environment variables:
+To work against a Dev server, also install the Dev mod from BalatroMultiplayerServer's `dev/client/` folder (copy or symlink that folder into `Mods/`). It points the client at the Dev server (Nakama on `127.0.0.1:7350`, plain HTTP) and reads these environment variables:
 
 | Variable | Effect |
 |---|---|
-| `BMP_SERVER_HOST`, `BMP_SERVER_PORT` | Use this server instead of the local stack |
-| `BMP_IMPERSONATE_ID` / `BMP_IMPERSONATE_NAME` | Log in as another account with a Nakama device login (the server must allow device auth). This lets you run several game instances on one Steam account. |
-| `BMP_DEV_SKIP_RANKED_ANTICHEAT` | Treat the launcher's ranked supervision as present so ranked queues can be tested |
+| `BMP_SERVER_HOST`, `BMP_SERVER_PORT` | Use this server instead of `127.0.0.1:7350` |
+| `BMP_IMPERSONATE_ID` / `BMP_IMPERSONATE_NAME` | Log in as that test account with a Device login. This lets you run several game instances on one Steam account. |
+| `BMP_DEV_STEAM_LOGIN=1` | Log in with Steam login (the Dev server needs a Steam Web API key) |
 
-Follow BalatroMultiplayerServer's README to run the server stack locally. Players never get `dev/`: release builds strip it.
+The Dev mod reaches MPAPI only through `MPAPI.dev` (`api/dev.lua`). To start a Dev server, and for the Dev mod's full notes, see "Dev server" and "Dev mod" in the [BalatroMultiplayerServer README](https://github.com/Balatro-Multiplayer/BalatroMultiplayerServer#dev-mod). Players never get the Dev mod: it is not part of MPAPI.
 
 ## Configuration
 
-`config.lua` is the Steamodded mod config. Players can toggle `chat_enabled` in-game. You can also set the server endpoints there. Each one falls back to the production default when it is unset:
+`config.lua` is the Steamodded mod config. Players can toggle `chat_enabled` in-game. Steamodded saves the config to `config/MultiplayerAPI.jkr` in the Balatro save folder (the folder that holds `Mods`). A key in that saved file wins over the same key in `config.lua`.
 
-| Key | Default |
+### Join a Community server
+
+By default the game plays on the Official server. To play on a Community server, get its address from the person who runs it. Then:
+
+1. Close Balatro.
+2. Open `config.lua` in MPAPI's folder in `Mods`, and add the server keys inside the braces:
+
+   ```lua
+   return {
+   	['chat_enabled'] = false,
+   	['use_custom_server'] = true,
+   	['server_host'] = '127.0.0.1', -- the server's address
+   	['server_port'] = 7350,
+   	['server_secure'] = false,
+   }
+   ```
+
+3. If `config/MultiplayerAPI.jkr` exists in the Balatro save folder, delete it (it can hold older settings).
+4. Start Balatro through Steam. The game logs in with Device login, so it still needs the Steam client for your Steam id. The Lovely log shows `Login: Device (server is not Official)`.
+
+On a Community server your account and rating are separate from the Official server. Ranked does not need the launcher there, and you may queue with any mods. Player names on a Community server are not proven: anyone can use any name.
+
+Each key falls back to the Official server's value when it is unset. The game reads the `server_*` keys only when `use_custom_server = true`:
+
+| Key | Official server value |
 |---|---|
 | `server_host` | `nakama.balatromp.com` |
 | `server_port` | `443` |
-| `server_secure` | `true` |
+| `server_secure` | `true` (TLS) |
 | `nakama_server_key` | `defaultkey` |
 | `web_url` | `https://new.balatromp.com` (match-log and report links) |
 
-Options passed to `MPAPI.connect{ host, port, secure, server_key, web_url }` take precedence over the config. On Windows, write `127.0.0.1` rather than `localhost`. Windows tries IPv6 first, and the connection then stalls for about 20 seconds before it falls back to IPv4.
+On Windows, write `127.0.0.1` rather than `localhost`. Windows tries IPv6 first, and the connection then stalls for about 20 seconds before it falls back to IPv4.
+
+To go back to the Official server, remove the `use_custom_server` line from `config.lua`, delete `config/MultiplayerAPI.jkr` again, and restart Balatro. You can leave the `server_*` keys: the game ignores them. A new MPAPI version replaces `config.lua`, so you then add the keys again.
+
+To run a Community server yourself, see "Run a Community server" in the [BalatroMultiplayerServer README](https://github.com/Balatro-Multiplayer/BalatroMultiplayerServer#run-a-community-server).
+
+### Mod code
+
+Options passed to `MPAPI.connect{ host, port, secure, server_key, web_url }` take precedence over the config.
 
 ## Using MPAPI from a mod
 
@@ -228,7 +260,6 @@ Each one has its documentation in the header comment of the file that defines it
 | `lovely/` | Lovely patches to the base game (The Order, pool gating, HUD, ban timing, crash guards) |
 | `localization/` | UI strings |
 | `compatibility/` | Integrations with other mods (DebugPlus) |
-| `dev/` | Developer-only overrides; stripped from release builds |
 
 ## License
 

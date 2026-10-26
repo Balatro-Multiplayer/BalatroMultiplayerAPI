@@ -33,6 +33,11 @@ function connection.new(opts)
 		nakama_client = opts.nakama_client,
 		nakama_session = nil,
 		config = opts.config or {},
+		-- Official server: Steam login. Any other server: Device login.
+		official = opts.official ~= false,
+		-- A test account from the Dev mod (MPAPI.dev.set_identity): Device
+		-- login as that account, on any server.
+		impersonate = opts.impersonate,
 		state = STATES.DISCONNECTED,
 
 		-- The Nakama user id and session token.
@@ -99,10 +104,15 @@ local function set_state(self, new_state, context)
 	fire(self, new_state, context or { old_state = old })
 end
 
--- A failed connection: DISCONNECTED with the raw error for the log and the
--- MPAPI.OfflineReason the menu shows.
-local function fail(self, offline_reason, message)
-	set_state(self, STATES.DISCONNECTED, { error = message, offline_reason = offline_reason })
+-- A failed connection: DISCONNECTED with the raw error for the log, the
+-- MPAPI.OfflineReason the menu shows and, when the server refused, its own
+-- message (MPAPI.offline_reason_lines).
+local function fail(self, offline_reason, message, server_message)
+	set_state(self, STATES.DISCONNECTED, {
+		error = message,
+		offline_reason = offline_reason,
+		server_message = server_message,
+	})
 end
 
 -- The offline reason for a request the server never answered
@@ -164,13 +174,28 @@ end
 -- Steam ticket handshake instead of preferring a cached refresh token.
 function connection:_do_auth()
 	set_state(self, STATES.AUTHENTICATING)
-	self:_try_steam_auth()
+	if self.impersonate then
+		MPAPI.sendDebugMessage('Login: Device as a Dev mod test account')
+		self:_try_impersonate_auth(self.impersonate)
+	elseif self.official then
+		MPAPI.sendDebugMessage('Login: Steam (Official server)')
+		self:_try_steam_auth()
+	else
+		MPAPI.sendDebugMessage('Login: Device (server is not Official)')
+		self:_try_device_auth()
+	end
 end
 
 function connection:_handle_login_response(data)
 	if data.tosRequired then
 		self._pending_tos_token = data.token
 		set_state(self, STATES.TOS_REQUIRED, { steam_name = self.steam_name, tos_update = data.tosUpdate or false })
+		return
+	end
+	-- A server kind without the Notice still asks the age once, for chat.
+	if data.ageRequired then
+		self._pending_tos_token = data.token
+		set_state(self, STATES.TOS_REQUIRED, { steam_name = self.steam_name, age_only = true })
 		return
 	end
 
@@ -184,13 +209,18 @@ function connection:_cancel_auth_ticket()
 	end
 end
 
--- Calls a Nakama RPC on this connection's client. cb(err_message, data).
+-- Calls a Nakama RPC on this connection's client. cb(err_message, data,
+-- answered): on an error, answered is true when the message is the server's.
 function connection:_nakama_rpc(id, body, cb)
 	local encoded = (body and next(body)) and MPAPI.json_encode(body) or '{}'
 	self.nakama_client.rpc_func(id, encoded, nil, function(result)
 		if not result or result.error then
 			local e = result and result.error
-			cb(type(e) == 'table' and e.message or (result and result.message) or ('RPC ' .. id .. ' failed'))
+			if type(e) == 'table' and e.message then
+				cb(e.message, nil, true)
+			else
+				cb((result and result.message) or ('RPC ' .. id .. ' failed'), nil, false)
+			end
 			return
 		end
 		local ok, data = pcall(MPAPI.json_decode, result.payload or '{}')
@@ -206,12 +236,12 @@ end
 function connection:_nakama_session_init(session)
 	self.nakama_session = session
 	self.nakama_client.set_bearer_token(session.token)
-	self:_nakama_rpc('session_init', { steamName = self.steam_name }, function(err, data)
+	self:_nakama_rpc('session_init', { steamName = self.steam_name }, function(err, data, answered)
 		if self.state ~= STATES.AUTHENTICATING then
 			return
 		end
 		if err then
-			self:_login_refused('Nakama login rejected: ', err, MPAPI.offline_reason_for_server_refusal(err))
+			self:_login_refused('Nakama login rejected: ', err, MPAPI.offline_reason_for_server_refusal(err), answered)
 			return
 		end
 		data.token = session.token
@@ -228,24 +258,30 @@ function connection:_nakama_auth_failed(session)
 	end
 	local answered = session ~= nil and session.code ~= nil
 	local reason = answered and MPAPI.offline_reason_for_server_refusal(message) or self:_no_answer_reason()
-	self:_login_refused('Nakama auth failed: ', message, reason)
+	self:_login_refused('Nakama auth failed: ', message, reason, answered)
 end
 
--- A refused Nakama login. A banned account's refusal ("Account banned ...",
--- see api/connection/moderation.lua) is shown to the player as a ban.
-function connection:_login_refused(prefix, message, offline_reason)
+-- A refused Nakama login. A ban refusal (a banned account or network, see
+-- api/connection/moderation.lua login_ban) is shown to the player as a ban.
+-- answered: the message is the server's, so the menu may show it.
+function connection:_login_refused(prefix, message, offline_reason, answered)
 	local moderation = MPAPI._internal.moderation
-	local ban = moderation and moderation.account_ban_message(message)
+	local ban = moderation and moderation.login_ban(message)
 	if ban and MPAPI.show_banned_notice then
-		MPAPI.show_banned_notice('k_banned_title', ban)
+		MPAPI.show_banned_notice(ban.title_key, ban.message)
 	end
-	set_state(self, STATES.DISCONNECTED, { error = prefix .. tostring(message), banned = ban, offline_reason = offline_reason })
+	set_state(self, STATES.DISCONNECTED, {
+		error = prefix .. tostring(message),
+		banned = ban and ban.message,
+		offline_reason = offline_reason,
+		server_message = answered and tostring(message) or nil,
+	})
 end
 
 -- The Steam ticket goes to Nakama as a custom login: Nakama's built-in Steam
 -- check needs Balatro's publisher key, so the server's runtime hook checks
 -- the ticket in vars.steam_ticket and replaces the placeholder id with
--- "steam:<steamid>".
+-- "steamhash:<64 hex>" (a hash of the SteamID, never the SteamID itself).
 function connection:_try_steam_auth()
 	if not self.steam or not self.steam.available() then
 		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam is not available')
@@ -274,7 +310,34 @@ function connection:_try_steam_auth()
 	end, NAKAMA_LOGIN_RETRY_INTERVALS)
 end
 
--- Dev only: log in as another player with a device login keyed by the
+-- A Nakama session from a Device login.
+function connection:_on_device_session(session)
+	if self.state ~= STATES.AUTHENTICATING then
+		return
+	end
+	if not session or session.error then
+		self:_nakama_auth_failed(session)
+		return
+	end
+	self:_nakama_session_init(session)
+end
+
+-- A server that is not Official takes a Device login keyed by the raw
+-- SteamID64, with no username: the server gives the same Steam id the same
+-- account and takes the Steam name from session_init. Nothing proves either,
+-- so any player there can log in as anyone.
+function connection:_try_device_auth()
+	local steam_id, err = self.steam.get_steam_id()
+	if not steam_id then
+		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam id unavailable: ' .. tostring(err))
+		return
+	end
+	self.nakama_client.authenticate_device(steam_id, nil, true, nil, function(session)
+		self:_on_device_session(session)
+	end)
+end
+
+-- Dev mod only: log in as another player with a device login keyed by the
 -- target (needs the server's ALLOW_DEVICE_AUTH). target is a table with one
 -- of: playerId, steamId, discordId, steamName. Lets a second instance act as
 -- a different account for multiplayer testing.
@@ -283,14 +346,7 @@ function connection:_try_impersonate_auth(target)
 	local key = target.playerId or target.steamId or target.discordId or target.steamName or 'dev'
 	self.steam_name = target.steamName or ('Dev-' .. tostring(key):sub(1, 8))
 	self.nakama_client.authenticate_device(NAKAMA_DEV_DEVICE_PREFIX .. tostring(key), nil, true, nil, function(session)
-		if self.state ~= STATES.AUTHENTICATING then
-			return
-		end
-		if not session or session.error then
-			self:_nakama_auth_failed(session)
-			return
-		end
-		self:_nakama_session_init(session)
+		self:_on_device_session(session)
 	end)
 end
 
@@ -347,7 +403,8 @@ function connection:connect()
 	self:_do_auth()
 end
 
--- Called by the UI after the user reads and accepts the ToS / Privacy Policy.
+-- Called by the UI after the user accepts the Notice, or (age_only) answers
+-- the age question on a server without the Notice.
 -- chat_eligible: boolean computed client-side from birthdate (never sent raw).
 function connection:accept_tos(chat_eligible)
 	if self.state ~= STATES.TOS_REQUIRED or not self._pending_tos_token then
@@ -361,12 +418,12 @@ function connection:accept_tos(chat_eligible)
 	if chat_eligible ~= nil then
 		body.chatEligible = chat_eligible and true or false
 	end
-	self:_nakama_rpc('tos_accept', body, function(err, data)
+	self:_nakama_rpc('tos_accept', body, function(err, data, answered)
 		if self.state ~= STATES.AUTHENTICATING then
 			return
 		end
 		if err then
-			fail(self, MPAPI.OfflineReason.OTHER, 'ToS acceptance failed: ' .. tostring(err))
+			fail(self, MPAPI.OfflineReason.OTHER, 'ToS acceptance failed: ' .. tostring(err), answered and err or nil)
 			return
 		end
 		data.token = token

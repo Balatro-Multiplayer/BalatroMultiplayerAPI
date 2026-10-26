@@ -9,7 +9,7 @@
 local NL = {}
 
 -- Must match nakama/src/lobby/protocol.ts.
-NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5 }
+NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6 }
 NL.ServerOp = {
 	SNAPSHOT = 100,
 	EVENT = 101,
@@ -32,7 +32,11 @@ NL.SERVER_TARGET = 'server'
 -- Seconds between socket reconnect attempts; the last one repeats until the
 -- server's grace period (LOBBY_GRACE_SECONDS, 120 by default) is surely over.
 local RECONNECT_BACKOFF = { 0.5, 1, 2, 4 }
-local RECONNECT_GIVE_UP_SECONDS = 130
+-- The client gives up this long after the server's grace period: the server
+-- sends the grace in every snapshot (Snapshot.graceSeconds). Until the first
+-- snapshot arrives, the server's default is assumed.
+local DEFAULT_GRACE_SECONDS = 120
+local RECONNECT_GIVE_UP_MARGIN_SECONDS = 10
 -- Refresh the session this long before it expires.
 local SESSION_REFRESH_MARGIN = 60
 
@@ -397,11 +401,32 @@ function NL.join(match_id, mod_id, listener, cb)
 	end)
 end
 
-local function lose(reason)
+-- Seconds after the socket drops at which the client gives up reconnecting,
+-- for a server grace period of `grace_seconds` (nil: the server's default).
+-- Pure.
+function NL.give_up_seconds(grace_seconds)
+	local grace = tonumber(grace_seconds)
+	if not grace or grace <= 0 then
+		grace = DEFAULT_GRACE_SECONDS
+	end
+	return grace + RECONNECT_GIVE_UP_MARGIN_SECONDS
+end
+
+-- Records the server's seat grace period for the current match (from its
+-- snapshot). No-op outside a match.
+function NL.set_grace_seconds(grace_seconds)
+	if match then
+		match.grace_seconds = tonumber(grace_seconds)
+	end
+end
+
+-- gave_up is true when reconnecting ran out of time (the match is over, as the
+-- server will have forfeited the seat) rather than the server refusing us.
+local function lose(reason, gave_up)
 	local lost = match
 	match = nil
 	if lost and lost.listener.lost then
-		lost.listener.lost(reason)
+		lost.listener.lost(reason, gave_up == true)
 	end
 end
 
@@ -449,8 +474,8 @@ schedule_rejoin = function()
 				end
 				return
 			end
-			if love.timer.getTime() - this.lost_since > RECONNECT_GIVE_UP_SECONDS then
-				lose(err)
+			if love.timer.getTime() - this.lost_since > NL.give_up_seconds(this.grace_seconds) then
+				lose(err, true)
 				return
 			end
 			if retryable then

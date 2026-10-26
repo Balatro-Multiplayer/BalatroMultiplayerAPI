@@ -44,6 +44,14 @@ local function on_player_reconnected(lobby, data)
 	lobby:_fire(MPAPI.LobbyEvent.PLAYER_RECONNECTED, data.playerId)
 end
 
+local function on_player_catching_up(lobby, data)
+	local catching_up = type(data.data) == 'table' and data.data.catchingUp == true
+	if data.playerId and lobby._players[data.playerId] then
+		lobby._players[data.playerId].catching_up = catching_up
+	end
+	lobby:_fire(MPAPI.LobbyEvent.PLAYER_CATCHING_UP, data.playerId, catching_up)
+end
+
 local function on_metadata_changed(lobby, data)
 	if data.data then
 		lobby._metadata = data.data
@@ -53,6 +61,7 @@ end
 
 local function on_host_changed(lobby, data)
 	if data.playerId then
+		lobby.host_id = data.playerId
 		lobby.is_host = (data.playerId == lobby.player_id)
 	end
 	lobby:_fire(MPAPI.LobbyEvent.HOST_CHANGED, data.playerId)
@@ -63,13 +72,24 @@ end
 -- why. Otherwise, just drop the removed player from the roster and reuse the
 -- existing PLAYER_LEFT event so ui/lobby.lua's roster-removal animation fires
 -- without duplicating that logic here.
+-- The kick reason of a seat the server forfeited because its catch-up ran past
+-- the mod's limit. BalatroMultiplayerServer nakama/src/lobby/catch_up.ts
+-- CATCH_UP_LIMIT_REASON: keep both the same.
+local CATCH_UP_LIMIT_REASON = 'catch_up_limit'
+
 local function on_player_kicked(lobby, data)
 	local was_self = data.playerId and data.playerId == lobby.player_id
 
 	if was_self then
 		L.drop(lobby)
-		-- A ban's removal is explained by the ban notice instead.
 		local kick = type(data.data) == 'table' and data.data or nil
+		if kick and kick.reason == CATCH_UP_LIMIT_REASON then
+			if MPAPI.show_forfeited_notice then
+				MPAPI.show_forfeited_notice()
+			end
+			return
+		end
+		-- A ban's removal is explained by the ban notice instead.
 		if MPAPI.show_kicked_notice and not (kick and kick.reason == 'banned') then
 			MPAPI.show_kicked_notice(kick)
 		end
@@ -92,6 +112,7 @@ local EVENT_HANDLERS = {
 	[MPAPI.LobbyEvent.PLAYER_KICKED] = on_player_kicked,
 	[MPAPI.LobbyEvent.PLAYER_DISCONNECTED] = on_player_disconnected,
 	[MPAPI.LobbyEvent.PLAYER_RECONNECTED] = on_player_reconnected,
+	[MPAPI.LobbyEvent.PLAYER_CATCHING_UP] = on_player_catching_up,
 	[MPAPI.LobbyEvent.METADATA_CHANGED] = on_metadata_changed,
 	[MPAPI.LobbyEvent.HOST_CHANGED] = on_host_changed,
 	[MPAPI.LobbyEvent.LOBBY_CLOSED] = on_lobby_closed,
@@ -100,6 +121,19 @@ local EVENT_HANDLERS = {
 		L.apply_game_ended(lobby, data.data)
 	end,
 }
+
+-- Whether the event `data` takes this client out of `lobby` (kicked, forfeited,
+-- lobby closed). A detached lobby (api/lobby/nakama.lua) applies such an event
+-- at once instead of holding it: the catch-up behind it must stop.
+L.ends_own_seat = function(lobby, data)
+	if type(data) ~= 'table' then
+		return false
+	end
+	if data.type == MPAPI.LobbyEvent.LOBBY_CLOSED then
+		return true
+	end
+	return data.type == MPAPI.LobbyEvent.PLAYER_KICKED and data.playerId ~= nil and data.playerId == lobby.player_id
+end
 
 -- apply_*: update the lobby from a decoded match message (api/lobby/nakama.lua)
 -- and fire the matching lobby events.

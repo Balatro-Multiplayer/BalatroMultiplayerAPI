@@ -1,6 +1,7 @@
 -- Shown when the server bans this player, or refuses a login because the
--- account is banned (Nakama only: see api/connection/moderation.lua). Same
--- small modal shape as ui/kicked_notice_overlay.lua, with the server's
+-- account or network is banned (Nakama only: see
+-- api/connection/moderation.lua). Same small modal shape as
+-- ui/kicked_notice_overlay.lua, with the server's
 -- wording as the body.
 local _state = {
 	title_key = 'k_banned_title',
@@ -69,7 +70,8 @@ function MPAPI.show_notice(title_key, body)
 	MPAPI.banned_notice_overlay:as_overlay()
 end
 
--- title_key: k_banned_title, k_queue_banned_title or k_chat_banned_title.
+-- title_key: k_banned_title, k_network_banned_title, k_queue_banned_title or
+-- k_chat_banned_title.
 function MPAPI.show_banned_notice(title_key, body)
 	MPAPI.show_notice(title_key or 'k_banned_title', body)
 end

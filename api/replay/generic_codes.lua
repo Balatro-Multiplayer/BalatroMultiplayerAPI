@@ -87,7 +87,7 @@ end
 -------------------------------------------------------------------------------
 
 MPAPI.RLOG_CODE {
-	key = 'money_delta',
+	key = MPAPI.OPCODE.MONEY_DELTA,
 	mods = { 'pvp', 'spdrn' },
 	-- Bare-scalar args (the delta amount itself, not a table) -- matches
 	-- fmt_args' bare-scalar handling in recorder.lua.
@@ -139,7 +139,7 @@ local function resolve_own_card(ctx, ref, area, idx, opcode)
 end
 
 MPAPI.RLOG_CODE {
-	key = 'sell',
+	key = MPAPI.OPCODE.SELL,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, area, idx, ref, human)
 		self:record({ area, idx, ref }, human)
@@ -148,7 +148,7 @@ MPAPI.RLOG_CODE {
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
 			local area_id, idx, ref = args and args[1], args and args[2], args and args[3]
-			local card = resolve_own_card(ctx, ref, RLOG.area_object(area_id), idx, 'sell')
+			local card = resolve_own_card(ctx, ref, RLOG.area_object(area_id), idx, MPAPI.OPCODE.SELL)
 			if card then
 				card:sell_card()
 				SMODS.calculate_context({ selling_card = true, card = card })
@@ -158,7 +158,7 @@ MPAPI.RLOG_CODE {
 }
 
 MPAPI.RLOG_CODE {
-	key = 'cashout',
+	key = MPAPI.OPCODE.CASHOUT,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self)
 		self:record(nil, "action:cashOut")
@@ -175,7 +175,7 @@ MPAPI.RLOG_CODE {
 -- spent from it (BalatroMultiplayerServer nakama/src/achievements/facts/money.ts);
 -- older logs have no args, and replay never reads them.
 MPAPI.RLOG_CODE {
-	key = 'reroll',
+	key = MPAPI.OPCODE.REROLL,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, cost, human)
 		self:record({ cost = cost }, human)
@@ -192,7 +192,7 @@ MPAPI.RLOG_CODE {
 -- "e1.2e10", "naneinf") reaches the server intact. Bookkeeping only: the
 -- server reads it (Stuntman), replay has nothing to apply.
 MPAPI.RLOG_CODE {
-	key = 'hand_scored',
+	key = MPAPI.OPCODE.HAND_SCORED,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, score)
 		self:record({ score = score })
@@ -207,11 +207,11 @@ MPAPI.RLOG_CODE {
 -- buy/open_pack/voucher share one write shape and one hook site (the opcode
 -- chosen dynamically by the bought card's set, see the buy_from_shop hook
 -- below) but are three distinct RLOG_CODEs, one per opcode string.
-local function shop_purchase_write(self, area, idx, ref, cost, human)
-	-- cost trails the existing {area, idx, ref} positions -- appended, not
-	-- inserted, so any reader keying off args[1]/args[2] (area/idx) is
-	-- unaffected by its presence.
-	self:record({ area, idx, ref, cost }, human)
+local function shop_purchase_write(self, area, idx, ref, cost, human, buy_and_use)
+	-- cost and the buy_and_use flag trail the existing {area, idx, ref}
+	-- positions -- appended, not inserted, so any reader keying off
+	-- args[1]/args[2] (area/idx) is unaffected by their presence.
+	self:record({ area, idx, ref, cost, buy_and_use or false }, human)
 end
 -- Confirmed live: vanilla's own G.FUNCS.buy_from_shop calls
 -- G.FUNCS.check_for_buy_space(c1) unless e.config.id == 'buy_and_use' -- and
@@ -227,23 +227,22 @@ local function shop_purchase_replay(self, args, ctx)
 	if ctx.schema_version >= 1 then
 		if not ctx.is_pov then return end
 		local area_id, idx, ref = args and args[1], args and args[2], args and args[3]
-		local card = resolve_own_card(ctx, ref, RLOG.area_object(area_id), idx, 'buy')
+		local card = resolve_own_card(ctx, ref, RLOG.area_object(area_id), idx, MPAPI.OPCODE.BUY)
 		if card then
-			local id = card.ability and card.ability.set == 'Booster' and 'buy_and_use' or nil
-			G.FUNCS.buy_from_shop({ config = { id = id, ref_table = card } })
+			G.FUNCS.buy_from_shop({ config = { id = MPAPI.playback.buy_button_id(card, args), ref_table = card } })
 		end
 	end
 end
 
-MPAPI.RLOG_CODE { key = 'buy', mods = { 'pvp', 'spdrn' }, write = shop_purchase_write, replay = shop_purchase_replay }
+MPAPI.RLOG_CODE { key = MPAPI.OPCODE.BUY, mods = { 'pvp', 'spdrn' }, write = shop_purchase_write, replay = shop_purchase_replay }
 MPAPI.RLOG_CODE {
-	key = 'open_pack',
+	key = MPAPI.OPCODE.OPEN_PACK,
 	mods = { 'pvp', 'spdrn' },
 	write = shop_purchase_write,
 	replay = shop_purchase_replay,
 }
 MPAPI.RLOG_CODE {
-	key = 'voucher',
+	key = MPAPI.OPCODE.VOUCHER,
 	mods = { 'pvp', 'spdrn' },
 	write = shop_purchase_write,
 	replay = shop_purchase_replay,
@@ -255,38 +254,38 @@ local function use_write(self, idx, targets, ref, target_refs, human)
 	self:record({ idx, targets, ref, target_refs }, human)
 end
 MPAPI.RLOG_CODE {
-	key = 'use',
+	key = MPAPI.OPCODE.USE,
 	mods = { 'pvp', 'spdrn' },
 	write = use_write,
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
 			local idx, targets, ref, target_refs = args and args[1], args and args[2], args and args[3], args and args[4]
-			local card = resolve_own_card(ctx, ref, G.consumeables, idx, 'use')
+			local card = resolve_own_card(ctx, ref, G.consumeables, idx, MPAPI.OPCODE.USE)
 			if not card then return end
-			if targets then highlight_resolved_hand_indices(targets, target_refs, ctx, 'use') end
+			if targets then highlight_resolved_hand_indices(targets, target_refs, ctx, MPAPI.OPCODE.USE) end
 			G.FUNCS.use_card({ config = { ref_table = card } })
 		end
 	end,
 }
 MPAPI.RLOG_CODE {
-	key = 'pack_pick',
+	key = MPAPI.OPCODE.PACK_PICK,
 	mods = { 'pvp', 'spdrn' },
 	write = use_write,
 	replay = function(self, args, ctx)
 		if ctx.schema_version >= 1 then
 			if not ctx.is_pov then return end
 			local idx, targets, ref, target_refs = args and args[1], args and args[2], args and args[3], args and args[4]
-			local card = resolve_own_card(ctx, ref, G.pack_cards, idx, 'pack_pick')
+			local card = resolve_own_card(ctx, ref, G.pack_cards, idx, MPAPI.OPCODE.PACK_PICK)
 			if not card then return end
-			if targets then highlight_resolved_hand_indices(targets, target_refs, ctx, 'pack_pick') end
+			if targets then highlight_resolved_hand_indices(targets, target_refs, ctx, MPAPI.OPCODE.PACK_PICK) end
 			G.FUNCS.use_card({ config = { ref_table = card } })
 		end
 	end,
 }
 
 MPAPI.RLOG_CODE {
-	key = 'pack_skip',
+	key = MPAPI.OPCODE.PACK_SKIP,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, refs)
 		self:record({ refs }, "action:skipPack")
@@ -299,7 +298,7 @@ MPAPI.RLOG_CODE {
 }
 
 MPAPI.RLOG_CODE {
-	key = 'reorder',
+	key = MPAPI.OPCODE.REORDER,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, area_id, perm, moved, human)
 		self:record({ area_id, perm, moved }, human)
@@ -372,7 +371,7 @@ MPAPI.RLOG_CODE {
 }
 
 MPAPI.RLOG_CODE {
-	key = 'play',
+	key = MPAPI.OPCODE.PLAY,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, played, played_refs, human)
 		self:record({ played, played_refs }, human)
@@ -391,7 +390,7 @@ MPAPI.RLOG_CODE {
 			if not ctx.is_pov then return end
 			local indices, refs = args and args[1], args and args[2]
 			if not indices then return end
-			highlight_resolved_hand_indices(indices, refs, ctx, 'play')
+			highlight_resolved_hand_indices(indices, refs, ctx, MPAPI.OPCODE.PLAY)
 			-- G.hand can be nil here too (highlight_resolved_hand_indices already
 			-- warned and no-opped in that case) -- check its own presence rather
 			-- than assume it survived that call.
@@ -408,7 +407,7 @@ MPAPI.RLOG_CODE {
 }
 
 MPAPI.RLOG_CODE {
-	key = 'discard',
+	key = MPAPI.OPCODE.DISCARD,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, discarded, discarded_refs, human)
 		self:record({ discarded, discarded_refs }, human)
@@ -419,7 +418,7 @@ MPAPI.RLOG_CODE {
 			if not ctx.is_pov then return end
 			local indices, refs = args and args[1], args and args[2]
 			if not indices then return end
-			highlight_resolved_hand_indices(indices, refs, ctx, 'discard')
+			highlight_resolved_hand_indices(indices, refs, ctx, MPAPI.OPCODE.DISCARD)
 			local highlighted = G.hand and G.hand.highlighted
 			if not highlighted or #highlighted == 0 then
 				if G.hand then
@@ -433,7 +432,7 @@ MPAPI.RLOG_CODE {
 }
 
 MPAPI.RLOG_CODE {
-	key = 'select_blind',
+	key = MPAPI.OPCODE.SELECT_BLIND,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, human)
 		self:record(0, human)
@@ -448,14 +447,32 @@ MPAPI.RLOG_CODE {
 }
 
 MPAPI.RLOG_CODE {
-	key = 'skip_blind',
+	key = MPAPI.OPCODE.SKIP_BLIND,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self)
 		self:record(0, "action:skipBlind")
 	end,
 	replay = function(self, _args, ctx)
 		if ctx.schema_version >= 1 then
-			if ctx.is_pov then G.FUNCS.skip_blind({ UIBox = G.blind_select }) end
+			if ctx.is_pov then
+				G.FUNCS.skip_blind({ UIBox = MPAPI.playback.current_blind_panel() })
+			end
+		end
+	end,
+}
+
+-- The Next Round click, so a rejoin or replay lands on Blind Select, not back in the shop.
+-- Recordings from before this event have none: the select_blind and skip_blind handlers of a
+-- mod close the shop themselves.
+MPAPI.RLOG_CODE {
+	key = MPAPI.OPCODE.LEAVE_SHOP,
+	mods = { 'pvp', 'spdrn' },
+	write = function(self)
+		self:record(nil, 'action:leaveShop')
+	end,
+	replay = function(self, _args, ctx)
+		if ctx.is_pov then
+			MPAPI.playback.leave_shop_if_needed()
 		end
 	end,
 }
@@ -511,15 +528,15 @@ function G.FUNCS.buy_from_shop(e)
 		local area = RLOG.area_enum(c1.area)
 		local idx = RLOG.index_in_area(c1)
 		if area and idx then
-			local key = "buy"
+			local key = MPAPI.OPCODE.BUY
 			local set = c1.ability and c1.ability.set
 			if set == "Booster" then
-				key = "open_pack"
+				key = MPAPI.OPCODE.OPEN_PACK
 			elseif set == "Voucher" then
-				key = "voucher"
+				key = MPAPI.OPCODE.VOUCHER
 			end
 			local ref = RLOG.card_ref(c1)
-			MPAPI.RLOGCodes[key]:write(area, idx, ref, c1.cost, human)
+			MPAPI.RLOGCodes[key]:write(area, idx, ref, c1.cost, human, e.config.id == MPAPI.playback.BUY_AND_USE_BUTTON_ID)
 		end
 	end
 	return buy_from_shop_ref(e)
@@ -641,6 +658,14 @@ function G.FUNCS.select_blind(e)
 			string.format("action:selectBlind,blind:%s", tostring(e.config.ref_table.key or e.config.ref_table.name))
 		)
 	end
+end
+
+local toggle_shop_ref = G.FUNCS.toggle_shop
+function G.FUNCS.toggle_shop(...)
+	if G.STATE == G.STATES.SHOP and RLOG.is_active() then
+		MPAPI.RLOGCodes.leave_shop:write()
+	end
+	return toggle_shop_ref(...)
 end
 
 local skip_blind_ref = G.FUNCS.skip_blind

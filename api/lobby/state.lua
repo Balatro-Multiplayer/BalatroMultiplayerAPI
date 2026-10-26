@@ -85,6 +85,12 @@ L.create_object = function(opts)
 		return self._gamemode_instance
 	end
 
+	-- A mod makes its gamemode instance when a match starts (or a host takes over) and hands it
+	-- to the lobby here: the field behind it is the lobby's own.
+	function lobby:set_gamemode_instance(instance)
+		self._gamemode_instance = instance
+	end
+
 	function lobby:set_player_state(tbl)
 		if self._destroyed then
 			return
@@ -108,6 +114,28 @@ L.create_object = function(opts)
 			result[#result + 1] = player
 		end
 		return result
+	end
+
+	-- Whether `player_id` is replaying its own run after a crash (the server
+	-- tells everyone; see api/playback/rejoin.lua). Nothing waits for it.
+	function lobby:is_player_catching_up(player_id)
+		local player = self._players[player_id]
+		return player ~= nil and player.catching_up == true
+	end
+
+	-- Tells the server this client is (or no longer is) catching up. The
+	-- flag is sent again after a socket drop's rejoin (api/lobby/nakama.lua).
+	function lobby:set_catching_up(catching_up)
+		if self._destroyed or self._local_mode then
+			return
+		end
+		self._catching_up = catching_up == true
+		local NL = MPAPI.networking.nakama_lobby
+		NL.send(NL.ClientOp.CATCHING_UP, { catchingUp = self._catching_up })
+		local me = self._players[self.player_id]
+		if me then
+			me.catching_up = self._catching_up
+		end
 	end
 
 	function lobby:leave()
@@ -168,6 +196,14 @@ L.create_object = function(opts)
 
 	function lobby:is_game_started()
 		return self._game.started ~= nil
+	end
+
+	-- When the server saw the race begin, on this client's clock (love.timer.getTime): the
+	-- origin of a race clock that counts time away. nil until the race has begun, or when this
+	-- lobby has not had a snapshot with the server's time.
+	function lobby:get_race_started_local()
+		local started = self._game.started
+		return started and started.race_started_local or nil
 	end
 
 	function lobby:report_result(placements, cb)

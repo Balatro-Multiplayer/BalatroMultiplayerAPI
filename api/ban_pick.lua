@@ -22,6 +22,9 @@
 
 MPAPI.BanPick = MPAPI.BanPick or {}
 local BP = MPAPI.BanPick
+-- api/ban_pick.lua loads before api/setup.lua (the api/ scan is alphabetical), so
+-- create the shared table here; setup.lua fills it in.
+MPAPI.Setup = MPAPI.Setup or {}
 local Setup = MPAPI.Setup
 
 local DEFAULT_ID = "draft"
@@ -29,6 +32,10 @@ local DEFAULT_ID = "draft"
 local MAX_CANDIDATES = 64
 
 local _config = nil
+-- The lobby the Draft belongs to: a Draft left unfinished in a lobby the
+-- player has since left is not the next lobby's Draft. Matched by code, so a
+-- rejoin of the same lobby (a new lobby object) keeps it.
+local _lobby_code = nil
 local _on_complete = nil
 local _overlay = nil
 local _render = nil
@@ -240,6 +247,7 @@ local function selection_randomize(state, rng)
 	return out
 end
 
+-- Exposed for standalone tests of the selection rules.
 BP._selection = {
 	needed = selection_needed,
 	contains = selection_contains,
@@ -576,7 +584,8 @@ BP.build_contents = build_banpick_contents
 
 -- True from BP.start until the Draft's result has gone to on_complete.
 function BP.is_active()
-	return not _fired and _config ~= nil and MPAPI.get_current_lobby() ~= nil
+	local lobby = MPAPI.get_current_lobby()
+	return not _fired and _config ~= nil and lobby ~= nil and lobby.code == _lobby_code
 end
 
 -----------------------------
@@ -606,6 +615,10 @@ local function finish(result)
 	local cb = _on_complete
 	_on_complete = nil
 	close()
+	if not cb then
+		-- A finished Draft with nobody to tell: the run will not start on this client.
+		MPAPI.sendWarnMessage('BanPick: the Draft completed with no on_complete registered (resume not called?)')
+	end
 	if cb then
 		local survivors = {}
 		for i, candidate in ipairs(result.survivors or {}) do
@@ -670,6 +683,20 @@ local function listen(lobby)
 	lobby:on(MPAPI.LobbyEvent.HOST_CHANGED, function()
 		open_if_host(lobby)
 	end)
+	-- The game ended before the Draft did (every other player left): drop the
+	-- Draft with no result, then let an inline render draw once without it.
+	lobby:on(MPAPI.LobbyEvent.GAME_ENDED, function()
+		if _fired or not _config or lobby.code ~= _lobby_code then
+			return
+		end
+		local render = _render
+		_config = nil
+		_on_complete = nil
+		close()
+		if render then
+			render()
+		end
+	end)
 end
 
 -----------------------------
@@ -691,6 +718,7 @@ end
 -- one): for a `keep = 0` Draft the ban order is the result.
 function BP.start(lobby, config, on_complete)
 	_config = setmetatable({ id = config.id or DEFAULT_ID }, { __index = config })
+	_lobby_code = lobby.code
 	_on_complete = on_complete
 	_fired = false
 	_selected = {}
