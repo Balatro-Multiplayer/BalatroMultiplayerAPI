@@ -106,13 +106,14 @@ function MPAPI.playback.restart_session_and_seek(session, target_event_index, on
 	end)
 end
 
--- The event index to skip to: the start of the second-to-last known ante, so the tail left for
--- normal pace is at least one full ante and starts at a clean blind-select or shop boundary. A run
--- with fewer than two ante boundaries has nothing worth skipping: play it all.
+-- The event index to skip to: the start of the last known ante (the last checkpoint), so the tail
+-- left for normal pace is the ante in progress and starts at a clean blind-select boundary. The
+-- tail costs about 0.9 s an event against about 0.13 s in the fast-forward: a cutoff one ante
+-- earlier made a run-3 catch-up about 15 s longer (live 2026-10-26). A run with no ante start
+-- yet has nothing worth skipping: play it all.
 -- `starts` is a list of ante-start event indexes (MPAPI.playback.timeline_ante_starts).
 function MPAPI.playback.rejoin_cutoff(starts)
-	local n = #starts
-	return n >= 2 and starts[n - 1] or 1
+	return starts[#starts] or 1
 end
 
 -- Reopens the player's own log block once the last replayed action's animations have drained (an
