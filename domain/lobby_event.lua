@@ -26,6 +26,10 @@ MPAPI.LobbyEvent = {
 	-- of, and the server sent what the others logged meanwhile (Nakama
 	-- lobbies). Args: { { playerId, events = { {t, opcode, args}, ... } }, ... }.
 	REPLAY_TAIL = 'replay_tail',
+	-- Client-side only: the game's Setup changed (a step opened, a ban,
+	-- pick or vote landed, a step closed). Args: { open, results } (see
+	-- api/setup.lua).
+	SETUP_CHANGED = 'setup_changed',
 	PLAYER_JOINED = 'player_joined',
 	PLAYER_LEFT = 'player_left',
 	PLAYER_KICKED = 'player_kicked',

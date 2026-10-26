@@ -111,6 +111,86 @@ MPAPI.ActionType({
 	end,
 })
 
+-- Setup (api/setup.lua): every result's params are { setup = <view> }, the
+-- whole Setup state after the change. mpapi_setup_state carries the server's
+-- own changes (a turn or a vote that ran out of time); no client sends it.
+local function on_setup(_, _, result)
+	local lobby = MPAPI.get_current_lobby()
+	if lobby and type(result) == 'table' then
+		L.apply_setup(lobby, result.setup)
+	end
+end
+
+MPAPI.ActionType({
+	key = 'mpapi_setup_draft',
+	authoritative = true,
+	parameters = {
+		{ key = 'id', type = 'string', required = true },
+		{ key = 'candidates', type = 'table', required = true },
+		{ key = 'poolSize', type = 'number' },
+		{ key = 'keep', type = 'number' },
+		{ key = 'schedule', type = 'table' },
+		{ key = 'maxStake', type = 'number' },
+		{ key = 'turnSeconds', type = 'number' },
+	},
+	on_receive = on_setup,
+})
+
+MPAPI.ActionType({
+	key = 'mpapi_setup_choose',
+	authoritative = true,
+	parameters = {
+		{ key = 'key', type = 'string', required = true },
+	},
+	on_receive = on_setup,
+})
+
+MPAPI.ActionType({
+	key = 'mpapi_setup_vote',
+	authoritative = true,
+	parameters = {
+		{ key = 'id', type = 'string', required = true },
+		{ key = 'options', type = 'table', required = true },
+		{ key = 'seconds', type = 'number' },
+	},
+	on_receive = on_setup,
+})
+
+MPAPI.ActionType({
+	key = 'mpapi_setup_cast',
+	authoritative = true,
+	parameters = {
+		{ key = 'option', type = 'string', required = true },
+	},
+	on_receive = on_setup,
+})
+
+MPAPI.ActionType({
+	key = 'mpapi_setup_state',
+	authoritative = true,
+	on_receive = on_setup,
+})
+
+local function empty_setup()
+	return { open = nil, results = {} }
+end
+
+-- Takes the server's Setup view. `received_at` times the open step's
+-- msLeft, so the countdown never compares clocks with the server.
+L.apply_setup = function(lobby, view, quiet)
+	if type(view) ~= 'table' then
+		return
+	end
+	lobby._game.setup = {
+		open = type(view.open) == 'table' and view.open or nil,
+		results = type(view.results) == 'table' and view.results or {},
+		received_at = love.timer.getTime(),
+	}
+	if not quiet then
+		lobby:_fire(MPAPI.LobbyEvent.SETUP_CHANGED, lobby._game.setup)
+	end
+end
+
 L.apply_game_started = function(lobby, started)
 	lobby._game.started = {
 		run_id = started.runId,
@@ -122,6 +202,9 @@ L.apply_game_started = function(lobby, started)
 	}
 	lobby._game.ready = {}
 	lobby._game.reported = {}
+	-- A restart keeps the finished steps' results (the server does too).
+	local results = started.restarted and lobby._game.setup.results or {}
+	lobby._game.setup = { open = nil, results = results }
 	lobby:_fire(MPAPI.LobbyEvent.GAME_STARTED, lobby._game.started)
 end
 
@@ -134,6 +217,7 @@ L.apply_game_ended = function(lobby, ended)
 	lobby._game.started = nil
 	lobby._game.ready = {}
 	lobby._game.reported = {}
+	lobby._game.setup = empty_setup()
 	lobby:_fire(MPAPI.LobbyEvent.GAME_ENDED, {
 		run_id = ended.runId,
 		status = ended.status,

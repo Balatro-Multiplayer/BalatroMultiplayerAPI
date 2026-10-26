@@ -133,6 +133,8 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 		lobby._game.started = nil
 	end
 
+	L.apply_setup(lobby, type(game.setup) == 'table' and game.setup or { results = {} }, not announce)
+
 	if had_group or lobby.group_queue then
 		lobby:_fire(MPAPI.LobbyEvent.GROUP_QUEUE, lobby.group_queue)
 	end

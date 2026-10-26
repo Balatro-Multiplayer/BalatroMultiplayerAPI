@@ -14,6 +14,9 @@ MPAPI.ErrorKind = {
 	-- The Nakama lobby refused an action (the reason is the message: e.g.
 	-- not_host, not_all_ready, rate_limited). See api/action/dispatch.lua.
 	ACTION_REJECTED = 'action_rejected',
+	-- The server has no handler for an MPAPI action this client sends (it
+	-- predates the feature, e.g. Setup in api/setup.lua).
+	SERVER_TOO_OLD = 'server_too_old',
 	-- A ranked queue attempt was refused because the launcher's anti-cheat
 	-- supervision channel isn't active/healthy (see
 	-- api/matchmaking/api.lua's queue() and anticheat/launcher_channel.lua).

@@ -319,6 +319,8 @@ return {
 			k_banpick_confirm = 'Confirm Ban',
 			k_banpick_confirm_pick = 'Confirm Pick',
 			k_banpick_random = 'Random',
+			k_banpick_time_left = 'Time left:',
+			k_mpapi_server_too_old = 'The server is too old for this match. Ask the server owner to update it.',
 			-- End-screen Ko-fi plug (MPAPI.end_screen_uibox, api/end_screen.lua) -- shared by
 			-- every gamemode's win/lose screen, not just PvP's (where these two keys used to
 			-- live exclusively). Without PvP loaded, end_screen_uibox's localize('ml_mp_kofi_message')[3]

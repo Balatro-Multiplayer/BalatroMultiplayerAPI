@@ -1,34 +1,32 @@
 -----------------------------
--- Ban-Pick engine
+-- Ban-Pick Draft
 -----------------------------
 --
--- A generic, host-authoritative, turn-based deck draft. The host owns the canonical
--- state: it builds the candidate pool + turn order, validates every action, and
--- broadcasts the full state after each change. Guests only render the broadcast state
--- and request actions; they never mutate state locally.
+-- The deck Draft's screen. The server runs the Draft as a Setup step
+-- (api/setup.lua, ADR 0003): it samples the pool, rolls who acts first,
+-- checks every ban and pick and bans at random for a player whose turn runs
+-- out. The host only starts the step. Every client renders the tiles from the
+-- server's state, sends its own bans and picks, and gets on_complete when the
+-- result lands. A host change mid-Draft changes nothing.
 --
--- Two draft shapes are supported through one engine:
---   * Legacy: `config = { pool_size, keep }` -> alternating single bans down to `keep`,
---     rotating through every player in the lobby (2 for a plain 1v1, more for an
---     N-player draft -- §17.7; this is what the Speedrun mod uses).
---   * Scheduled: `config.schedule = { { actor=1|2, action='ban'|'pick', count=N }, ... }`
---     -> arbitrary per-turn ban counts and a final 'pick' (the picked item wins). Actor
---     numbers here are still author-written turn slots (1..N), resolved the same way
---     as the legacy shape's derived schedule.
+-- Two Draft shapes, the same as the server's:
+--   * `config = { pool_size, keep }` -> single bans rotating through every
+--     player until `keep` tiles are left (`keep = 0` bans every tile; the ban
+--     order is then the result).
+--   * `config.schedule = { { actor = 1..N, action = 'ban' | 'pick', count }, ... }`
+--     -> any ban counts per turn and a final pick (the picked tile wins).
 --
--- Pool items may be plain center KEYS ('b_red') or tables `{ key='b_red', ... }` carrying
--- metadata (e.g. a stake); `config.decorate_tile(card, item)` lets the consumer decorate
--- each tile (e.g. stamp a stake sticker). The first actor is always randomized among
--- however many players are actually in the draft.
---
--- The two networked actions live in the *consuming* mod (a lobby only routes ActionTypes
--- whose mod.id matches -- see api/lobby.lua). The caller passes their keys via
--- config.state_action / config.ban_action; the on_receive handlers delegate straight to
--- MPAPI.BanPick.on_state / MPAPI.BanPick.apply_ban. The same ban_action message drives
--- both bans and the final pick (the host routes by the current step's action).
+-- Pool items may be plain center KEYS ('b_red') or tables `{ key = 'b_red', ... }`
+-- carrying metadata (e.g. a stake); `config.decorate_tile(card, item)` decorates
+-- each tile (e.g. stamps a stake sticker).
 
 MPAPI.BanPick = MPAPI.BanPick or {}
 local BP = MPAPI.BanPick
+local Setup = MPAPI.Setup
+
+local DEFAULT_ID = "draft"
+-- The server takes at most this many candidates (setup.ts MAX_CANDIDATES).
+local MAX_CANDIDATES = 64
 
 local _config = nil
 local _on_complete = nil
@@ -37,146 +35,121 @@ local _render = nil
 local _fired = false
 
 -- Select-and-confirm UI state: deck keys raised this turn, committed by the
--- Confirm button. Lives outside the overlay so it survives rebuilds on state
--- broadcasts (pruned against each new state instead).
+-- Confirm button. Lives outside the overlay so it survives rebuilds on Setup
+-- changes (pruned against each new state instead).
 local _selected = {}
-local _sel_ui = { count_text = '' }
+local _sel_ui = { count_text = '', time_text = '' }
 local _areas = {}
 
 -----------------------------
--- Helpers
+-- Pool items
 -----------------------------
 
--- Pool items are either a plain key string or a { key = ..., <meta> } table.
--- `id`, when present, is the draft-tracking identity instead of `key` -- lets
--- a pool item's *rendered art* (key, a real G.P_CENTERS deck-back) repeat
--- across items while each item still bans/picks independently. Needed once a
--- pool has more real candidates than there are distinct deck-back keys to
--- assign one-to-one (e.g. Challenge's full G.CHALLENGES list, 20+ vanilla
--- entries against only 15 vanilla deck backs) -- without `id`, items sharing
--- one `key` would all get banned together the instant any one of them is
--- banned (this is exactly what forced Challenge's pool to be truncated to a
--- random 5 previously: 5 fits inside 15 distinct keys, the full list doesn't).
-local function item_key(item)
-	if type(item) == "table" then
-		return item.id or item.key
+-- The server tracks a tile by its `key`. An item's `id`, when present, is its
+-- tracking identity instead: a pool item's *art* (its key, a real
+-- G.P_CENTERS deck back) can then repeat across items that still ban and pick
+-- on their own (e.g. Challenge's list, more entries than vanilla deck backs).
+-- On the wire, `key` is the identity and `art` the deck back; a plain key
+-- item travels as { key, plain = true }.
+local function to_candidate(item)
+	if type(item) ~= "table" then
+		return { key = item, plain = true }
+	end
+	local candidate = {}
+	for k, v in pairs(item) do
+		candidate[k] = v
+	end
+	if item.id then
+		candidate.key, candidate.art, candidate.id = item.id, item.key, nil
+	end
+	return candidate
+end
+
+local function from_candidate(candidate)
+	if candidate.plain then
+		return candidate.key
+	end
+	local item = {}
+	for k, v in pairs(candidate) do
+		item[k] = v
+	end
+	if candidate.art then
+		item.id, item.key, item.art = candidate.key, candidate.art, nil
 	end
 	return item
 end
 
--- The G.P_CENTERS key used to render a pool item's tile art -- always
--- item.key (or the item itself, if a plain string), even when item_key()
--- above resolves to a different tracking identity via item.id.
-local function item_art_key(item)
-	if type(item) == "table" then
-		return item.key
-	end
-	return item
+local function art_key(candidate)
+	return candidate.art or candidate.key
 end
 
--- Default candidate pool: a random sample of deck Back center KEYS, leaving out decks a
--- consuming mod keeps to its own matches (its isolation gate, as for every other pool).
-local function default_build_pool(size)
+-- Default candidates: every deck Back, leaving out decks a consuming mod
+-- keeps to its own matches (its isolation gate, as for every other pool).
+local function default_candidates()
 	local keys = {}
 	for _, center in ipairs(G.P_CENTER_POOLS.Back or {}) do
 		if not MPAPI.should_exclude_from_pool(center) then
 			keys[#keys + 1] = center.key
 		end
 	end
-	for i = #keys, 2, -1 do
+	return keys
+end
+
+local function capped_candidates(items)
+	local out = {}
+	for i, item in ipairs(items) do
+		out[i] = to_candidate(item)
+	end
+	if #out <= MAX_CANDIDATES then
+		return out
+	end
+	for i = #out, 2, -1 do
 		local j = math.random(i)
-		keys[i], keys[j] = keys[j], keys[i]
+		out[i], out[j] = out[j], out[i]
 	end
-	local pool = {}
-	for i = 1, math.min(size, #keys) do
-		pool[i] = keys[i]
+	for i = #out, MAX_CANDIDATES + 1, -1 do
+		out[i] = nil
 	end
-	return pool
+	return out
 end
 
--- Legacy schedule: `pool_size - keep` alternating single bans, no pick, rotating
--- through however many actors are actually in the draft (2 for a plain 1v1,
--- more for §17.7's N-player rotation -- see resolve_actor below for the
--- matching actor->player-id resolution).
-local function derive_schedule(pool_size, keep, num_actors)
-	num_actors = math.max(1, num_actors or 2)
-	local bans = math.max(0, (pool_size or 0) - (keep or 1))
-	local sched = {}
-	for i = 1, bans do
-		sched[i] = { actor = ((i - 1) % num_actors) + 1, action = "ban", count = 1 }
+-----------------------------
+-- Draft state
+-----------------------------
+
+-- This screen's open Draft, as the UI reads it: { pool, banned = { key = true },
+-- step, remaining, mine }; nil when it isn't open.
+local function draft_view(lobby)
+	local open = lobby and _config and Setup.open_step(lobby)
+	if not (open and open.kind == "draft" and open.id == _config.id) then
+		return nil
 	end
-	return sched
-end
-
--- Turn order: host first (order[1] == host, so guest ban routing via send(order[1],...)
--- is stable), then others by sorted id. `state.first` (1..#order) picks which order slot
--- is the logical actor 1, so the *acting* first player is randomized independently of
--- routing -- for an N-player draft this rotates through every slot, not just the two.
-local function build_order(lobby)
-	local order = { lobby.player_id }
-	local others = {}
-	for _, p in ipairs(lobby:get_players()) do
-		if p.id ~= lobby.player_id then
-			others[#others + 1] = p.id
-		end
+	local banned = {}
+	for _, key in ipairs(open.banned or {}) do
+		banned[key] = true
 	end
-	table.sort(others)
-	for _, id in ipairs(others) do
-		order[#order + 1] = id
-	end
-	return order
-end
-
--- §17.7: generalized to however many players are actually in state.order
--- (build_order already returns every lobby member, not just 2 -- only this
--- resolution math was hardcoded to a 2-slot draft). state.first (1..#order)
--- picks which order slot is logical actor 1; every other actor rotates
--- forward from there. Reduces to the exact previous 2-actor formula
--- (3 - state.first) when #order == 2, so every existing 1v1 draft is
--- unaffected.
-local function resolve_actor(state, actor)
-	local n = #state.order
-	local slot = ((state.first or 1) - 1 + (actor - 1)) % n + 1
-	return state.order[slot]
-end
-
-local function current_step(state)
-	return state.schedule and state.schedule[state.sched_index]
-end
-
-local function current_actor_id(state)
-	local step = current_step(state)
-	return step and resolve_actor(state, step.actor)
+	return {
+		pool = open.pool or {},
+		banned = banned,
+		step = Setup.draft_turn(lobby),
+		remaining = open.remaining,
+		mine = Setup.is_my_turn(lobby),
+	}
 end
 
 local function item_for_key(state, key)
 	for _, item in ipairs(state.pool) do
-		if item_key(item) == key then
+		if item.key == key then
 			return item
 		end
 	end
 	return nil
 end
 
--- Survivors = pool minus banned, in pool order, as ITEMS (keys or {key,meta} tables).
-local function compute_survivors(state)
-	local out = {}
-	for _, item in ipairs(state.pool) do
-		if not state.banned[item_key(item)] then
-			out[#out + 1] = item
-		end
-	end
-	return out
-end
-
-local function is_my_turn(lobby, state)
-	return state and not state.complete and current_actor_id(state) == lobby.player_id
-end
-
 local function survivors_left(state)
 	local n = 0
 	for _, item in ipairs(state.pool) do
-		if not state.banned[item_key(item)] then
+		if not state.banned[item.key] then
 			n = n + 1
 		end
 	end
@@ -187,21 +160,18 @@ end
 -- Selection (select-then-confirm)
 -----------------------------
 
--- How many selections the current step requires. A pick step is always exactly 1;
--- a ban step wants the remaining count of the step (so a count=3 turn is one
+-- How many selections the current turn requires. A pick turn is always exactly 1;
+-- a ban turn wants the bans it still needs (so a count=3 turn is one
 -- three-deck selection, not three separate commits).
 local function selection_needed(state)
-	if not state or state.complete then
-		return 0
-	end
-	local step = current_step(state)
+	local step = state and state.step
 	if not step then
 		return 0
 	end
 	if step.action == "pick" then
 		return 1
 	end
-	return state.sched_remaining or step.count or 0
+	return state.remaining or step.count or 0
 end
 
 local function selection_contains(list, key)
@@ -237,7 +207,7 @@ local function selection_toggle(list, key, cap)
 	return "added"
 end
 
--- Drop selections invalidated by a state broadcast: keys that got banned or left
+-- Drop selections a Setup change invalidated: keys that got banned or left
 -- the pool, and anything beyond the (possibly shrunken) cap.
 local function selection_prune(list, state)
 	local out = {}
@@ -257,7 +227,7 @@ local function selection_randomize(state, rng)
 	rng = rng or math.random
 	local eligible = {}
 	for _, item in ipairs(state.pool) do
-		local k = item_key(item)
+		local k = item.key
 		if not state.banned[k] then
 			eligible[#eligible + 1] = k
 		end
@@ -270,7 +240,6 @@ local function selection_randomize(state, rng)
 	return out
 end
 
--- Exposed for the standalone test harness (dev/test_banpick_selection.lua).
 BP._selection = {
 	needed = selection_needed,
 	contains = selection_contains,
@@ -333,8 +302,7 @@ end
 -- Re-derive every tile's raised/tagged state and the live counter from _selected.
 local function sync_selection_ui(state)
 	_sel_ui.count_text = tostring(#_selected) .. '/' .. tostring(selection_needed(state))
-	local step = current_step(state)
-	local action = step and step.action or "ban"
+	local action = state and state.step and state.step.action or "ban"
 	for _, area in ipairs(_areas) do
 		for _, card in ipairs(area.cards or {}) do
 			if card.mp_deck_key then
@@ -348,8 +316,8 @@ end
 -- consumer's decorate_tile(card, item) is called after emplace (e.g. to stamp a stake
 -- sticker via card.sticker). BANNED tiles are debuffed.
 local function deck_tile(item, banned, area, decorate)
-	local key = item_key(item)
-	local center = G.P_CENTERS[item_art_key(item)]
+	local key = item.key
+	local center = G.P_CENTERS[art_key(item)]
 	local card = Card(
 		area.T.x + area.T.w / 2,
 		area.T.y,
@@ -361,7 +329,7 @@ local function deck_tile(item, banned, area, decorate)
 	)
 	area:emplace(card)
 	if decorate then
-		decorate(card, item)
+		decorate(card, from_candidate(item))
 	end
 	if banned then
 		card.debuff = true
@@ -372,8 +340,8 @@ local function deck_tile(item, banned, area, decorate)
 	-- Off-turn and banned tiles don't react at all.
 	function card:click()
 		local lobby = MPAPI.get_current_lobby()
-		local state = lobby and lobby._ban_pick
-		if banned or not state or not is_my_turn(lobby, state) then
+		local state = draft_view(lobby)
+		if banned or not (state and state.mine) then
 			return
 		end
 		if selection_toggle(_selected, key, selection_needed(state)) ~= "blocked" then
@@ -457,9 +425,9 @@ end
 
 local function build_banpick_contents()
 	local lobby = MPAPI.get_current_lobby()
-	local state = lobby and lobby._ban_pick
+	local state = draft_view(lobby)
 
-	if not state or not state.pool then
+	if not state then
 		return {
 			{ n = G.UIT.R, config = { align = 'cm', minh = 2 }, nodes = {
 				{ n = G.UIT.T, config = { text = localize('k_banpick_waiting'), scale = 0.4, colour = G.C.UI.TEXT_LIGHT } },
@@ -467,9 +435,8 @@ local function build_banpick_contents()
 		}
 	end
 
-	local my_turn = is_my_turn(lobby, state)
-	local step = current_step(state)
-	local is_pick = step and step.action == "pick"
+	local my_turn = state.mine
+	local is_pick = state.step and state.step.action == "pick"
 	local left = survivors_left(state)
 
 	local rows = {}
@@ -494,9 +461,14 @@ local function build_banpick_contents()
 	} }
 	local detail = is_pick
 		and (localize('k_banpick_decks_left') .. ' ' .. tostring(left))
-		or (localize('k_banpick_bans_left') .. ' ' .. tostring(state.sched_remaining or 0) .. '   ' .. localize('k_banpick_decks_left') .. ' ' .. tostring(left))
+		or (localize('k_banpick_bans_left') .. ' ' .. tostring(state.remaining or 0) .. '   ' .. localize('k_banpick_decks_left') .. ' ' .. tostring(left))
 	rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.1 }, nodes = {
 		{ n = G.UIT.T, config = { text = detail, scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
+	} }
+	-- The turn clock: when it runs out, the server bans (or picks) at random.
+	rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0.03, func = 'mpapi_ban_pick_clock' }, nodes = {
+		{ n = G.UIT.T, config = { text = localize('k_banpick_time_left') .. ' ', scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
+		{ n = G.UIT.T, config = { ref_table = _sel_ui, ref_value = 'time_text', scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
 	} }
 
 	local decorate = _config and _config.decorate_tile
@@ -520,7 +492,7 @@ local function build_banpick_contents()
 				},
 			}
 		end
-		deck_tile(item, state.banned[item_key(item)], cur_area, decorate)
+		deck_tile(item, state.banned[item.key], cur_area, decorate)
 	end
 	-- Tiles are buttons, not hand cards: never draggable (click-holding one
 	-- would drag it around the panel and dismiss its hover popup mid-read;
@@ -542,7 +514,7 @@ local function build_banpick_contents()
 	}
 
 	-- Re-apply any surviving selection to the freshly built tiles (the overlay is
-	-- rebuilt on every state broadcast; _selected was pruned in on_state).
+	-- rebuilt on every Setup change; _selected was pruned in on_setup).
 	_areas = areas
 	sync_selection_ui(state)
 
@@ -602,193 +574,128 @@ end
 
 BP.build_contents = build_banpick_contents
 
+-- True from BP.start until the Draft's result has gone to on_complete.
 function BP.is_active()
-	if _fired or not _config then
-		return false
-	end
-	local lobby = MPAPI.get_current_lobby()
-	return lobby ~= nil and lobby._ban_pick ~= nil
+	return not _fired and _config ~= nil and MPAPI.get_current_lobby() ~= nil
 end
 
 -----------------------------
--- Networking
+-- Following the server
 -----------------------------
 
-function BP.broadcast_state(lobby)
-	if not _config then
-		return
-	end
-	local action_type = MPAPI.ActionTypes[_config.state_action]
-	if not action_type then
-		return
-	end
-	lobby:action(action_type):broadcast({ state = lobby._ban_pick })
-
-	-- Also mirror the state into lobby metadata (persisted server-side,
-	-- returned again in context.reconnected_lobby.metadata on a crash-relaunch
-	-- reconnect -- see ui/reconnect_prompt.lua). The live broadcast above only
-	-- reaches clients who are actually connected at the moment it fires; a
-	-- player who crashes mid-draft (host or guest) has no other way to
-	-- recover the CURRENT draft state, since it only ever lived in the
-	-- crashed process's own memory (this file's module-level state + each
-	-- lobby object's _ban_pick field) -- nothing persisted it before now.
-	-- Every field here is plain keys/strings/numbers/nested tables (pool
-	-- items, ban maps, schedules), never a live Card/game object, so this is
-	-- safe to serialize as-is. Host-only, same as this function's only
-	-- callers (BP.request_ban's host branch, on_receive ban handlers, and
-	-- BP.start itself) -- set_metadata already rejects a non-host caller.
-	if lobby.is_host then
-		lobby:set_metadata({ _mp_ban_pick_state = lobby._ban_pick })
-	end
-end
-
--- Host authority: apply `from_player_id`'s action (ban or pick, per the current schedule
--- step) on `deck_key`. Returns true if it was legal and changed state (caller broadcasts).
--- Exported as apply_ban for backward compatibility with existing consumer ActionTypes.
-local function apply_action(lobby, from_player_id, deck_key)
-	local s = lobby._ban_pick
-	if not s or s.complete then
-		return false
-	end
-	if current_actor_id(s) ~= from_player_id then
-		return false
-	end
-	if not item_for_key(s, deck_key) or s.banned[deck_key] then
-		return false
-	end
-
-	local step = current_step(s)
-	if step and step.action == "pick" then
-		-- The picked item wins; everything else is discarded.
-		s.survivors = { item_for_key(s, deck_key) }
-		s.complete = true
-		return true
-	end
-
-	-- Ban. `ban_order` records the sequence bans happened in -- unused by the legacy
-	-- survivors-only consumers (GSS/WST), but lets a `keep=0` draft (nothing survives) use the
-	-- order itself as a result, e.g. SPDRN's All Deck mode drafting play order rather than
-	-- narrowing a pool (see BalatroMultiplayerSpeed/objects/gamemodes/all_deck.lua).
-	s.banned[deck_key] = true
-	s.ban_order[#s.ban_order + 1] = deck_key
-	s.sched_remaining = (s.sched_remaining or 1) - 1
-	if s.sched_remaining <= 0 then
-		s.sched_index = s.sched_index + 1
-		local nxt = s.schedule[s.sched_index]
-		if not nxt then
-			s.complete = true
-			s.survivors = compute_survivors(s)
-		else
-			s.sched_remaining = nxt.count
-		end
-	end
-	return true
-end
-
-BP.apply_ban = apply_action
-
--- Called by the action button (any client). Host applies directly; guest asks the host.
-function BP.request_ban(deck_key)
-	local lobby = MPAPI.get_current_lobby()
-	if not lobby then
-		return
-	end
-	local s = lobby._ban_pick
-	if not is_my_turn(lobby, s) then
-		return
-	end
-
-	if lobby.is_host then
-		if apply_action(lobby, lobby.player_id, deck_key) then
-			BP.broadcast_state(lobby)
-			if _overlay then
-				_overlay:update()
-			elseif _render then
-				_render()
-			end
-		end
-	else
-		local action_type = MPAPI.ActionTypes[_config.ban_action]
-		if action_type then
-			-- order[1] is the host.
-			lobby:action(action_type):send(s.order[1], { item_key = deck_key })
-		end
-	end
-end
-
-function BP.on_state(lobby, state)
-	if not state then
-		return
-	end
-	lobby._ban_pick = state
-
-	-- Drop marks the broadcast invalidated (opponent banned them, cap shrank).
-	_selected = selection_prune(_selected, state)
-
+local function refresh()
 	if _overlay then
 		_overlay:update()
 	elseif _render then
 		_render()
 	end
+end
 
-	if state.complete and not _fired then
-		_fired = true
-		local cb = _on_complete
-		_on_complete = nil
-		if _overlay then
-			_overlay = nil
-			if G.OVERLAY_MENU and G.OVERLAY_MENU ~= true then
-				G.FUNCS.exit_overlay_menu()
-			end
-		end
-		_render = nil
-		if cb then
-			cb(state.survivors or {}, state.ban_order or {})
+local function close()
+	_render = nil
+	if _overlay then
+		_overlay = nil
+		if G.OVERLAY_MENU and G.OVERLAY_MENU ~= true then
+			G.FUNCS.exit_overlay_menu()
 		end
 	end
+end
+
+local function finish(result)
+	_fired = true
+	local cb = _on_complete
+	_on_complete = nil
+	close()
+	if cb then
+		local survivors = {}
+		for i, candidate in ipairs(result.survivors or {}) do
+			survivors[i] = from_candidate(candidate)
+		end
+		cb(survivors, result.banned or {})
+	end
+end
+
+-- The host opens the Draft unless it is already open or done (a rejoin, a
+-- restart, or a new host after the old one left before starting it).
+local function open_if_host(lobby)
+	if not (lobby.is_host and _config and not _fired) then
+		return
+	end
+	local setup = Setup.state(lobby)
+	if setup.open or setup.results[_config.id] then
+		return
+	end
+	local config = _config
+	local candidates = capped_candidates(
+		config.candidates or (config.build_pool and config.build_pool()) or default_candidates()
+	)
+	local pool_size = config.pool_size and math.min(config.pool_size, #candidates) or #candidates
+	Setup.start_draft(lobby, {
+		id = config.id,
+		candidates = candidates,
+		pool_size = pool_size,
+		keep = config.keep and math.min(config.keep, pool_size),
+		schedule = config.schedule,
+		max_stake = config.max_stake,
+		turn_seconds = config.turn_seconds,
+	}, function(err)
+		if err and err.kind == MPAPI.ErrorKind.SERVER_TOO_OLD then
+			MPAPI.sendWarnMessage(err.message)
+		elseif err then
+			MPAPI.sendWarnMessage("Draft start refused: " .. tostring(err.message))
+		end
+	end)
+end
+
+local function on_setup(setup)
+	if _fired or not _config then
+		return
+	end
+	local result = setup.results[_config.id]
+	if result then
+		finish(result)
+		return
+	end
+	local lobby = MPAPI.get_current_lobby()
+	_selected = selection_prune(_selected, draft_view(lobby))
+	refresh()
+end
+
+local function listen(lobby)
+	if lobby._ban_pick_listening then
+		return
+	end
+	lobby._ban_pick_listening = true
+	lobby:on(MPAPI.LobbyEvent.SETUP_CHANGED, on_setup)
+	lobby:on(MPAPI.LobbyEvent.HOST_CHANGED, function()
+		open_if_host(lobby)
+	end)
 end
 
 -----------------------------
 -- Entry point
 -----------------------------
 
--- Begin a draft. config = {
---   pool_size, keep,                -- legacy alternating-ban shape (if no schedule)
---   schedule,                        -- { { actor=1|2, action='ban'|'pick', count=N }, ... }
---   build_pool, decorate_tile,       -- item pool + per-tile decoration hooks
---   state_action, ban_action,        -- consumer ActionType keys
---   on_refresh,                      -- inline render callback (else self-managed overlay)
--- }. on_complete(survivors, ban_order) receives the surviving items (keys or {key,meta}
--- tables) plus the full ban sequence (also keys/tables) -- useful for a `keep=0` draft, where
--- `survivors` is always empty and the ban order itself is the meaningful result.
+-- Shows the Draft and, on the host, opens it on the server. Every client calls
+-- this off the same game start; a rejoining client calls it again to get back
+-- into a Draft already under way. config = {
+--   id,                              -- the Setup step id (default 'draft')
+--   pool_size, keep, schedule,       -- the Draft shape (see the file header)
+--   candidates or build_pool,        -- the items the server samples the pool from
+--   max_stake,                       -- the server rolls a stake 1..max per item without one
+--   turn_seconds,                    -- the turn clock (server default 30)
+--   decorate_tile,                   -- per-tile decoration
+--   on_refresh,                      -- inline render callback (else a self-managed overlay)
+-- }. on_complete(survivors, ban_order) receives the surviving items (keys or
+-- tables, as given) plus the ban order (tile keys, or ids where items have
+-- one): for a `keep = 0` Draft the ban order is the result.
 function BP.start(lobby, config, on_complete)
-	_config = config
+	_config = setmetatable({ id = config.id or DEFAULT_ID }, { __index = config })
 	_on_complete = on_complete
 	_fired = false
 	_selected = {}
 	_areas = {}
-
-	if lobby.is_host then
-		local pool = (config.build_pool and config.build_pool()) or default_build_pool(config.pool_size)
-		local order = build_order(lobby)
-		local schedule = config.schedule or derive_schedule(config.pool_size or #pool, config.keep or 1, #order)
-		lobby._ban_pick = {
-			pool = pool,
-			banned = {},
-			ban_order = {},
-			order = order,
-			first = math.random(#order),
-			schedule = schedule,
-			sched_index = 1,
-			sched_remaining = schedule[1] and schedule[1].count or 0,
-			complete = false,
-		}
-		-- Degenerate schedule (nothing to do): finish immediately.
-		if not schedule[1] then
-			lobby._ban_pick.complete = true
-			lobby._ban_pick.survivors = compute_survivors(lobby._ban_pick)
-		end
-	end
+	listen(lobby)
 
 	_render = config.on_refresh
 	_overlay = nil
@@ -799,69 +706,29 @@ function BP.start(lobby, config, on_complete)
 		_overlay:as_overlay({ no_esc = true })
 	end
 
-	if lobby.is_host then
-		BP.broadcast_state(lobby)
-	end
+	open_if_host(lobby)
+	-- A restart keeps the result, and a rejoin may find the Draft under way.
+	on_setup(Setup.state(lobby))
 end
 
--- Crash-relaunch reconnect into a draft that was ALREADY IN PROGRESS (see
--- ui/reconnect_prompt.lua / api/lobby/reconnect.lua) -- re-establishes this
--- module's own local state (_config/_render/_overlay/etc, all lost when the
--- process restarted) so is_active()/build_contents work again, WITHOUT
--- touching lobby._ban_pick or re-broadcasting: unlike BP.start, this must be
--- safe to call on a draft that's already mid-way through, for host and guest
--- alike -- rebuilding the pool/schedule from scratch (what BP.start does)
--- would silently restart the whole draft out from under whichever player(s)
--- are still connected to it.
---
--- `config` is the exact same shape BP.start takes -- the caller (each
--- consuming mod's own lobby-reconnect handler) rebuilds it the same way it
--- would for a fresh BP.start call (from the gamemode's own ban_pick config),
--- since nothing about the schedule/pool-building/tile-decoration/action-key
--- shape differs between starting and resuming.
---
--- Requires lobby._ban_pick to already be populated -- either because this
--- client reconnected fast enough to still have it (host, if the crash didn't
--- lose the object) or, the common case, because it was restored from
--- context.reconnected_lobby.metadata._mp_ban_pick_state (BP.broadcast_state's
--- own mirror -- see that function's comment) before this is called. Silently
--- does nothing if there's no state to resume into -- the lobby screen just
--- falls back to its normal (non-draft) view, same as it would for a lobby
--- that was never drafting at all.
-function BP.resume(lobby, config, on_complete)
-	if not (lobby and lobby._ban_pick) or lobby._ban_pick.complete then
-		return
-	end
-
-	_config = config
-	_on_complete = on_complete
-	_fired = false
-	_selected = {}
-	_areas = {}
-
-	_render = config.on_refresh
-	_overlay = nil
-	if _render then
-		_render()
-	else
-		_overlay = MPAPI.ui_element(build_banpick_uibox)
-		_overlay:as_overlay({ no_esc = true })
-	end
-end
+BP.resume = BP.start
 
 -----------------------------
 -- Button handlers
 -----------------------------
 
--- Per-frame enable/disable for the Confirm button: live only when it's our turn
--- and the selection is exactly the size the current step requires.
-G.FUNCS.mpapi_ban_pick_confirm_check = function(e)
+G.FUNCS.mpapi_ban_pick_clock = function(_e)
 	local lobby = MPAPI.get_current_lobby()
-	local s = lobby and lobby._ban_pick
+	_sel_ui.time_text = lobby and tostring(math.ceil(Setup.seconds_left(lobby))) or ''
+end
+
+-- Per-frame enable/disable for the Confirm button: live only when it's our turn
+-- and the selection is exactly the size the current turn requires.
+G.FUNCS.mpapi_ban_pick_confirm_check = function(e)
+	local s = draft_view(MPAPI.get_current_lobby())
 	local needed = selection_needed(s)
-	if s and is_my_turn(lobby, s) and needed > 0 and #_selected == needed then
-		local step = current_step(s)
-		e.config.colour = (step and step.action == "pick") and G.C.GREEN or G.C.MULT
+	if s and s.mine and needed > 0 and #_selected == needed then
+		e.config.colour = (s.step.action == "pick") and G.C.GREEN or G.C.MULT
 		e.config.button = "mpapi_ban_pick_confirm"
 	else
 		e.config.colour = G.C.UI.BACKGROUND_INACTIVE
@@ -872,9 +739,8 @@ end
 -- Random: replace the selection with a fresh random one (full reroll on every
 -- press). Committing still goes through Confirm, so a bad roll costs nothing.
 G.FUNCS.mpapi_ban_pick_random_check = function(e)
-	local lobby = MPAPI.get_current_lobby()
-	local s = lobby and lobby._ban_pick
-	if s and is_my_turn(lobby, s) and selection_needed(s) > 0 then
+	local s = draft_view(MPAPI.get_current_lobby())
+	if s and s.mine and selection_needed(s) > 0 then
 		e.config.colour = G.C.BLUE
 		e.config.button = "mpapi_ban_pick_random"
 	else
@@ -884,9 +750,8 @@ G.FUNCS.mpapi_ban_pick_random_check = function(e)
 end
 
 G.FUNCS.mpapi_ban_pick_random = function(_e)
-	local lobby = MPAPI.get_current_lobby()
-	local s = lobby and lobby._ban_pick
-	if not s or not is_my_turn(lobby, s) then
+	local s = draft_view(MPAPI.get_current_lobby())
+	if not (s and s.mine) then
 		return
 	end
 	local out = selection_randomize(s)
@@ -897,13 +762,12 @@ G.FUNCS.mpapi_ban_pick_random = function(_e)
 	sync_selection_ui(s)
 end
 
--- Commit the selection: request every marked key. Sequential requests are safe --
--- the turn stays ours until the step's count is exhausted, and the host validates
--- each one independently (see apply_action).
+-- Commit the selection: one choose per marked key, in order. The turn stays
+-- ours until its bans are all in, and the server checks each one.
 G.FUNCS.mpapi_ban_pick_confirm = function(_e)
 	local lobby = MPAPI.get_current_lobby()
-	local s = lobby and lobby._ban_pick
-	if not s or not is_my_turn(lobby, s) then
+	local s = draft_view(lobby)
+	if not (s and s.mine) then
 		return
 	end
 	local needed = selection_needed(s)
@@ -913,6 +777,6 @@ G.FUNCS.mpapi_ban_pick_confirm = function(_e)
 	local keys = _selected
 	_selected = {}
 	for _, k in ipairs(keys) do
-		BP.request_ban(k)
+		Setup.choose(lobby, k)
 	end
 end
