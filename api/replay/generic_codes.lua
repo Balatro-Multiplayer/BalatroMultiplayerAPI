@@ -229,9 +229,7 @@ local function shop_purchase_replay(self, args, ctx)
 		local area_id, idx, ref = args and args[1], args and args[2], args and args[3]
 		local card = resolve_own_card(ctx, ref, RLOG.area_object(area_id), idx, 'buy')
 		if card then
-			-- args[5]: the player pressed "Buy & Use" (a consumable bought and used at once).
-			local id = ((card.ability and card.ability.set == 'Booster') or (args and args[5] == true)) and 'buy_and_use' or nil
-			G.FUNCS.buy_from_shop({ config = { id = id, ref_table = card } })
+			G.FUNCS.buy_from_shop({ config = { id = MPAPI.playback.buy_button_id(card, args), ref_table = card } })
 		end
 	end
 end
@@ -457,10 +455,24 @@ MPAPI.RLOG_CODE {
 	replay = function(self, _args, ctx)
 		if ctx.schema_version >= 1 then
 			if ctx.is_pov then
-				-- the current blind's own panel: G.blind_select's first tag_container is the Small blind's
-				local panel = G.blind_select_opts and G.blind_select_opts[string.lower(G.GAME.blind_on_deck or 'Small')]
-				G.FUNCS.skip_blind({ UIBox = panel or G.blind_select })
+				G.FUNCS.skip_blind({ UIBox = MPAPI.playback.current_blind_panel() })
 			end
+		end
+	end,
+}
+
+-- The Next Round click, so a rejoin or replay lands on Blind Select, not back in the shop.
+-- Recordings from before this event have none: the select_blind and skip_blind handlers of a
+-- mod close the shop themselves.
+MPAPI.RLOG_CODE {
+	key = 'leave_shop',
+	mods = { 'pvp', 'spdrn' },
+	write = function(self)
+		self:record(nil, 'action:leaveShop')
+	end,
+	replay = function(self, _args, ctx)
+		if ctx.is_pov then
+			MPAPI.playback.leave_shop_if_needed()
 		end
 	end,
 }
@@ -524,7 +536,7 @@ function G.FUNCS.buy_from_shop(e)
 				key = "voucher"
 			end
 			local ref = RLOG.card_ref(c1)
-			MPAPI.RLOGCodes[key]:write(area, idx, ref, c1.cost, human, e.config.id == 'buy_and_use')
+			MPAPI.RLOGCodes[key]:write(area, idx, ref, c1.cost, human, e.config.id == MPAPI.playback.BUY_AND_USE_BUTTON_ID)
 		end
 	end
 	return buy_from_shop_ref(e)
@@ -646,6 +658,14 @@ function G.FUNCS.select_blind(e)
 			string.format("action:selectBlind,blind:%s", tostring(e.config.ref_table.key or e.config.ref_table.name))
 		)
 	end
+end
+
+local toggle_shop_ref = G.FUNCS.toggle_shop
+function G.FUNCS.toggle_shop(...)
+	if G.STATE == G.STATES.SHOP and RLOG.is_active() then
+		MPAPI.RLOGCodes.leave_shop:write()
+	end
+	return toggle_shop_ref(...)
 end
 
 local skip_blind_ref = G.FUNCS.skip_blind
