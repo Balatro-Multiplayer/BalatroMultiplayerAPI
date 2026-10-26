@@ -9,9 +9,10 @@ C.state_change_callbacks = C.state_change_callbacks or {}
 
 -- Production endpoints: the Nakama server the game talks to, and the website
 -- (log and report links). Each can be overridden by MPAPI.connect{...} opts
--- or the mod config keys server_host, server_port, server_secure,
--- nakama_server_key and web_url; dev/init.lua points dev builds at the local
--- stack. For a server inside WSL2 prefer the literal 127.0.0.1 over
+-- or, with the config key use_custom_server set, the mod config keys
+-- server_host, server_port, server_secure, nakama_server_key and web_url;
+-- the Dev mod replaces the defaults (MPAPI.dev.set_server_defaults). For a
+-- server inside WSL2 prefer the literal 127.0.0.1 over
 -- 'localhost': on Windows 'localhost' resolves to IPv6 ::1 first, which does
 -- not reach WSL2 and eats a ~21s TCP SYN timeout before falling back to IPv4.
 C.SERVER_DEFAULTS = {
@@ -30,14 +31,32 @@ local CONFIG_KEYS = {
 	web_url = 'web_url',
 }
 
--- One endpoint setting. Precedence: connect{...} opts > mod config > defaults.
+-- Set through MPAPI.dev (api/dev.lua) by the Dev mod: the server is not
+-- Official, the test account to log in as, and Steam login forced anyway.
+C.not_official_marked = C.not_official_marked or false
+
+local function uses_custom_server()
+	return MPAPI.config ~= nil and MPAPI.config.use_custom_server == true
+end
+
+-- Whether the client talks to the Official server. Only the Official server
+-- takes Steam login and needs the launcher for Ranked; any other server
+-- (Community or Dev) takes Device login.
+function C.is_official_server()
+	return not uses_custom_server() and not C.not_official_marked
+end
+
+-- One endpoint setting. Precedence: connect{...} opts > mod config (only
+-- with use_custom_server) > defaults.
 local function setting(opts, key)
 	if opts[key] ~= nil then
 		return opts[key]
 	end
-	local configured = MPAPI.config and MPAPI.config[CONFIG_KEYS[key]]
-	if configured ~= nil then
-		return configured
+	if uses_custom_server() then
+		local configured = MPAPI.config[CONFIG_KEYS[key]]
+		if configured ~= nil then
+			return configured
+		end
 	end
 	return C.SERVER_DEFAULTS[key]
 end
@@ -120,6 +139,8 @@ MPAPI.connect = function(opts)
 	C.connection = MPAPI.networking.connection.new({
 		steam = MPAPI.networking.steam,
 		nakama_client = create_nakama_client(C.server),
+		official = C.is_official_server() or C.force_steam_login == true,
+		impersonate = C.dev_identity,
 		config = { secure = C.server.secure },
 	})
 

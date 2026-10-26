@@ -291,7 +291,9 @@ MPAPI.matchmaking.queue = function(opts)
 		return handle
 	end
 
-	if wants_ranked then
+	-- Only the Official server needs the launcher for Ranked; on any other
+	-- server its own integrity setting decides.
+	if wants_ranked and MPAPI._internal.conn.is_official_server() then
 		local A = MPAPI.anticheat
 		local anticheat_ok = A ~= nil and A.active and A.launcher_connected and not A.launcher_supervision_lost
 		if not anticheat_ok then

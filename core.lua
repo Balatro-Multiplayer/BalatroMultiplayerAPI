@@ -168,13 +168,6 @@ MPAPI.load_mpapi_file('api/page/definition.lua')
 MPAPI.load_mpapi_dir('api', true)
 MPAPI.load_mpapi_dir('ui', true)
 
--- Load dev overrides if the dev/ directory exists (stripped in release builds) --
--- absence here is expected, so guard explicitly rather than relying on
--- load_mpapi_file's (now-fatal) missing-file path.
-if NFS.getInfo(MPAPI.path .. '/dev/init.lua') then
-	MPAPI.load_mpapi_file('dev/init.lua')
-end
-
 G.E_MANAGER:add_event(Event({
 	blockable = false,
 	blocking = false,

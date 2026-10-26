@@ -4,13 +4,14 @@ MultiplayerAPI (`MPAPI`): a Steamodded/Lovely library mod. It gives Balatro game
 
 ## Where things live
 
-- The load order is in `core.lua`, and the order matters: `domain/` → `networking/` → `anticheat/` → `lib/` (top level only) → the ordered preloads → `api/` (recursive) → `ui/` → `dev/init.lua`. The directory scan order is **not** guaranteed. A file that needs another file at load time has to be preloaded explicitly in `core.lua`; existing examples are `api/replay/codes.lua` and `api/page/definition.lua`.
+- The load order is in `core.lua`, and the order matters: `domain/` → `networking/` → `anticheat/` → `lib/` (top level only) → the ordered preloads → `api/` (recursive) → `ui/`. The directory scan order is **not** guaranteed. A file that needs another file at load time has to be preloaded explicitly in `core.lua`; existing examples are `api/replay/codes.lua` and `api/page/definition.lua`.
 - `MPAPI.load_mpapi_file` loads each path at most once and returns that file's cached result. Use it to pull in a sibling module (`local x = MPAPI.load_mpapi_file('lib/foo.lua')`).
 - State shared between files goes on `MPAPI._internal.<area>` and is initialised with `X = X or {}`. That keeps load order from mattering. Public API goes on `MPAPI.*`.
 - Wire contracts are mirrored by hand in BalatroMultiplayerServer's `nakama/` module. Change both sides together:
   - lobby op codes: `networking/nakama_lobby.lua` ↔ `nakama/src/lobby/protocol.ts`
   - notification codes: `networking/nakama_notify.lua` ↔ `nakama/src/notify.ts`
   - authoritative actions: `api/action/builtin.lua` ↔ `nakama/src/actions/registry.ts`
+  - the Dev mod seam `MPAPI.dev` (`api/dev.lua`): `set_identity`, `set_server_defaults`. The Dev mod is in BalatroMultiplayerServer's `dev/client/`.
   - lobby metadata key `drafted_stake` (a mod writes it, `mpapi_restart_game` reads it): `PVP.LOBBY_METADATA.DRAFTED_STAKE` in BalatroMultiplayerPvP and `DRAFTED_STAKE_KEY` in `nakama/src/actions/registry.ts`
 - `lib/nakama/` is vendored upstream nakama-defold; its README is upstream's. The only file of ours in it is `lib/nakama/engine/love.lua`. Make fixes there or in `networking/`, not in the SDK files.
 - `lib/debugplus/` is vendored (MPL-2.0); leave it as upstream wrote it.
@@ -40,7 +41,7 @@ Formatting: run `stylua` with the repo's `stylua.toml` (tabs, single quotes). Us
 - **Windows `localhost` resolves to IPv6 first** and stalls about 20 seconds against a WSL2 server. Use `127.0.0.1`.
 - **TLS does not verify certificates** (`verify = false` in `networking/nakama_net.lua`). Keep that in mind before relying on transport security for anything new.
 - **OpenSSL is bundled in `networking/`** for Windows/Proton and macOS, and FFI loads it from there first (found via `package.path`, because threads have no `MPAPI`). Fallbacks are next to `Balatro.exe` (Windows) or `BET_OPENSSL_DYLIB_DIR` (macOS). Linux uses the system OpenSSL. libcrypto must load before libssl, since libssl resolves it by name (Windows) or `@loader_path` (macOS). If it is missing, the client stays offline. Never load OpenSSL by bare name on macOS: that picks up the system LibreSSL and aborts the process.
-- **`dev/` is stripped from `main`** by `.github/workflows/strip-dev.yml` on every push. Anything there must be optional: `core.lua` checks for `dev/init.lua` before loading it. Pushes to `main` are what players receive, so `main` must always be releasable.
+- **Pushes to `main` are what players receive**, so `main` must always be releasable. Dev-only code goes in the Dev mod (BalatroMultiplayerServer `dev/client/`), never in MPAPI.
 - **Lovely patches** in `lovely/` target vanilla source text. If a patch stops matching after a Balatro or Steamodded update, it fails silently. Check the Lovely log.
 
 ## Verifying changes
@@ -48,7 +49,7 @@ Formatting: run `stylua` with the repo's `stylua.toml` (tabs, single quotes). Us
 There is no offline test runner in this repository. Changes are verified against live game instances:
 
 1. Copy or symlink the mod into Balatro's `Mods/` (one copy per mod id), together with the gamemode mods you are touching.
-2. For server work, run the BalatroMultiplayerServer stack locally. `dev/init.lua` points the client at `127.0.0.1:7350`. Use `BMP_IMPERSONATE_*` to give a second instance a different account.
+2. For server work, run the BalatroMultiplayerServer stack locally. Install the Dev mod (BalatroMultiplayerServer `dev/client/`) beside MPAPI: it points the client at `127.0.0.1:7350`. Use `BMP_IMPERSONATE_*` to give a second instance a different account.
 3. Launch through Steam. Check the Lovely log for `MPAPI: failed to ...` load errors, `[OpenSSL]` lines and handler warnings.
 4. Drive the real UI flows (create/join, ready, start, report, leave, reconnect) in two or more instances. The project's private test harness, a game-control mod plus CLI, scripts this and runs the suites. Prefer exercising the real UI path over calling internals directly.
 5. If you changed a wire contract, run the matching server-side change at the same time.
