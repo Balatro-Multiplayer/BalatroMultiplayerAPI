@@ -9,6 +9,7 @@
 -- so its draws came before the starting draws, and the shop that followed was not the recorded one.
 -- An area that exists is not enough: the replay has to wait for `starting_shop`.
 MPAPI.playback = MPAPI.playback or {}
+MPAPI._internal.playback = MPAPI._internal.playback or {}
 
 -- The shop UIBox that got its starting cards. A new shop visit makes a new UIBox, so no reset is needed.
 local built_shop = nil
@@ -18,8 +19,8 @@ function MPAPI.playback.mark_shop_built()
 	built_shop = G.shop
 end
 
-if not MPAPI._playback_shop_built_hooked then
-	MPAPI._playback_shop_built_hooked = true
+if not MPAPI._internal.playback.shop_built_hooked then
+	MPAPI._internal.playback.shop_built_hooked = true
 	local calculate_context_ref = SMODS.calculate_context
 	function SMODS.calculate_context(context, ...)
 		if type(context) == 'table' and context.starting_shop then
