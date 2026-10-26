@@ -513,7 +513,7 @@ function RLOG.end_run(outcome)
 
 	local json = require("json")
 	local t_end = elapsed_ms()
-	emit_carbon(RLOG.CARBON_PREFIX .. " END " .. json.encode(outcome or {}), t_end, "end", outcome or {})
+	emit_carbon(RLOG.CARBON_PREFIX .. " END " .. json.encode(outcome or {}), t_end, MPAPI.OPCODE.END, outcome or {})
 
 	local carbon_str = table.concat(RLOG._carbon_buffer, "\n")
 	local human_str = table.concat(RLOG._human_buffer, "\n")
@@ -531,7 +531,7 @@ function RLOG.end_run(outcome)
 	emit_carbon(
 		string.format("%s CHK v1 carbon=%s human=%s bytes=%d", RLOG.CARBON_PREFIX, carbon_hash, human_hash, bytes),
 		elapsed_ms(),
-		"chk",
+		MPAPI.OPCODE.CHK,
 		chk_args
 	)
 

@@ -43,6 +43,9 @@ MPAPI.LobbyEvent = {
 	-- Not fired for a player's first info, nor when only their mods or name
 	-- came again.
 	PLAYER_STANDING_CHANGED = 'player_standing_changed',
+	-- Client-side only: a server snapshot replaced the roster and the metadata (a join, or a
+	-- rejoin after a socket drop). Fires just before METADATA_CHANGED. Args: the snapshot.
+	SNAPSHOT_APPLIED = 'snapshot_applied',
 	METADATA_CHANGED = 'metadata_changed',
 	HOST_CHANGED = 'host_changed',
 	LOBBY_CLOSED = 'lobby_closed',

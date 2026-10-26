@@ -84,6 +84,12 @@ L.create_object = function(opts)
 		return self._gamemode_instance
 	end
 
+	-- A mod makes its gamemode instance when a match starts (or a host takes over) and hands it
+	-- to the lobby here: the field behind it is the lobby's own.
+	function lobby:set_gamemode_instance(instance)
+		self._gamemode_instance = instance
+	end
+
 	function lobby:set_player_state(tbl)
 		if self._destroyed then
 			return

@@ -174,11 +174,9 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	if lobby.is_host ~= was_host then
 		lobby:_fire(MPAPI.LobbyEvent.HOST_CHANGED, snapshot.hostId)
 	end
-	-- A rejoin after a socket drop missed the draft's state broadcasts: catch up
-	-- from the host's metadata mirror.
-	if MPAPI.BanPick and MPAPI.BanPick.sync_from_metadata then
-		MPAPI.BanPick.sync_from_metadata(lobby)
-	end
+	-- Listeners that keep their own state from broadcasts (the ban/pick draft) catch up from the
+	-- snapshot here: a rejoin after a socket drop missed those broadcasts.
+	lobby:_fire(MPAPI.LobbyEvent.SNAPSHOT_APPLIED, snapshot)
 	lobby:_fire(MPAPI.LobbyEvent.METADATA_CHANGED, lobby._metadata)
 end
 

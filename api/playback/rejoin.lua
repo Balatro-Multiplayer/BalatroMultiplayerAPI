@@ -45,15 +45,15 @@ end
 function MPAPI.playback.read_rejoin_log(events, my_id, hooks)
 	local bootstrap, found, timeline = {}, {}, {}
 	for _, ev in ipairs(events or {}) do
-		if not found.match_manifest and ev.opcode == 'match_manifest' then
+		if not found.match_manifest and ev.opcode == MPAPI.OPCODE.MATCH_MANIFEST then
 			found.match_manifest = true
 			bootstrap.schema_version = ev.args.schema_version
-		elseif not found.lobby_info and ev.opcode == 'lobby_info' then
+		elseif not found.lobby_info and ev.opcode == MPAPI.OPCODE.LOBBY_INFO then
 			found.lobby_info = true
 			bootstrap.gamemode = ev.args.gamemode
 			bootstrap.ruleset = ev.args.ruleset
 			hooks.read_lobby_info(ev.args, bootstrap)
-		elseif not found.run_info and ev.opcode == 'run_info' then
+		elseif not found.run_info and ev.opcode == MPAPI.OPCODE.RUN_INFO then
 			found.run_info = true
 			bootstrap.seed = ev.args.seed
 			bootstrap.stake = ev.args.stake
@@ -191,7 +191,7 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 		-- that knows this run: a lobby joined from outside has none.
 		local instance = playback_lobby and playback_lobby:get_gamemode_instance()
 		if instance then
-			lobby._gamemode_instance = instance
+			lobby:set_gamemode_instance(instance)
 		end
 		-- The run being reconnected to is the one just rebuilt: do not exit it when the lobby
 		-- connects (api/mod_registry/focus.lua).
