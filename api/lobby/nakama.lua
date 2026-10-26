@@ -259,6 +259,10 @@ local function attach(lobby, match_id, on_ready)
 			-- is kept as for the first join's refusal, so offer the same
 			-- Retry/Leave; without it the player sat in a run whose lobby was
 			-- gone, with nothing on screen.
+			if MPAPI.is_forfeited_refusal(reason) and MPAPI.show_forfeited_notice then
+				MPAPI.show_forfeited_notice()
+				return
+			end
 			local rejoin_refusal = MPAPI.standing.parse_rejoin_refusal(reason)
 			if rejoin_refusal and MPAPI.show_rejoin_refused then
 				MPAPI.show_rejoin_refused(rejoin_refusal)
@@ -266,6 +270,13 @@ local function attach(lobby, match_id, on_ready)
 		end,
 	}, function(err)
 		if not err or lobby._destroyed then
+			return
+		end
+		-- The grace period forfeited our seat: the match is over for us.
+		if MPAPI.is_forfeited_refusal(err) and MPAPI.show_forfeited_notice then
+			fail(lobby, err)
+			tear_down(lobby)
+			MPAPI.show_forfeited_notice()
 			return
 		end
 		-- A matchmade game refuses an account below its standing but keeps the
