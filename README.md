@@ -13,57 +13,36 @@ It is part of the Balatro Multiplayer Platform:
 
 MPAPI on its own adds an account button and the multiplayer menu. You need at least one gamemode mod (PvP or Speedrun) to actually play.
 
-> The older MQTT-based version of the platform is on the [`legacy`](https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI/tree/legacy) branch. It is frozen and no longer works against the live server.
+## Installation
 
-## Installing
+### Launchers
 
-### Players
+Launchers are the easiest ways to get modded Balatro running quickly. We have two main launchers we support:
 
-The easiest route is the Balatro Multiplayer launcher. It installs the mods for you, and it is required for ranked play. To install by hand:
+#### R2 Mod Man
 
-1. Install [Lovely](https://github.com/ethangreen-dev/lovely-injector) 0.8 or newer and [Steamodded](https://github.com/Steamodded/smods) 1.0.0~BETA-1814a or newer.
-2. Put this mod's folder (or its release zip) in your Balatro `Mods` directory:
-   - **Windows:** `%AppData%\Balatro\Mods\`
-   - **Linux (Proton):** `~/.steam/steam/steamapps/compatdata/2379780/pfx/drive_c/users/steamuser/AppData/Roaming/Balatro/Mods/`
-   - **macOS:** `~/Library/Application Support/Balatro/Mods/`. Start Balatro from Steam, not from the app bundle directly.
-3. Install the gamemode mods you want to play the same way.
-4. Launch Balatro **through Steam**. Login uses your Steam session ticket, so the multiplayer menu stays offline without the Steam client.
+We recommend downloading the mod with r2mm if you intend to play it casually. You can download r2mm here: [https://r2modman.com/](https://r2modman.com/)
 
-Keep only one copy of each mod in `Mods/`. Two folders with the same mod id stop either one from loading.
+#### BET
 
-### OpenSSL
+Otherwise you can use own custom closed source launcher called BET, which is intended to be a successor of BMM. You can download BET here: [https://new.balatromp.com/download](https://new.balatromp.com/download)
 
-MPAPI connects to the server over TLS. It does this by loading OpenSSL through LuaJIT FFI (`networking/openssl_ffi.lua`). The Windows and macOS libraries ship in this mod's `networking/` folder (see `networking/NOTICE-OpenSSL.txt`), so a normal install needs nothing extra. Where MPAPI looks, in order:
+### Manual
 
-| Platform | Files | Where MPAPI looks |
-|---|---|---|
-| Windows, Linux via Proton | `libssl-3-x64.dll`, `libcrypto-3-x64.dll` (OpenSSL 1.1 names also accepted) | This mod's `networking/` folder, then the default DLL search path, the folder containing `Balatro.exe`, the save directory and the working directory. |
-| macOS | `libssl.3.dylib`, `libcrypto.3.dylib` (universal x86_64 + arm64) | This mod's `networking/` folder, then the directory in `BET_OPENSSL_DYLIB_DIR` (set by the launcher). Apple's system `libssl` is LibreSSL and is never loaded. |
-| Linux (native) | `libssl.so.3` / `libcrypto.so.3` (or 1.1) | The system OpenSSL from the default library path and the standard lib dirs. Install your distribution's `openssl` package. |
+Requirements:
 
-The bundled copy is only loadable from a real folder. On macOS, a mod left as a zip is handled at start-up: MPAPI copies `libssl.3.dylib` and `libcrypto.3.dylib` out of the zip into `MPAPI_openssl/` in the Balatro save directory, then loads them from there. If that fails, unzip the mod into `Mods/`. On other platforms a zipped mod falls back to the other locations. If OpenSSL can't be found, the game still starts, but MPAPI stays offline. The Lovely log shows every path it tried, with lines prefixed `[OpenSSL]`.
+- [Steamodded](https://github.com/Steamodded/smods) (>= 1.0.0~BETA-1814a)
+- [Lovely Injector](https://github.com/ethangreen-dev/lovely-injector) (>= 0.10)
+- Balatro running through Steam (the API signs in with your Steam account)
 
-### Mod developers
+Steps:
 
-Clone the repository straight into `Mods/`, or symlink it there. The folder name does not matter.
-
-```sh
-git clone https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI.git
-```
-
-To work against a Dev server, also install the Dev mod from BalatroMultiplayerServer's `dev/client/` folder (copy or symlink that folder into `Mods/`). It points the client at the Dev server (Nakama on `127.0.0.1:7350`, plain HTTP) and reads these environment variables:
-
-| Variable | Effect |
-|---|---|
-| `BMP_SERVER_HOST`, `BMP_SERVER_PORT` | Use this server instead of `127.0.0.1:7350` |
-| `BMP_IMPERSONATE_ID` / `BMP_IMPERSONATE_NAME` | Log in as that test account with a Device login. This lets you run several game instances on one Steam account. |
-| `BMP_DEV_STEAM_LOGIN=1` | Log in with Steam login (the Dev server needs a Steam Web API key) |
-
-The Dev mod reaches MPAPI only through `MPAPI.dev` (`api/dev.lua`). To start a Dev server, and for the Dev mod's full notes, see "Dev server" and "Dev mod" in the [BalatroMultiplayerServer README](https://github.com/Balatro-Multiplayer/BalatroMultiplayerServer#dev-mod). Players never get the Dev mod: it is not part of MPAPI.
+1. Install Steamodded, Lovely and MultiplayerAPI.
+2. Download the latest release of this mod from the [Releases page](https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI/releases).
+3. Extract it into its own folder in your Balatro `Mods` directory. Make sure the folder is not nested inside a second folder of the same name.
+4. Launch the game and pick **Speedrun** from the multiplayer menu.
 
 ## Configuration
-
-`config.lua` is the Steamodded mod config. Players can toggle `chat_enabled` in-game. Steamodded saves the config to `config/MultiplayerAPI.jkr` in the Balatro save folder (the folder that holds `Mods`). A key in that saved file wins over the same key in `config.lua`.
 
 ### Join a Community server
 
@@ -245,21 +224,17 @@ To queue for ranked, pass `ranked = true` explicitly. MPAPI does not work out ra
 
 Each one has its documentation in the header comment of the file that defines it, under `api/`.
 
-## Repository layout
+## AI Content Disclaimer
 
-| Path | Contents |
-|---|---|
-| `core.lua` | Entry point: load order, the per-frame update, and startup |
-| `domain/` | Enums and pure value types (`MPAPI.LobbyEvent`, `MPAPI.ErrorKind`, `MPAPI.Result`, ...) |
-| `networking/` | Steam ticket, OpenSSL FFI and the bundled OpenSSL libraries, Nakama transport (`nakama_lobby`, `nakama_notify`) and the I/O worker threads |
-| `lib/nakama/` | Vendored [nakama-defold](https://github.com/heroiclabs/nakama-defold) SDK, plus `engine/love.lua`, a LÖVE engine adapter |
-| `lib/` | Shared helpers, the thread preloader, and the vendored DebugPlus console (MPL-2.0) |
-| `api/` | The public API, one folder per concept (`lobby/`, `action/`, `matchmaking/`, `gamemode/`, `page/`, `layers/`, `ruleset/`, `replay/`, ...) |
-| `ui/` | Built-in screens and overlays (lobby, account, moderation notices, ...) |
-| `anticheat/` | Ranked-mode supervision channel to the launcher; inactive unless the launcher started a ranked session |
-| `lovely/` | Lovely patches to the base game (The Order, pool gating, HUD, ban timing, crash guards) |
-| `localization/` | UI strings |
-| `compatibility/` | Integrations with other mods (DebugPlus) |
+This mod does NOT use AI for art or other assets. This mod uses generative AI in it's development as a tool for writing code.
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
+
+Content changes (new cards, blinds, rulesets, formats, or anything that alters competitive balance) are heavily scrutinized, so open an issue or ask on Discord first. Bug fixes and quality-of-life work are always welcome, check the [issues](https://github.com/Balatro-Multiplayer/BalatroMultiplayerSpeedrunning/issues), especially those tagged "Help Wanted".
+
+Testing happens against real, running game instances: launch two or more clients, put them in a lobby and play the change through.
 
 ## License
 
