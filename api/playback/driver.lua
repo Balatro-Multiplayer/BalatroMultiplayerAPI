@@ -36,18 +36,18 @@ Driver.__index = Driver
 -- delay()/tween sequencing" than a clean one. Every multiplier from 4 through 256 completed with
 -- zero crashes and landed at IDENTICAL final state (G.GAME.dollars, ante, joker keys, hand
 -- count) -- both matching each other and matching a true gamespeed=1 baseline run of the same
--- match. Wall-clock plateaus around 16x-32x (real 10s-scoped waits like
--- SHOP_READY_TIMEOUT_SECONDS in playback_handlers.lua are immune to GAMESPEED by construction,
--- exactly as designed -- confirmed live, not just assumed), so going higher than that buys
--- negligible further speedup while narrowing the safety margin for no real benefit. 16 is picked
--- as the new default: solidly inside the validated, zero-crash range (with a full 4x-16x margin
--- below the highest multiplier actually tested clean), while already capturing the large majority
--- of the available wall-clock improvement (this specific stress match: ~140s at 1x down to ~40s
--- at 16x). See this session's validation report for the full methodology, including the one real
--- crash bug this same testing found and fixed (Driver:_dispatch_next's own nil-player_id guard,
--- below) -- unrelated to GAMESPEED itself (reproduced identically at gamespeed=1), but found via
--- this same effort.
-MPAPI.playback.DEFAULT_FF_GAMESPEED = 16
+-- match. The wall-clock plateau seen then (around 16x-32x) was not a game-speed limit: vanilla's
+-- EventManager handles at most one blocking event per queue pass, and runs one pass per 1/60 real
+-- second, so a scored hand (a few hundred blocking events) took about 3 s at any game speed.
+-- DEFAULT_FF_QUEUE_PASSES lifts that cap; with it, 64 is about twice as fast as 16 and lands on
+-- the same final state (confirmed live 2026-10-26, e2e spdrn_live/ff_bench.sh).
+MPAPI.playback.DEFAULT_FF_GAMESPEED = 64
+
+-- Extra event-queue passes per frame while a fast-forward runs (Driver:_pump_event_queue).
+-- Confirmed live 2026-10-26: an SPDRN rejoin spent 5 s per blind in fast-forward, 92 percent of
+-- it with blocking events left in the queue; 4 passes at game speed 64 made it 0.9 s per blind,
+-- with the same final state.
+MPAPI.playback.DEFAULT_FF_QUEUE_PASSES = 4
 
 -- Real seconds (while the driver is playing) with no cursor progress before a fast-forward
 -- gives up on the tight loop and degrades to normal pace. It is real time, not frames: vanilla's
@@ -341,6 +341,23 @@ function Driver:_check_complete()
 	return false
 end
 
+-- Runs the event queue a few more times this frame during a fast-forward, also while a handler
+-- has paused the driver to wait on its action (a blind select, a cash out). A forced pass does
+-- not move the queue's own 1/60 s schedule, and G.TIMERS do not move inside a frame, so a delay
+-- still waits its scaled time: only the one-blocking-event-per-pass cap is lifted.
+function Driver:_pump_event_queue()
+	if not (self._ff_active and not self._ff_degraded and G.E_MANAGER) then
+		return
+	end
+	local passes = (self._ff_opts and self._ff_opts.queue_passes) or MPAPI.playback.DEFAULT_FF_QUEUE_PASSES
+	for _ = 1, passes do
+		if MPAPI.playback._queues_empty() then
+			return
+		end
+		G.E_MANAGER:update(0, true)
+	end
+end
+
 function Driver:_tick(dt)
 	if not self._playing or not self:has_pending() then
 		if self._playing then
@@ -408,6 +425,8 @@ end
 -- opts:
 --   gamespeed         -- G.SETTINGS.GAMESPEED while fast-forwarding (default
 --                        MPAPI.playback.DEFAULT_FF_GAMESPEED)
+--   queue_passes      -- extra event-queue passes per frame (default
+--                        MPAPI.playback.DEFAULT_FF_QUEUE_PASSES; 0 turns the pump off)
 --   watchdog_seconds -- real seconds (while self._playing, see Driver:play's own comment) with
 --                        no cursor progress before giving up on the tight loop/gamespeed boost
 --                        and degrading to one-opcode-per-real-frame dispatch for the rest of this
@@ -543,5 +562,7 @@ function Game:update(dt)
 	_game_update_ref(self, dt)
 	for driver in pairs(MPAPI.playback._active_drivers) do
 		driver:_tick(dt)
+		-- After the tick, so the events of an action dispatched this frame start this frame.
+		driver:_pump_event_queue()
 	end
 end
