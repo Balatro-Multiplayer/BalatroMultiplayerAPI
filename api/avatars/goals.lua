@@ -105,6 +105,22 @@ function Goals.progress_text(goal)
 	return format_count(Goals.progress(goal)) .. ' / ' .. format_count(Goals.threshold(goal))
 end
 
+-- Kinds no play can earn: a privilege is granted, a reserved avatar waits
+-- for a future game mode.
+local UNEARNABLE_KIND = {
+	[Goals.Kind.PRIVILEGE] = true,
+	[Goals.Kind.RESERVED] = true,
+}
+
+-- Whether the player has the avatar or can still earn it by playing. A
+-- locked privilege or reserved avatar is neither, so the picker hides it.
+function Goals.obtainable(entry)
+	if entry.unlocked or entry.goal == nil then
+		return true
+	end
+	return not UNEARNABLE_KIND[entry.goal.kind]
+end
+
 function Goals.group_of(entry)
 	local goal = entry and entry.goal
 	if goal == nil then
