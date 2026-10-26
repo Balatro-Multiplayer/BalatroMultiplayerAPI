@@ -192,6 +192,12 @@ function connection:_handle_login_response(data)
 		set_state(self, STATES.TOS_REQUIRED, { steam_name = self.steam_name, tos_update = data.tosUpdate or false })
 		return
 	end
+	-- A server kind without the Notice still asks the age once, for chat.
+	if data.ageRequired then
+		self._pending_tos_token = data.token
+		set_state(self, STATES.TOS_REQUIRED, { steam_name = self.steam_name, age_only = true })
+		return
+	end
 
 	self:_handle_auth_success(data)
 end
@@ -397,7 +403,8 @@ function connection:connect()
 	self:_do_auth()
 end
 
--- Called by the UI after the user reads and accepts the ToS / Privacy Policy.
+-- Called by the UI after the user accepts the Notice, or (age_only) answers
+-- the age question on a server without the Notice.
 -- chat_eligible: boolean computed client-side from birthdate (never sent raw).
 function connection:accept_tos(chat_eligible)
 	if self.state ~= STATES.TOS_REQUIRED or not self._pending_tos_token then

@@ -259,6 +259,7 @@ connection_on_state_change = function(new_state, context)
 
 	if new_state == MPAPI.ConnectionState.TOS_REQUIRED then
 		MPAPI.connection_state.tos_is_update = context.tos_update or false
+		MPAPI.connection_state.tos_age_only = context.age_only or false
 	end
 
 	if new_state ~= context.old_state then

@@ -271,7 +271,7 @@ G.FUNCS.mpapi_account_button = function(e)
 		MPAPI.connect(MPAPI.get_last_opts() or {})
 	elseif state == MPAPI.ConnectionState.TOS_REQUIRED then
 		if MPAPI._internal.show_tos_overlay then
-			MPAPI._internal.show_tos_overlay(MPAPI.connection_state.tos_is_update)
+			MPAPI._internal.show_tos_overlay(MPAPI.connection_state.tos_is_update, MPAPI.connection_state.tos_age_only)
 		end
 	end
 end

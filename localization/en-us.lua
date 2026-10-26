@@ -40,6 +40,7 @@ return {
 			k_tos_blocked_title = 'Account creation is unavailable.',
 			k_tos_birth_section = 'Your birthday',
 			k_tos_birth_hint = "We won't store it, we just need to check that you are old enough to play.",
+			k_age_birth_hint = "We won't store it. We only use it to decide if chat is open to you.",
 			k_tos_agreement_section = 'What you\'re agreeing to',
 			k_tos_bullet_1 = 'We save your Steam display name, hashed identifiers, and match results.',
 			k_tos_bullet_2 = "We don't sell your data or use it for ads. Ever.",

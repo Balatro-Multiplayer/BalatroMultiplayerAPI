@@ -27,6 +27,8 @@ MPAPI.connection_state = {
 	preferred_joker = 'j_joker',
 	privileges = {},
 	tos_is_update = false,
+	-- TOS_REQUIRED on a server without the Notice: only the age question.
+	tos_age_only = false,
 	chat_enabled = false,
 	chat_blocked = false,
 	mute_list = {},
