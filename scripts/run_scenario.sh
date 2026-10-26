@@ -3,7 +3,9 @@
 #
 #   cd <mod checkout> && bash <MPAPI checkout>/scripts/run_scenario.sh MultiplayerPvP:smoke
 #
-# Installed Mods must point at both checkouts; this script never changes links.
+# Installed Mods must point at both checkouts and hold the Dev mod
+# (BalatroMultiplayerServer dev/client/), which starts the runner; this script
+# never changes links.
 # Env: MOD_REPO (default $PWD), BALATRO_DIR, SCENARIO_TIMEOUT (seconds, default 120).
 set -euo pipefail
 

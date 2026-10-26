@@ -58,3 +58,11 @@ function MPAPI.dev.set_identity(identity)
 	end
 	mark_dev_mod_loaded()
 end
+
+-- Starts the in-game scenario runner (dev/scenario/runner.lua) for the
+-- BMP_SCENARIO=<mod_id>:<name> selector. Contributors only: release builds
+-- strip dev/. Call it at mod load time, so its hooks are in place before the
+-- splash screen.
+function MPAPI.dev.start_scenario()
+	MPAPI.load_mpapi_file('dev/scenario/runner.lua')
+end
