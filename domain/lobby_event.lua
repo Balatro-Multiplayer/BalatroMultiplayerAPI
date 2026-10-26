@@ -32,6 +32,11 @@ MPAPI.LobbyEvent = {
 	PLAYER_DISCONNECTED = 'player_disconnected',
 	PLAYER_RECONNECTED = 'player_reconnected',
 	PLAYER_INFO = 'player_info',
+	-- A player started, or finished, replaying its own run after a crash (it
+	-- has joined, so its seat is safe). Also a server event type. Args:
+	-- player_id, catching_up (boolean). The roster entry's `catching_up` is
+	-- already updated when this fires.
+	PLAYER_CATCHING_UP = 'player_catching_up',
 	-- Client-side only: a player already in the lobby got a different
 	-- standing (domain/standing.lua) through PLAYER_INFO. Args: player_id,
 	-- standing, the standing before (nil when the server hadn't said yet).

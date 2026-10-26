@@ -109,6 +109,28 @@ L.create_object = function(opts)
 		return result
 	end
 
+	-- Whether `player_id` is replaying its own run after a crash (the server
+	-- tells everyone; see api/playback/rejoin.lua). Nothing waits for it.
+	function lobby:is_player_catching_up(player_id)
+		local player = self._players[player_id]
+		return player ~= nil and player.catching_up == true
+	end
+
+	-- Tells the server this client is (or no longer is) catching up. The
+	-- flag is sent again after a socket drop's rejoin (api/lobby/nakama.lua).
+	function lobby:set_catching_up(catching_up)
+		if self._destroyed or self._local_mode then
+			return
+		end
+		self._catching_up = catching_up == true
+		local NL = MPAPI.networking.nakama_lobby
+		NL.send(NL.ClientOp.CATCHING_UP, { catchingUp = self._catching_up })
+		local me = self._players[self.player_id]
+		if me then
+			me.catching_up = self._catching_up
+		end
+	end
+
 	function lobby:leave()
 		if self._destroyed then
 			return
