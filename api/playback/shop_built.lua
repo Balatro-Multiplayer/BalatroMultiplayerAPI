@@ -13,12 +13,17 @@ MPAPI.playback = MPAPI.playback or {}
 -- The shop UIBox that got its starting cards. A new shop visit makes a new UIBox, so no reset is needed.
 local built_shop = nil
 
+-- Marks the current shop as built. The hook below calls it on `starting_shop`.
+function MPAPI.playback.mark_shop_built()
+	built_shop = G.shop
+end
+
 if not MPAPI._playback_shop_built_hooked then
 	MPAPI._playback_shop_built_hooked = true
 	local calculate_context_ref = SMODS.calculate_context
 	function SMODS.calculate_context(context, ...)
 		if type(context) == 'table' and context.starting_shop then
-			built_shop = G.shop
+			MPAPI.playback.mark_shop_built()
 		end
 		return calculate_context_ref(context, ...)
 	end
