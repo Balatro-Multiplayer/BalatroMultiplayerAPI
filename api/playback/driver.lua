@@ -49,13 +49,13 @@ Driver.__index = Driver
 -- this same effort.
 MPAPI.playback.DEFAULT_FF_GAMESPEED = 16
 
--- Frame-count budget (real Game:update ticks with self._ff_active and no dispatch progress),
--- not real seconds: see Driver:fast_forward_to's own header comment for why. 900 frames is
--- chosen to land close to the previous wall-clock design's 15s budget at a typical ~60fps --
--- close enough to keep today's validated escalating-gamespeed behavior (driver.lua's own
--- header comment on DEFAULT_FF_GAMESPEED) intact, while making the trip point a function of
--- simulation progress instead of the real machine's clock speed.
-MPAPI.playback.DEFAULT_FF_WATCHDOG_FRAMES = 900
+-- Real seconds (while the driver is playing) with no cursor progress before a fast-forward
+-- gives up on the tight loop and degrades to normal pace. It is real time, not frames: vanilla's
+-- EventManager runs its queue at most 60 times per real second (queue_dt = 1/60 in
+-- engine/event.lua), whatever the frame rate. A machine that renders 225 frames per second
+-- reached a 900-frame budget in 4 s, before the first scored hand had left the queue, and every
+-- index build stalled at its first play.
+MPAPI.playback.DEFAULT_FF_WATCHDOG_SECONDS = 15
 
 -- Exposed as a module field (not a local) so a test can stub it: the base
 -- queue always carries a couple of lingering low-priority housekeeping
@@ -145,7 +145,7 @@ function Driver:play()
 	self._playing = true
 	MPAPI.playback._active_drivers[self] = true
 	G.CONTROLLER.locks.mpapi_playback = true
-	-- No watchdog reset needed on resume: _ff_frames_since_progress only ever increments inside
+	-- No watchdog reset needed on resume: _ff_seconds_since_progress only ever increases inside
 	-- _fast_forward_tick, which _tick() never calls while self._playing is false, so time spent
 	-- genuinely paused (every boundary opcode handler's own bounded wait -- select_blind/
 	-- shop-ready/etc, playback_handlers.lua) is never counted against it in the first place.
@@ -361,7 +361,7 @@ function Driver:_tick(dt)
 	end
 
 	if self._ff_active then
-		self:_fast_forward_tick()
+		self:_fast_forward_tick(dt or 0)
 		self:_check_complete()
 		return
 	end
@@ -408,21 +408,12 @@ end
 -- opts:
 --   gamespeed         -- G.SETTINGS.GAMESPEED while fast-forwarding (default
 --                        MPAPI.playback.DEFAULT_FF_GAMESPEED)
---   watchdog_frames   -- consecutive real Game:update frames (while self._playing, see
---                        Driver:play's own comment) with no cursor progress before giving up on
---                        the tight loop/gamespeed boost and degrading to today's normal
---                        one-opcode-per-real-frame dispatch for the rest of this seek (default
---                        MPAPI.playback.DEFAULT_FF_WATCHDOG_FRAMES). Deliberately NOT real
---                        seconds: this watchdog exists purely to catch a stuck tight loop (see
---                        _fast_forward_tick's own header comment) -- a question this Driver
---                        already has an exact, frame-based answer to (self._cursor not moving
---                        across repeated _tick() calls) -- so tying it to wall-clock time only
---                        made the trip point depend on incidental machine/scheduling speed
---                        instead of on simulation progress, without buying anything: unlike the
---                        genuinely wall-clock-scoped per-handler waits this watchdog sits on top
---                        of (SHOP_READY_TIMEOUT_SECONDS etc, playback_handlers.lua -- those pace
---                        real vanilla animations and stay real-time on purpose), this watchdog
---                        was never about vanilla's own delays, only about "is the cursor moving."
+--   watchdog_seconds -- real seconds (while self._playing, see Driver:play's own comment) with
+--                        no cursor progress before giving up on the tight loop/gamespeed boost
+--                        and degrading to one-opcode-per-real-frame dispatch for the rest of this
+--                        seek (default MPAPI.playback.DEFAULT_FF_WATCHDOG_SECONDS). Seconds, not
+--                        frames: the event queue advances at most 60 times per real second, so a
+--                        frame budget trips early on a fast machine (see the constant's comment).
 --   pause_gate()      -- optional; returning true means "don't dispatch another entry THIS
 --                        frame, wait for the next real frame instead." Exists because a tight
 --                        same-frame loop can race ahead of any of this codebase's own
@@ -456,28 +447,28 @@ function Driver:fast_forward_to(target_cursor, opts)
 	self._ff_degraded = false
 	self._ff_saved_gamespeed = G.SETTINGS.GAMESPEED
 	G.SETTINGS.GAMESPEED = opts.gamespeed or MPAPI.playback.DEFAULT_FF_GAMESPEED
-	self._ff_frames_since_progress = 0
+	self._ff_seconds_since_progress = 0
 	self:play()
 end
 
 -- One real frame's worth of fast-forward work, called from _tick() instead of the normal
 -- single-dispatch body while _ff_active. See fast_forward_to's own header comment for the
 -- full rationale of every piece of this.
-function Driver:_fast_forward_tick()
+function Driver:_fast_forward_tick(dt)
 	local opts = self._ff_opts
-	local watchdog = opts.watchdog_frames or MPAPI.playback.DEFAULT_FF_WATCHDOG_FRAMES
+	local watchdog = opts.watchdog_seconds or MPAPI.playback.DEFAULT_FF_WATCHDOG_SECONDS
 
 	if not self._ff_degraded then
-		self._ff_frames_since_progress = self._ff_frames_since_progress + 1
+		self._ff_seconds_since_progress = self._ff_seconds_since_progress + dt
 	end
-	if not self._ff_degraded and self._ff_frames_since_progress > watchdog then
+	if not self._ff_degraded and self._ff_seconds_since_progress > watchdog then
 		self._ff_degraded = true
 		G.SETTINGS.GAMESPEED = self._ff_saved_gamespeed
 		local stalled_entry = self._timeline[self._cursor]
 		MPAPI.sendWarnMessage(
 			'[fast_forward] stalled at cursor ' .. tostring(self._cursor) .. '/' .. tostring(self._ff_target)
 				.. ' (opcode ' .. tostring(stalled_entry and stalled_entry.opcode) .. ') after '
-				.. tostring(watchdog) .. ' frames -- degrading to normal-pace dispatch for the rest of this seek'
+				.. tostring(watchdog) .. ' s -- degrading to normal-pace dispatch for the rest of this seek'
 		)
 		if opts.on_stalled then
 			opts.on_stalled(self._cursor, self._ff_target)
@@ -499,7 +490,7 @@ function Driver:_fast_forward_tick()
 			and not (opts.pause_gate and opts.pause_gate())
 		do
 			self:_dispatch_next()
-			self._ff_frames_since_progress = 0
+			self._ff_seconds_since_progress = 0
 			if opts.on_progress then
 				opts.on_progress(self._cursor, self._ff_target)
 			end
@@ -523,7 +514,7 @@ function Driver:_ff_cleanup()
 	self._ff_opts = nil
 	self._ff_saved_gamespeed = nil
 	self._ff_degraded = nil
-	self._ff_frames_since_progress = nil
+	self._ff_seconds_since_progress = nil
 end
 
 function Driver:_end_fast_forward()
