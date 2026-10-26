@@ -232,10 +232,12 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 		-- A relaunched game can still show its splash (about 11 s, confirmed live 2026-10-26): the
 		-- run start waits behind it. A mouse click on Reconnect skips it already (vanilla
 		-- Controller:queue_L_cursor_press); a key or controller press does not. Skip it the
-		-- same way.
+		-- same way, but without the main menu: G:main_menu() queues the title card's swap
+		-- animation (about 5.2 s of blocking delays), and the catch-up's local lobby only
+		-- connects, and its run only starts, after them (confirmed live 2026-10-26). The
+		-- catch-up run replaces the screen at once anyway.
 		if G.STATE == G.STATES.SPLASH then
 			G:delete_run()
-			G:main_menu()
 		end
 		local options = hooks.checkpoint_options and hooks.checkpoint_options() or {}
 		local starts = MPAPI.playback.timeline_ante_starts(timeline, options.boundary_opcodes)
