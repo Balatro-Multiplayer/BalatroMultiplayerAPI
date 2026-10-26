@@ -100,6 +100,36 @@ function MPAPI.playback.build_checkpoint_index(session, opts, on_built)
 	})
 end
 
+-- The ante starts of a timeline, read from its opcodes alone, with no fast-forward pass. Each
+-- value is an event index in the form the checkpoint index uses: 1 for the run start, else the
+-- entry just after the select_blind or skip_blind of an ante's Small blind. The blinds of an ante
+-- always come in threes (Small, Big, Boss; the Boss cannot be skipped), so every third blind
+-- action starts an ante. A run_info, or any boundary opcode that is not a blind action (SPDRN's
+-- run_died, run_restarted), starts a new count. A rejoin uses this so its catch-up is one
+-- fast-forward, not an index pass and then a seek (rejoin.lua).
+function MPAPI.playback.timeline_ante_starts(timeline, boundary_opcodes)
+	local blind_action = to_set(DEFAULT_BOUNDARY_OPCODES)
+	local resets = { [MPAPI.OPCODE.RUN_INFO] = true }
+	for _, opcode in ipairs(boundary_opcodes or {}) do
+		if not blind_action[opcode] then
+			resets[opcode] = true
+		end
+	end
+	local starts, blinds, seen = {}, 0, false
+	for i, entry in ipairs(timeline or {}) do
+		if resets[entry.opcode] then
+			blinds = 0
+		elseif blind_action[entry.opcode] then
+			if blinds % 3 == 0 then
+				starts[#starts + 1] = seen and i + 1 or 1
+			end
+			seen = true
+			blinds = blinds + 1
+		end
+	end
+	return starts
+end
+
 -- Collapses the blind-level index to one row per (run_idx, ante): the first blind of each ante.
 -- A later 'Small' row for an ante already seen means a restart began a fresh attempt at that
 -- ante (blind_on_deck resets to 'Small'), so that row replaces the abandoned attempt's.
