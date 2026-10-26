@@ -104,10 +104,15 @@ local function set_state(self, new_state, context)
 	fire(self, new_state, context or { old_state = old })
 end
 
--- A failed connection: DISCONNECTED with the raw error for the log and the
--- MPAPI.OfflineReason the menu shows.
-local function fail(self, offline_reason, message)
-	set_state(self, STATES.DISCONNECTED, { error = message, offline_reason = offline_reason })
+-- A failed connection: DISCONNECTED with the raw error for the log, the
+-- MPAPI.OfflineReason the menu shows and, when the server refused, its own
+-- message (MPAPI.offline_reason_lines).
+local function fail(self, offline_reason, message, server_message)
+	set_state(self, STATES.DISCONNECTED, {
+		error = message,
+		offline_reason = offline_reason,
+		server_message = server_message,
+	})
 end
 
 -- The offline reason for a request the server never answered
@@ -198,13 +203,18 @@ function connection:_cancel_auth_ticket()
 	end
 end
 
--- Calls a Nakama RPC on this connection's client. cb(err_message, data).
+-- Calls a Nakama RPC on this connection's client. cb(err_message, data,
+-- answered): on an error, answered is true when the message is the server's.
 function connection:_nakama_rpc(id, body, cb)
 	local encoded = (body and next(body)) and MPAPI.json_encode(body) or '{}'
 	self.nakama_client.rpc_func(id, encoded, nil, function(result)
 		if not result or result.error then
 			local e = result and result.error
-			cb(type(e) == 'table' and e.message or (result and result.message) or ('RPC ' .. id .. ' failed'))
+			if type(e) == 'table' and e.message then
+				cb(e.message, nil, true)
+			else
+				cb((result and result.message) or ('RPC ' .. id .. ' failed'), nil, false)
+			end
 			return
 		end
 		local ok, data = pcall(MPAPI.json_decode, result.payload or '{}')
@@ -220,12 +230,12 @@ end
 function connection:_nakama_session_init(session)
 	self.nakama_session = session
 	self.nakama_client.set_bearer_token(session.token)
-	self:_nakama_rpc('session_init', { steamName = self.steam_name }, function(err, data)
+	self:_nakama_rpc('session_init', { steamName = self.steam_name }, function(err, data, answered)
 		if self.state ~= STATES.AUTHENTICATING then
 			return
 		end
 		if err then
-			self:_login_refused('Nakama login rejected: ', err, MPAPI.offline_reason_for_server_refusal(err))
+			self:_login_refused('Nakama login rejected: ', err, MPAPI.offline_reason_for_server_refusal(err), answered)
 			return
 		end
 		data.token = session.token
@@ -242,18 +252,24 @@ function connection:_nakama_auth_failed(session)
 	end
 	local answered = session ~= nil and session.code ~= nil
 	local reason = answered and MPAPI.offline_reason_for_server_refusal(message) or self:_no_answer_reason()
-	self:_login_refused('Nakama auth failed: ', message, reason)
+	self:_login_refused('Nakama auth failed: ', message, reason, answered)
 end
 
 -- A refused Nakama login. A banned account's refusal ("Account banned ...",
 -- see api/connection/moderation.lua) is shown to the player as a ban.
-function connection:_login_refused(prefix, message, offline_reason)
+-- answered: the message is the server's, so the menu may show it.
+function connection:_login_refused(prefix, message, offline_reason, answered)
 	local moderation = MPAPI._internal.moderation
 	local ban = moderation and moderation.account_ban_message(message)
 	if ban and MPAPI.show_banned_notice then
 		MPAPI.show_banned_notice('k_banned_title', ban)
 	end
-	set_state(self, STATES.DISCONNECTED, { error = prefix .. tostring(message), banned = ban, offline_reason = offline_reason })
+	set_state(self, STATES.DISCONNECTED, {
+		error = prefix .. tostring(message),
+		banned = ban,
+		offline_reason = offline_reason,
+		server_message = answered and tostring(message) or nil,
+	})
 end
 
 -- The Steam ticket goes to Nakama as a custom login: Nakama's built-in Steam
@@ -395,12 +411,12 @@ function connection:accept_tos(chat_eligible)
 	if chat_eligible ~= nil then
 		body.chatEligible = chat_eligible and true or false
 	end
-	self:_nakama_rpc('tos_accept', body, function(err, data)
+	self:_nakama_rpc('tos_accept', body, function(err, data, answered)
 		if self.state ~= STATES.AUTHENTICATING then
 			return
 		end
 		if err then
-			fail(self, MPAPI.OfflineReason.OTHER, 'ToS acceptance failed: ' .. tostring(err))
+			fail(self, MPAPI.OfflineReason.OTHER, 'ToS acceptance failed: ' .. tostring(err), answered and err or nil)
 			return
 		end
 		data.token = token

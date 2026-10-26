@@ -16,6 +16,8 @@ MPAPI.connection_state = {
 	-- The MPAPI.OfflineReason of the last failed connection, shown under
 	-- "Offline"; nil when not offline or offline on purpose.
 	offline_reason = nil,
+	-- The server's own message when it refused that connection, else nil.
+	offline_server_message = nil,
 	player_id = '',
 	display_name = localize('b_retry_connection'),
 	steam_name = '',
