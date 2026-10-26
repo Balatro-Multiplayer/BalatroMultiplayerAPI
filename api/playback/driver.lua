@@ -40,13 +40,13 @@ Driver.__index = Driver
 -- EventManager handles at most one blocking event per queue pass, and runs one pass per 1/60 real
 -- second, so a scored hand (a few hundred blocking events) took about 3 s at any game speed.
 -- DEFAULT_FF_QUEUE_PASSES lifts that cap; with it, 64 is about twice as fast as 16 and lands on
--- the same final state (confirmed live 2026-10-26, e2e spdrn_live/ff_bench.sh).
+-- the same final state.
 MPAPI.playback.DEFAULT_FF_GAMESPEED = 64
 
 -- Extra event-queue passes per frame while a fast-forward runs (Driver:_pump_event_queue).
--- Confirmed live 2026-10-26: an SPDRN rejoin spent 5 s per blind in fast-forward, 92 percent of
--- it with blocking events left in the queue; 4 passes at game speed 64 made it 0.9 s per blind,
--- with the same final state.
+-- Without them an SPDRN rejoin spent 5 s per blind in fast-forward, 92 percent of it with
+-- blocking events left in the queue; 4 passes at game speed 64 make it 0.9 s per blind, with the
+-- same final state.
 MPAPI.playback.DEFAULT_FF_QUEUE_PASSES = 4
 
 -- Real seconds (while the driver is playing) with no cursor progress before a fast-forward

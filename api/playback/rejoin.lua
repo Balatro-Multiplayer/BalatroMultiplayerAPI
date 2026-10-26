@@ -109,7 +109,7 @@ end
 -- The event index to skip to: the start of the last known ante (the last checkpoint), so the tail
 -- left for normal pace is the ante in progress and starts at a clean blind-select boundary. The
 -- tail costs about 0.9 s an event against about 0.13 s in the fast-forward: a cutoff one ante
--- earlier made a run-3 catch-up about 15 s longer (live 2026-10-26). A run with no ante start
+-- earlier made a run-3 catch-up about 15 s longer. A run with no ante start
 -- yet has nothing worth skipping: play it all.
 -- `starts` is a list of ante-start event indexes (MPAPI.playback.timeline_ante_starts).
 function MPAPI.playback.rejoin_cutoff(starts)
@@ -230,12 +230,12 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 	end
 
 	local function catch_up()
-		-- A relaunched game can still show its splash (about 11 s, confirmed live 2026-10-26): the
+		-- A relaunched game can still show its splash (about 11 s): the
 		-- run start waits behind it. A mouse click on Reconnect skips it already (vanilla
 		-- Controller:queue_L_cursor_press); a key or controller press does not. Skip it the
 		-- same way, but without the main menu: G:main_menu() queues the title card's swap
 		-- animation (about 5.2 s of blocking delays), and the catch-up's local lobby only
-		-- connects, and its run only starts, after them (confirmed live 2026-10-26). The
+		-- connects, and its run only starts, after them. The
 		-- catch-up run replaces the screen at once anyway.
 		if G.STATE == G.STATES.SPLASH then
 			G:delete_run()
