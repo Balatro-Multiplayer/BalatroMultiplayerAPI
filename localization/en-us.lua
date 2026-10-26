@@ -163,6 +163,7 @@ return {
 			k_moderator_kicked_you = 'A moderator removed you from the lobby.',
 			-- Ban notice (Nakama: api/connection/moderation.lua)
 			k_banned_title = 'Account Banned',
+			k_network_banned_title = 'Network Banned',
 			k_lobby_create_failed_title = 'Could Not Create Lobby',
 			k_lobby_join_failed_title = 'Could Not Join Lobby',
 			k_queue_failed_title = 'Could Not Join Queue',

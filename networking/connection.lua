@@ -255,18 +255,18 @@ function connection:_nakama_auth_failed(session)
 	self:_login_refused('Nakama auth failed: ', message, reason, answered)
 end
 
--- A refused Nakama login. A banned account's refusal ("Account banned ...",
--- see api/connection/moderation.lua) is shown to the player as a ban.
+-- A refused Nakama login. A ban refusal (a banned account or network, see
+-- api/connection/moderation.lua login_ban) is shown to the player as a ban.
 -- answered: the message is the server's, so the menu may show it.
 function connection:_login_refused(prefix, message, offline_reason, answered)
 	local moderation = MPAPI._internal.moderation
-	local ban = moderation and moderation.account_ban_message(message)
+	local ban = moderation and moderation.login_ban(message)
 	if ban and MPAPI.show_banned_notice then
-		MPAPI.show_banned_notice('k_banned_title', ban)
+		MPAPI.show_banned_notice(ban.title_key, ban.message)
 	end
 	set_state(self, STATES.DISCONNECTED, {
 		error = prefix .. tostring(message),
-		banned = ban,
+		banned = ban and ban.message,
 		offline_reason = offline_reason,
 		server_message = answered and tostring(message) or nil,
 	})
@@ -275,7 +275,7 @@ end
 -- The Steam ticket goes to Nakama as a custom login: Nakama's built-in Steam
 -- check needs Balatro's publisher key, so the server's runtime hook checks
 -- the ticket in vars.steam_ticket and replaces the placeholder id with
--- "steam:<steamid>".
+-- "steamhash:<64 hex>" (a hash of the SteamID, never the SteamID itself).
 function connection:_try_steam_auth()
 	if not self.steam or not self.steam.available() then
 		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam is not available')

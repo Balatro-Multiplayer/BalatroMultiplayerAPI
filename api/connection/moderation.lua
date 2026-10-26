@@ -11,14 +11,28 @@ local TITLES = {
 	chat = 'k_chat_banned_title',
 }
 
--- The server's "Account banned ..." login refusal (nakama/src/moderation/
--- access.ts ACCOUNT_BANNED), or nil for any other error.
-function M.account_ban_message(err)
+-- The login refusals that are bans, by the text they start with: a wire
+-- contract with nakama/src/moderation/access.ts (ACCOUNT_BANNED,
+-- NETWORK_BANNED). A reworded server message stops showing as a ban.
+local LOGIN_BANS = {
+	{ prefix = 'Account banned', title_key = 'k_banned_title' },
+	{ prefix = 'Your network is banned', title_key = 'k_network_banned_title' },
+}
+
+-- A login refusal that is a ban, as { title_key, message } with the server's
+-- text from the ban on (the SDK may put a runtime prefix before it), or nil
+-- for any other error. Pure.
+function M.login_ban(err)
 	if type(err) ~= 'string' then
 		return nil
 	end
-	local at = err:find('Account banned', 1, true)
-	return at and err:sub(at) or nil
+	for _, ban in ipairs(LOGIN_BANS) do
+		local at = err:find(ban.prefix, 1, true)
+		if at then
+			return { title_key = ban.title_key, message = err:sub(at) }
+		end
+	end
+	return nil
 end
 
 -- "until <ISO time>" from epoch ms, or '' for a permanent ban.
