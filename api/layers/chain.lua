@@ -1,9 +1,29 @@
 -- Queries over the active layer chain: the deduped ordered list of layers in
 -- effect, plus membership tests built on top of it.
 
+-- A modifier layer may list removes_layers = { ... } to take those layers out
+-- of the chain, e.g. an "off" switch for a layer the ruleset composes. Only
+-- modifiers are read, and removal wins regardless of order. Fields the removed
+-- layer baked into the ruleset (see MPAPI.resolve_layers) stay in
+-- current_ruleset(); membership checks, hook dispatch, reworks and pool gating
+-- all follow the chain.
+local function without_removed_layers(chain)
+	local removed = {}
+	for _, name in ipairs(MPAPI.MODIFIERS) do
+		local layer = MPAPI.Layers and MPAPI.Layers[name]
+		for _, target in ipairs(layer and layer.removes_layers or {}) do removed[target] = true end
+	end
+	if not next(removed) then return chain end
+	local kept = {}
+	for _, name in ipairs(chain) do
+		if not removed[name] then kept[#kept + 1] = name end
+	end
+	return kept
+end
+
 -- Returns the deduped ordered list of active layer names: the target ruleset's
 -- _layer_order, then its own key, then modifiers (only when the target is the
--- currently active ruleset).
+-- currently active ruleset), minus any layer an active modifier removes.
 function MPAPI.active_layer_chain(target_key)
 	local active_key = MPAPI.get_active_ruleset and MPAPI.get_active_ruleset() or nil
 	target_key = target_key or active_key
@@ -25,6 +45,7 @@ function MPAPI.active_layer_chain(target_key)
 	end
 	if target_key == active_key then
 		for _, name in ipairs(MPAPI.MODIFIERS) do add(name) end
+		result = without_removed_layers(result)
 	end
 	return result
 end

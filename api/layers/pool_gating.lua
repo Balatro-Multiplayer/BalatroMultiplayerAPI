@@ -46,16 +46,19 @@ function MPAPI.should_exclude_from_pool(v)
 	return false
 end
 
-local function warn_if_ungated(key, kind, prefix)
-	if key and key:sub(1, #prefix) == prefix then
+local function warn_if_ungated(center, kind, prefix)
+	local key = center.key
+	local owner = center.mod and center.mod.id
+	local isolated = owner and MPAPI._mod_isolation_gates[owner] ~= nil
+	if key and (isolated or key:sub(1, #prefix) == prefix) then
 		MPAPI.sendDebugMessage(
 			'WARNING: '
 				.. kind
 				.. ' '
 				.. key
-				.. ' has no mp_include and is not in any reworked list. '
-				.. 'Under default-deny it will be excluded from every ruleset pool. '
-				.. 'Either add the key to a layer/ruleset reworked_'
+				.. ' has no mp_include and is not in any included/reworked list. '
+				.. 'Pool eligibility falls back to mod isolation instead of explicit layer ownership. '
+				.. 'Either add the key to a layer included_/reworked_'
 				.. kind
 				.. 's, or define an explicit mp_include.'
 		)
@@ -68,7 +71,7 @@ local function auto_gate_on_register(self, index_table, kind, ungated_prefix)
 		MPAPI.sendDebugMessage('Auto-gating ' .. self.key .. ' on layers: ' .. table.concat(owning_layers, ', '))
 		self.mp_include = layer_membership_include(owning_layers)
 	end
-	if not self.mp_include then warn_if_ungated(self.key, kind, ungated_prefix) end
+	if not self.mp_include then warn_if_ungated(self, kind, ungated_prefix) end
 end
 
 local _original_joker_register = SMODS.Joker.register

@@ -214,7 +214,7 @@ To queue for ranked, pass `ranked = true` explicitly. MPAPI does not work out ra
 
 | API | Purpose |
 |---|---|
-| `MPAPI.Layer`, `MPAPI.Ruleset` | Bundles of reworked or banned content, and pool gating for multiplayer runs |
+| `MPAPI.Layer`, `MPAPI.Ruleset` | Bundles of included, reworked or banned content, and pool gating for multiplayer runs |
 | `MPAPI.Blind` / `MPAPI.Joker` / `MPAPI.Consumable` | Synced Steamodded objects that can message their copies on other clients |
 | `MPAPI.Setup`, `MPAPI.BanPick` | Server-run Setup (Draft and votes) before a run, and the deck Draft screen |
 | `MPAPI.ReadyTracker`, `MPAPI.VoteTracker` | Host-authoritative ready and voting helpers |
