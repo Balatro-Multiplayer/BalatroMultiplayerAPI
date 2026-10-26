@@ -42,9 +42,14 @@ return {
 			k_tos_birth_hint = "We won't store it, we just need to check that you are old enough to play.",
 			k_age_birth_hint = "We won't store it. We only use it to decide if chat is open to you.",
 			k_tos_agreement_section = 'What you\'re agreeing to',
-			k_tos_bullet_1 = 'We save your Steam display name, hashed identifiers, and match results.',
+			-- k_tos_bullet_1 and _3 match the website's bullets
+			-- (BalatroMultiplayerServer apps/web/src/app/auth/tos/page.tsx).
+			k_tos_bullet_1 = {
+				'We save your Steam display name, hashed identifiers, match results and chat.',
+				'Chat is checked by a model we run ourselves.',
+			},
 			k_tos_bullet_2 = "We don't sell your data or use it for ads. Ever.",
-			k_tos_bullet_3 = 'You can delete your account from the account overlay at any time.',
+			k_tos_bullet_3 = 'You can delete your account from your profile page at any time.',
 			k_tos_agree = 'I have read and agree to the Privacy & Terms Notice',
 			b_open_download_page = 'Open Download Page',
 			b_coming_soon = 'Coming Soon',

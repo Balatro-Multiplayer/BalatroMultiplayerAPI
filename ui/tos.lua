@@ -98,14 +98,26 @@ local function hint_text(text_key)
 	}
 end
 
+-- A bullet's text is one line, or a list of lines (no wrapping in UIBox
+-- text); the lines after the first are indented under the first.
 local function bullet_row(text_key)
+	local text = localize(text_key)
+	local lines = type(text) == 'table' and text or { text }
+	local rows = {}
+	for i, line in ipairs(lines) do
+		rows[#rows + 1] = {
+			n = G.UIT.R,
+			config = { align = 'lm' },
+			nodes = {
+				{ n = G.UIT.T, config = { text = i == 1 and '- ' or '  ', scale = 0.28, colour = G.C.UI.TEXT_LIGHT } },
+				{ n = G.UIT.T, config = { text = line, scale = 0.28, colour = G.C.UI.TEXT_LIGHT } },
+			},
+		}
+	end
 	return {
 		n = G.UIT.R,
 		config = { align = 'lm', padding = 0.03 },
-		nodes = {
-			{ n = G.UIT.T, config = { text = '- ', scale = 0.28, colour = G.C.UI.TEXT_LIGHT } },
-			{ n = G.UIT.T, config = { text = localize(text_key), scale = 0.28, colour = G.C.UI.TEXT_LIGHT } },
-		},
+		nodes = { { n = G.UIT.C, config = { align = 'lm' }, nodes = rows } },
 	}
 end
 
