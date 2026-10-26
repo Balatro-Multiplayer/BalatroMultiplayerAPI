@@ -736,6 +736,10 @@ function BP.on_state(lobby, state)
 		_fired = true
 		local cb = _on_complete
 		_on_complete = nil
+		if not cb then
+			-- A finished Draft with nobody to tell: the run will not start on this client.
+			MPAPI.sendWarnMessage("BanPick: the Draft completed with no on_complete registered (resume not called?)")
+		end
 		if _overlay then
 			_overlay = nil
 			if G.OVERLAY_MENU and G.OVERLAY_MENU ~= true then
@@ -747,6 +751,18 @@ function BP.on_state(lobby, state)
 			cb(state.survivors or {}, state.ban_order or {})
 		end
 	end
+end
+
+-- What this module remembers, for live diagnosis of a Draft that finished without a run start
+-- (ticket rejoin-unify/18). Read only.
+function BP.debug_snapshot()
+	return {
+		fired = _fired,
+		has_config = _config ~= nil,
+		has_on_complete = _on_complete ~= nil,
+		has_overlay = _overlay ~= nil,
+		has_render = _render ~= nil,
+	}
 end
 
 -- How far a draft has got: one number that only grows (bans made, then the end).
