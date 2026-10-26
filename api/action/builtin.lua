@@ -420,6 +420,9 @@ end
 
 -- Flushes at the end of this frame (once however many events are recorded
 -- before it); at once when there is no event manager (headless tests).
+-- no_delete: a run start or a return to the menu clears the event queue. A
+-- cleared flush would leave _log_flush_pending set for ever, and no later
+-- event would leave the client.
 local function flush_soon(lobby)
 	if lobby._log_flush_pending then
 		return
@@ -433,6 +436,7 @@ local function flush_soon(lobby)
 		trigger = 'immediate',
 		blocking = false,
 		blockable = false,
+		no_delete = true,
 		func = function()
 			lobby._log_flush_pending = nil
 			if not lobby._destroyed then
