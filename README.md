@@ -85,7 +85,7 @@ By default the game plays on the Official server. To play on a Community server,
 3. If `config/MultiplayerAPI.jkr` exists in the Balatro save folder, delete it (it can hold older settings).
 4. Start Balatro through Steam. The game logs in with Device login, so it still needs the Steam client for your Steam id. The Lovely log shows `Login: Device (server is not Official)`.
 
-On a Community server your account and rating are separate from the Official server. Ranked does not need the launcher there. Player names on a Community server are not proven: anyone can use any name.
+On a Community server your account and rating are separate from the Official server. Ranked does not need the launcher there, and you may queue with any mods. Player names on a Community server are not proven: anyone can use any name.
 
 Each key falls back to the Official server's value when it is unset. The game reads the `server_*` keys only when `use_custom_server = true`:
 
