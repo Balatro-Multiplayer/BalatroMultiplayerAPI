@@ -69,17 +69,20 @@ end
 
 -- Why this account may not queue `kind` (MPAPI.QueueKind), or nil when it
 -- may. view nil is an unknown standing (no reply yet, or an older server):
--- casual is let through and the server decides. Ranked always needs a
--- verified account, as before standings: the client can't see whether the
--- server enforces integrity. Pure.
-function S.queue_refusal(view, kind, launcher_verified)
+-- casual is let through and the server decides. On the Official server
+-- (`official` true or nil) Ranked always needs a verified account, as before
+-- standings: the client can't see whether the server enforces integrity. Off
+-- the Official server the launcher is not needed (ADR 0001): Ranked needs
+-- what Casual needs here, and the server's own integrity setting decides.
+-- Pure.
+function S.queue_refusal(view, kind, launcher_verified, official)
 	if S.is_verified(view, launcher_verified) then
 		return nil
 	end
 	if view ~= nil and view.standing == Standing.NONE then
 		return none_refusal(view)
 	end
-	if kind == MPAPI.QueueKind.RANKED then
+	if kind == MPAPI.QueueKind.RANKED and official ~= false then
 		return { code = Refusal.INTEGRITY_REQUIRED, mods = {} }
 	end
 	return nil
@@ -301,7 +304,7 @@ end
 -- now. refusal ({code, mods}, code an MPAPI.QueueRefusalCode) says why not;
 -- MPAPI.show_standing_refusal(refusal) shows it.
 function MPAPI.can_queue(kind)
-	local refusal = S.queue_refusal(cache.view, kind, MPAPI.is_launcher_verified())
+	local refusal = S.queue_refusal(cache.view, kind, MPAPI.is_launcher_verified(), C.is_official_server())
 	return refusal == nil, refusal
 end
 
