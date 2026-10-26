@@ -39,13 +39,9 @@ end
 
 MPAPI.playback.SHOP_READY_TIMEOUT_SECONDS = 10
 
--- G.shop_jokers exists one frame before its starting cards do (api/playback/shop_built.lua).
-local function shop_is_ready()
-	return MPAPI.playback.shop_is_built()
-end
-
 -- A shop action can be dispatched while the shop is still being built: cash_out flips G.STATE at
--- once, but G.shop_jokers (and the other shop areas) only exist after a later queued event, and
+-- once, but G.shop_jokers (and the other shop areas) only exist, and get their starting cards
+-- (api/playback/shop_built.lua), after later queued events, and
 -- the driver dispatches again as soon as the event queues are empty. Runs `fn` at once when the
 -- shop is up. Otherwise pauses the driver, waits for the shop (bounded, so a replay that already
 -- moved past this shop cannot hang), runs `fn` and resumes. `wait_for(predicate, callback)` is
@@ -53,7 +49,7 @@ end
 -- `fn` may return true to resume the driver itself later (a Booster Pack needs a further wait for
 -- the pack it opens).
 function MPAPI.playback.with_shop_ready(ctx, fn, wait_for)
-	if shop_is_ready() then
+	if MPAPI.playback.shop_is_built() then
 		fn()
 		return
 	end
@@ -64,7 +60,7 @@ function MPAPI.playback.with_shop_ready(ctx, fn, wait_for)
 	local timeout = MPAPI.playback.SHOP_READY_TIMEOUT_SECONDS
 	local deadline = love.timer.getTime() + timeout
 	wait_for(function()
-		if shop_is_ready() then
+		if MPAPI.playback.shop_is_built() then
 			return true
 		end
 		if love.timer.getTime() >= deadline then
@@ -74,7 +70,7 @@ function MPAPI.playback.with_shop_ready(ctx, fn, wait_for)
 		return false
 	end, function()
 		local resumes_itself = false
-		if shop_is_ready() then
+		if MPAPI.playback.shop_is_built() then
 			resumes_itself = fn()
 		end
 		if not resumes_itself and driver then
