@@ -191,6 +191,14 @@ L.create_object = function(opts)
 		return self._game.started ~= nil
 	end
 
+	-- When the server saw the race begin, on this client's clock (love.timer.getTime): the
+	-- origin of a race clock that counts time away. nil until the race has begun, or when this
+	-- lobby has not had a snapshot with the server's time.
+	function lobby:get_race_started_local()
+		local started = self._game.started
+		return started and started.race_started_local or nil
+	end
+
 	function lobby:report_result(placements, cb)
 		L.report_result(self, placements, cb)
 	end

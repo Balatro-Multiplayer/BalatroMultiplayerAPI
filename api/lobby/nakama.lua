@@ -78,6 +78,16 @@ local function roster_from(players)
 	return roster
 end
 
+-- Where the server's race start falls on this client's clock (love.timer.getTime), or nil while
+-- the race has not started. Worked out from the snapshot's own server time, so the client's clock
+-- and the server's need not agree; the delay of the snapshot itself is the only error.
+local function race_started_local(started, server_now)
+	if type(started.raceStartedAt) ~= 'number' or type(server_now) ~= 'number' then
+		return nil
+	end
+	return love.timer.getTime() - (server_now - started.raceStartedAt) / 1000
+end
+
 -- Sets the lobby to the snapshot's state (sent on every join, including a
 -- rejoin after a socket drop). On a rejoin, fires the events for whatever
 -- changed while this client was away.
@@ -128,6 +138,9 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 				options = game.started.options,
 				players = game.started.players,
 			}
+		end
+		if lobby._game.started then
+			lobby._game.started.race_started_local = race_started_local(game.started, snapshot.serverNow)
 		end
 	elseif was_started and announce then
 		-- It ended while we were away; the result went out without us.
