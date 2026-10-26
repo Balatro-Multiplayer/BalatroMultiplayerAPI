@@ -28,7 +28,7 @@
 local RLOG = MPAPI.replay
 
 MPAPI.RLOG_CODE {
-	key = 'match_manifest',
+	key = MPAPI.OPCODE.MATCH_MANIFEST,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self)
 		local lobby = MPAPI.get_current_lobby()
@@ -48,7 +48,7 @@ MPAPI.RLOG_CODE {
 }
 
 MPAPI.RLOG_CODE {
-	key = 'lobby_info',
+	key = MPAPI.OPCODE.LOBBY_INFO,
 	mods = { 'pvp', 'spdrn' },
 	-- players: [{id, is_host}], decks: list of deck keys, options: mod-shaped
 	-- table of lobby options (timer settings, ruleset toggles, etc).
@@ -69,7 +69,7 @@ MPAPI.RLOG_CODE {
 }
 
 MPAPI.RLOG_CODE {
-	key = 'run_info',
+	key = MPAPI.OPCODE.RUN_INFO,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, seed, deck, stake)
 		self:record { seed = seed, deck = deck, stake = stake }

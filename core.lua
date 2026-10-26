@@ -154,6 +154,7 @@ MPAPI.load_mpapi_dir('lib')
 -- Ordered preload for api/replay's load-order-sensitive files (see
 -- load_mpapi_file's dedup comment above) -- everything else under api/ has no
 -- such dependency and is fine left to the general recursive scan below.
+MPAPI.load_mpapi_file('api/replay/opcodes.lua')
 MPAPI.load_mpapi_file('api/replay/recorder.lua')
 MPAPI.load_mpapi_file('api/replay/codes.lua')
 MPAPI.load_mpapi_file('api/replay/area_utils.lua')

@@ -717,10 +717,23 @@ function BP.request_ban(deck_key)
 	end
 end
 
+-- Listen once per lobby for the snapshot a rejoin brings (SNAPSHOT_APPLIED), so a draft that
+-- missed broadcasts catches up from the host's metadata mirror (BP.sync_from_metadata, below).
+local function listen_for_snapshots(lobby)
+	if lobby._ban_pick_listening or not lobby.on then
+		return
+	end
+	lobby._ban_pick_listening = true
+	lobby:on(MPAPI.LobbyEvent.SNAPSHOT_APPLIED, function()
+		BP.sync_from_metadata(lobby)
+	end)
+end
+
 function BP.on_state(lobby, state)
 	if not state then
 		return
 	end
+	listen_for_snapshots(lobby)
 	lobby._ban_pick = state
 
 	-- Drop marks the broadcast invalidated (opponent banned them, cap shrank).
@@ -789,6 +802,7 @@ end
 -- tables) plus the full ban sequence (also keys/tables) -- useful for a `keep=0` draft, where
 -- `survivors` is always empty and the ban order itself is the meaningful result.
 function BP.start(lobby, config, on_complete)
+	listen_for_snapshots(lobby)
 	_config = config
 	_on_complete = on_complete
 	_fired = false

@@ -10,7 +10,7 @@
 -- Mod-agnostic. A mod passes its handler namespace and, if it has runs, a run counter.
 MPAPI.playback = MPAPI.playback or {}
 
-local DEFAULT_BOUNDARY_OPCODES = { 'select_blind', 'skip_blind' }
+local DEFAULT_BOUNDARY_OPCODES = { MPAPI.OPCODE.SELECT_BLIND, MPAPI.OPCODE.SKIP_BLIND }
 
 local function to_set(list)
 	local set = {}
@@ -133,7 +133,7 @@ function MPAPI.playback.checkpoint_money_spent(session, entries, i)
 	local total = 0
 	for j = from, to do
 		local ev = session.timeline[j]
-		if ev and ev.opcode == 'money_delta' and type(ev.args) == 'number' then
+		if ev and ev.opcode == MPAPI.OPCODE.MONEY_DELTA and type(ev.args) == 'number' then
 			total = total + ev.args
 		end
 	end
