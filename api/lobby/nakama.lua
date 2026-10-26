@@ -71,6 +71,7 @@ local function roster_from(players)
 				-- taken before standings existed.
 				standing = p.standing,
 				is_away = p.isAway or false,
+				catching_up = p.catchingUp == true,
 			}
 		end
 	end
@@ -168,8 +169,24 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	lobby:_fire(MPAPI.LobbyEvent.METADATA_CHANGED, lobby._metadata)
 end
 
+-- A lobby joined behind the player's back (a crash rejoin, while the run is
+-- rebuilt from the player's own log) takes the snapshot, then holds every
+-- other message. The game is not in that lobby yet, so a held action must not
+-- reach its mod, and a held event must not fire before the mod listens. They
+-- play in order when the lobby is attached (L.attach_detached).
+local function hold(lobby, op, data)
+	if not (lobby._holding and lobby._nakama_ready) then
+		return false
+	end
+	lobby._held_messages[#lobby._held_messages + 1] = { op = op, data = data }
+	return true
+end
+
 local function on_data(lobby, on_ready, op, data)
 	if lobby._destroyed then
+		return
+	end
+	if hold(lobby, op, data) then
 		return
 	end
 	local ServerOp = NL().ServerOp
@@ -257,6 +274,10 @@ local function attach(lobby, match_id, on_ready)
 			-- case where that snapshot came before the socket counted as up.
 			L.flush_log_events(lobby)
 			MPAPI.sendDebugMessage('[nakama_lobby] rejoined ' .. tostring(lobby.code))
+			-- The new session starts as "not catching up" on the server.
+			if lobby._catching_up then
+				lobby:set_catching_up(true)
+			end
 		end,
 		lost = function(reason, gave_up)
 			MPAPI.sendWarnMessage('[nakama_lobby] lost lobby ' .. tostring(lobby.code) .. ': ' .. tostring(reason))
@@ -314,7 +335,14 @@ local function new_lobby(conn, mod_id, opts)
 		type = opts.type,
 		nakama = true,
 	})
-	L.current = lobby
+	-- A detached lobby is not the one the game is in (L.current) until it is
+	-- attached; it holds what the server sends meanwhile.
+	if opts.detached then
+		lobby._holding = true
+		lobby._held_messages = {}
+	else
+		L.current = lobby
+	end
 	return lobby
 end
 
@@ -398,6 +426,42 @@ L.nakama_rejoin_lobby = function(lobby_data, on_ready)
 			on_ready(l)
 		end
 	end)
+end
+
+-- Takes the seat in the lobby the server kept (lobby_data, as for
+-- nakama_rejoin_lobby) without making it the current lobby: the player's own
+-- run is rebuilt from their log first (api/playback/rejoin.lua). on_ready(lobby)
+-- runs on the first snapshot, so a refused seat (a forfeit, a closed lobby)
+-- is known before anything is rebuilt. Messages after that are held until
+-- L.attach_detached.
+L.nakama_rejoin_detached = function(lobby_data, on_ready)
+	local conn = MPAPI.get_connection()
+	if not conn then
+		return nil
+	end
+	local lobby = new_lobby(conn, lobby_data.modId, { type = lobby_data.type, detached = true })
+	lobby.code = lobby_data.code
+	attach(lobby, lobby_data.matchId, on_ready)
+	return lobby
+end
+
+-- Makes a detached lobby the current one: CONNECTED fires (the mod's lobby
+-- handlers must be on it already), then the messages it held play in order.
+L.attach_detached = function(lobby)
+	if lobby._destroyed or not lobby._holding then
+		return
+	end
+	L.current = lobby
+	connected(lobby)
+	lobby._holding = false
+	local held = lobby._held_messages
+	lobby._held_messages = {}
+	for _, message in ipairs(held) do
+		if lobby._destroyed then
+			return
+		end
+		on_data(lobby, nil, message.op, message.data)
+	end
 end
 
 L.nakama_leave_current = function(cb)
