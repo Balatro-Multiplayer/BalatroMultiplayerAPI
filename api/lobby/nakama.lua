@@ -178,6 +178,9 @@ local function on_data(lobby, on_ready, op, data)
 		if first then
 			lobby._nakama_ready = true
 			on_ready(lobby)
+		else
+			-- The seat is back: send the replay events kept while the socket was down.
+			L.flush_log_events(lobby)
 		end
 	elseif op == ServerOp.EVENT then
 		L.apply_event(lobby, data)
@@ -249,6 +252,9 @@ local function attach(lobby, match_id, on_ready)
 		end,
 		rejoined = function()
 			lobby._server_restarting = nil
+			-- Usually a no-op: the rejoin snapshot already flushed. It catches the
+			-- case where that snapshot came before the socket counted as up.
+			L.flush_log_events(lobby)
 			MPAPI.sendDebugMessage('[nakama_lobby] rejoined ' .. tostring(lobby.code))
 		end,
 		lost = function(reason)

@@ -222,6 +222,58 @@ end
 -- Replay events for a server-refereed lobby go to the server, which keeps
 -- them with the run. Only while a game is on: the server has nowhere to put
 -- them otherwise.
+--
+-- An event that can't be sent because the socket is down is kept, and sent in
+-- order once the seat is back (flush_log_events, after the rejoin snapshot).
+-- Without that, the server's log for this player has a gap and its hash check
+-- fails. Every send goes through transmit_log_event, so the way events leave
+-- the client (later: in batches) is changed in this one place.
+local function transmit_log_event(lobby, event)
+	return lobby:action(MPAPI.ActionTypes.mpapi_log_event):send(nil, event) ~= false
+end
+
+-- Drops kept events of a run that is not the current one (or when no game is on).
+local function keep_current_run(lobby)
+	local kept = lobby._unsent_log_events
+	if not kept then
+		return
+	end
+	local started = lobby._game.started
+	local current = {}
+	for _, event in ipairs(kept) do
+		if started and event.run == started.run_id then
+			current[#current + 1] = event
+		end
+	end
+	lobby._unsent_log_events = #current > 0 and current or nil
+end
+
+-- Sends the kept events in order; stops at the first one that can't go, and
+-- keeps it and the rest for the next flush.
+L.flush_log_events = function(lobby)
+	keep_current_run(lobby)
+	local kept = lobby._unsent_log_events
+	if not kept then
+		return
+	end
+	local sent = 0
+	for _, event in ipairs(kept) do
+		if not transmit_log_event(lobby, event) then
+			break
+		end
+		sent = sent + 1
+	end
+	if sent == #kept then
+		lobby._unsent_log_events = nil
+		return
+	end
+	local rest = {}
+	for i = sent + 1, #kept do
+		rest[#rest + 1] = kept[i]
+	end
+	lobby._unsent_log_events = rest
+end
+
 L.send_log_event = function(lobby, t, opcode, args)
 	if not lobby._game.started then
 		return
@@ -231,10 +283,15 @@ L.send_log_event = function(lobby, t, opcode, args)
 	end
 	-- Tagged with the run, so an event still in flight when the server
 	-- restarts the game isn't kept in the new run's log.
-	lobby:action(MPAPI.ActionTypes.mpapi_log_event):send(nil, {
+	local event = {
 		t = t,
 		opcode = opcode,
 		args = args,
 		run = lobby._game.started.run_id,
-	})
+	}
+	-- Behind anything already kept, so the order holds.
+	local kept = lobby._unsent_log_events or {}
+	kept[#kept + 1] = event
+	lobby._unsent_log_events = kept
+	L.flush_log_events(lobby)
 end

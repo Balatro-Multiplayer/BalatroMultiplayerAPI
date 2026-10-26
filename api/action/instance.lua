@@ -119,10 +119,13 @@ local function create_action_instance(lobby, action_type)
 				end
 			end
 		end
+		return sent
 	end
 
+	-- Returns false when the action was valid but the lobby's socket is down
+	-- (nil when it was refused or delivered locally).
 	function instance:send(target_id, params)
-		dispatch(self, target_id, params, 'send')
+		return dispatch(self, target_id, params, 'send')
 	end
 
 	function instance:broadcast(params)
