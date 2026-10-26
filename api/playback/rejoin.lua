@@ -3,7 +3,7 @@
 --
 --   1. Join the lobby (detached, see L.nakama_rejoin_detached). The seat is safe and the grace
 --      stops. A refused seat (a forfeit, a closed lobby) is known here, before anything is rebuilt.
---   2. Skip to the last checkpoint (the start of the second-to-last ante) with a fast-forward.
+--   2. Skip to the last checkpoint (the start of the last ante) with a fast-forward.
 --   3. Play the remaining events at normal pace.
 --   4. Resume the run: attach the lobby, then reopen the player's log block.
 --
