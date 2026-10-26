@@ -699,18 +699,6 @@ local function listen(lobby)
 	end)
 end
 
--- What this module remembers, for live diagnosis of a Draft that finished
--- without a run start (ticket rejoin-unify/18). Read only.
-function BP.debug_snapshot()
-	return {
-		fired = _fired,
-		has_config = _config ~= nil,
-		has_on_complete = _on_complete ~= nil,
-		has_overlay = _overlay ~= nil,
-		has_render = _render ~= nil,
-	}
-end
-
 -----------------------------
 -- Entry point
 -----------------------------
