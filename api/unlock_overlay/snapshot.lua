@@ -75,10 +75,40 @@ end
 
 -- Cosmetic-only, cached collection-progress stats (misc_functions.lua's set_profile_progress/
 -- set_discover_tallies) -- never persisted, just re-derived lazily next time something reads
--- them. Nil both out so a stale count from before the transition can't linger on screen.
+-- them. Drop both so a stale count from before the transition can't linger on screen.
+-- Only the vanilla collection menu rebuilds DISCOVER_TALLIES itself; Steamodded's
+-- consumables page (and others) index it directly, so leaving it nil crashes them.
+-- Rebuild it now, with the side effects of set_discover_tallies (achievement checks and
+-- profile writes, which would otherwise record the overlay's fake unlocks) suppressed.
 local function clear_progress_caches()
 	G.DISCOVER_TALLIES = nil
 	G.PROGRESS = nil
+	if not set_discover_tallies then
+		return
+	end
+	local profile = G.PROFILES and G.SETTINGS and G.PROFILES[G.SETTINGS.profile]
+	local saved_scores, saved_progress
+	if profile then
+		saved_scores = profile.high_scores and profile.high_scores.collection
+		saved_scores = saved_scores and { amt = saved_scores.amt, tot = saved_scores.tot }
+		saved_progress = profile.progress and profile.progress.discovered
+	end
+	local real_check = check_for_unlock
+	check_for_unlock = function() end
+	local ok = pcall(set_discover_tallies)
+	check_for_unlock = real_check
+	if profile then
+		if saved_scores then
+			profile.high_scores.collection.amt = saved_scores.amt
+			profile.high_scores.collection.tot = saved_scores.tot
+		end
+		if profile.progress then
+			profile.progress.discovered = saved_progress
+		end
+	end
+	if not ok then
+		G.DISCOVER_TALLIES = nil
+	end
 end
 
 MPAPI._internal.unlock_overlay.apply = function()
