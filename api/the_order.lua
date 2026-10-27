@@ -18,6 +18,11 @@ function MPAPI.register_voucher_queue_gate(fn)
 	MPAPI._voucher_queue_gates[#MPAPI._voucher_queue_gates + 1] = fn
 end
 
+MPAPI._idol_gates = MPAPI._idol_gates or {}
+function MPAPI.register_idol_gate(fn)
+	MPAPI._idol_gates[#MPAPI._idol_gates + 1] = fn
+end
+
 function MPAPI.should_use_the_order()
 	if MPAPI.is_layer_active('the_order') then return true end
 	for _, gate in ipairs(MPAPI._order_gates) do
@@ -31,6 +36,15 @@ end
 -- additionally gate on this.
 local function mp_major_league()
 	for _, gate in ipairs(MPAPI._voucher_queue_gates) do
+		if gate() then return true end
+	end
+	return false
+end
+
+-- Same idea for The Idol (PvP's major-league ruleset again): its card follows
+-- The Order's pick while the rest of the run does not.
+local function idol_follows_the_order()
+	for _, gate in ipairs(MPAPI._idol_gates) do
 		if gate() then return true end
 	end
 	return false
@@ -170,7 +184,7 @@ end
 -- Patches idol RNG to weight selection by count of identical cards in deck.
 local _original_reset_idol_card = reset_idol_card
 function reset_idol_card()
-	if MPAPI.should_use_the_order() then
+	if MPAPI.should_use_the_order() or idol_follows_the_order() then
 		G.GAME.current_round.idol_card.rank = 'Ace'
 		G.GAME.current_round.idol_card.suit = 'Spades'
 
