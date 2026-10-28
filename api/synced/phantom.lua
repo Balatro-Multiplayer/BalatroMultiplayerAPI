@@ -1,7 +1,7 @@
 -- Phantom copies: a display-only mirror of a joker/consumable shown on opponents' showcase.
 -- The consumer configures the showcase area once; `phantom = true` on an
 -- MPAPI.Joker/Consumable then auto-broadcasts add/remove and the framework spawns/despawns the
--- copy. A copy is marked by `card.ability.mp_phantom`. Ported from PvP's action_send_phantom / action_remove_phantom + the masking patches.
+-- copy. A copy is marked by `card.ability.mp_phantom`.
 
 MPAPI._internal.phantom = MPAPI._internal.phantom or {}
 
