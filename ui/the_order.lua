@@ -106,7 +106,7 @@ local THE_ORDER_PAGES = {
 		name = 'Decks',
 		tabs = {
 			{ label = 'Orange Deck', loc_key = 'to_p4t1', consumables = { 'c_hanged_man' } },
-			{ label = 'Purple Deck', loc_key = 'to_p4t2' },
+			{ label = 'Violet Deck', loc_key = 'to_p4t2' },
 		},
 	},
 
