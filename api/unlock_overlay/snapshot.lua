@@ -9,9 +9,9 @@
 -- unconditionally, on every save (game.lua's Game:save_progress), so writing into it here would
 -- make the fake unlock state permanent and impossible to fully undo. See save_guard.lua for the
 -- other half of this safety story (never letting a save observe these fields at all).
--- One exception: clear_progress_caches below calls set_discover_tallies, which writes the
--- profile's collection counts. It puts the old values back in the same call, with no yield in
--- between, so no save can observe the write.
+-- One exception: rebuilding the collection counts (tally_guard.lua) writes them into the
+-- profile. The old values go back in the same call, with no yield in between, so no save can
+-- observe the write.
 -- Defensive re-guard, not just state.lua's: load order between files in this directory isn't
 -- guaranteed (e.g. "snapshot.lua" sorts before "state.lua"), same reasoning api/matchmaking/'s
 -- files each re-guard MPAPI._internal.mm.
@@ -81,35 +81,14 @@ end
 -- linger on screen. G.PROGRESS is dropped and re-derived lazily next time something reads it.
 -- DISCOVER_TALLIES is rebuilt now: only the vanilla collection menu rebuilds it itself, and
 -- Steamodded's consumables page (and others) index it directly, so leaving it nil crashes them.
--- The rebuild suppresses set_discover_tallies' side effects (achievement checks and profile
--- writes, which would otherwise record the overlay's fake unlocks).
+-- tally_guard.lua does the rebuild without its profile writes and unlock checks.
 local function clear_progress_caches()
 	G.DISCOVER_TALLIES = nil
 	G.PROGRESS = nil
-	if not set_discover_tallies then
+	if not ov.real_set_discover_tallies then
 		return
 	end
-	local profile = G.PROFILES and G.SETTINGS and G.PROFILES[G.SETTINGS.profile]
-	local saved_scores, saved_progress
-	if profile then
-		saved_scores = profile.high_scores and profile.high_scores.collection
-		saved_scores = saved_scores and { amt = saved_scores.amt, tot = saved_scores.tot }
-		saved_progress = profile.progress and profile.progress.discovered
-	end
-	local real_check = check_for_unlock
-	check_for_unlock = function() end
-	local ok = pcall(set_discover_tallies)
-	check_for_unlock = real_check
-	if profile then
-		if saved_scores then
-			profile.high_scores.collection.amt = saved_scores.amt
-			profile.high_scores.collection.tot = saved_scores.tot
-		end
-		if profile.progress then
-			profile.progress.discovered = saved_progress
-		end
-	end
-	if not ok then
+	if not pcall(ov.rebuild_discover_tallies) then
 		G.DISCOVER_TALLIES = nil
 	end
 end
