@@ -188,6 +188,11 @@ return {
 			k_group_status_away = 'Match found!',
 			k_group_member_hint = 'The host can queue this lobby for a casual match.',
 			k_group_member_queued_by_host = 'The host queued this lobby:',
+			-- The Party lobby (api/matchmaking/group/party.lua).
+			k_party = 'Party',
+			k_party_lobby = 'Party lobby',
+			k_party_desc_1 = 'Queue Casual',
+			k_party_desc_2 = 'together',
 			k_group_ended_cancelled = 'Group queue cancelled.',
 			k_group_ended_member_left = 'Group queue ended: a player left.',
 			k_group_ended_member_left_party = 'Group queue ended: a player left the group.',
