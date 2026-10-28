@@ -105,7 +105,8 @@ build_actions_tab_content = function()
 	-- self-clicks, but kept here so this overlay's gating is self-contained and
 	-- robust to any future caller of open_player_mute_overlay.
 	local lobby = MPAPI.get_current_lobby()
-	local can_kick = lobby and lobby.is_host and _target_id ~= lobby.player_id
+	-- The server refuses a kick in a matchmade (public or ranked) lobby.
+	local can_kick = lobby and lobby.is_host and lobby.type == MPAPI.LobbyType.PRIVATE and _target_id ~= lobby.player_id
 
 	local submit_colour = _submitting and G.C.UI.BACKGROUND_INACTIVE
 		or (muted and G.C.GREEN or G.C.RED)
