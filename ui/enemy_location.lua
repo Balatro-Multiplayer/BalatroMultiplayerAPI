@@ -45,7 +45,8 @@ local function row_content(icon_node, label_nodes, value_nodes, minw)
 end
 
 -- config:
---   label                          -- { line1, line2 }, e.g. {"Enemy", "Location"}
+--   label                          -- { line1, line2 }, e.g. {"Enemy", "Location"}, or a function
+--                                     returning one (read on each show, after localization loads)
 --   build_value_nodes(chip_ui_id)  -- -> array of nodes for the swatch; see header comment
 --   build_popup_rows(major_node)   -- -> array of UI row defs shown on hover (nil/empty is fine)
 --   icon()                         -- (optional) leading icon node; defaults to the stake sprite
@@ -94,7 +95,8 @@ function MPAPI.enemy_location(config)
 
 	local function enemy_location_definition()
 		local label_nodes = {}
-		for _, line in ipairs(config.label) do
+		local label = type(config.label) == 'function' and config.label() or config.label
+		for _, line in ipairs(label) do
 			label_nodes[#label_nodes + 1] = { n = G.UIT.R, config = { align = 'cm', padding = 0, maxw = 1.2 }, nodes = {
 				{ n = G.UIT.T, config = { text = line, scale = 0.42, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 			} }
