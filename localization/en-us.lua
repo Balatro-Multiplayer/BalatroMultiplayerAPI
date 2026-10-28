@@ -3,6 +3,7 @@ return {
 		dictionary = {
 			k_multiplayer = 'Multiplayer',
 			k_status_offline = 'Offline',
+			k_phantom_label = 'Nemesis\'s card',
 			k_status_connecting = 'Connecting...',
 			k_status_signing_in = 'Signing In...',
 			k_status_connected = 'Connected',
