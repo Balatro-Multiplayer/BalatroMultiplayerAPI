@@ -9,6 +9,9 @@
 -- unconditionally, on every save (game.lua's Game:save_progress), so writing into it here would
 -- make the fake unlock state permanent and impossible to fully undo. See save_guard.lua for the
 -- other half of this safety story (never letting a save observe these fields at all).
+-- One exception: clear_progress_caches below calls set_discover_tallies, which writes the
+-- profile's collection counts. It puts the old values back in the same call, with no yield in
+-- between, so no save can observe the write.
 -- Defensive re-guard, not just state.lua's: load order between files in this directory isn't
 -- guaranteed (e.g. "snapshot.lua" sorts before "state.lua"), same reasoning api/matchmaking/'s
 -- files each re-guard MPAPI._internal.mm.
@@ -74,12 +77,12 @@ MPAPI._internal.unlock_overlay.capture = function()
 end
 
 -- Cosmetic-only, cached collection-progress stats (misc_functions.lua's set_profile_progress/
--- set_discover_tallies) -- never persisted, just re-derived lazily next time something reads
--- them. Drop both so a stale count from before the transition can't linger on screen.
--- Only the vanilla collection menu rebuilds DISCOVER_TALLIES itself; Steamodded's
--- consumables page (and others) index it directly, so leaving it nil crashes them.
--- Rebuild it now, with the side effects of set_discover_tallies (achievement checks and
--- profile writes, which would otherwise record the overlay's fake unlocks) suppressed.
+-- set_discover_tallies), recomputed on every transition so a stale count from before it can't
+-- linger on screen. G.PROGRESS is dropped and re-derived lazily next time something reads it.
+-- DISCOVER_TALLIES is rebuilt now: only the vanilla collection menu rebuilds it itself, and
+-- Steamodded's consumables page (and others) index it directly, so leaving it nil crashes them.
+-- The rebuild suppresses set_discover_tallies' side effects (achievement checks and profile
+-- writes, which would otherwise record the overlay's fake unlocks).
 local function clear_progress_caches()
 	G.DISCOVER_TALLIES = nil
 	G.PROGRESS = nil

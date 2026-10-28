@@ -426,11 +426,12 @@ function reset_idol_card()
 			threshold = threshold + (entry.count / total_weight)
 			if raw_random < threshold then
 				local idol_card = entry.card
-				MPAPI.sendDebugMessage(
+				sendDebugMessage(
 					string.format(
 						'(Idol) Selected %s of %s, with a count of %d',
 						idol_card.base.value, idol_card.base.suit, entry.count
-					)
+					),
+					'IdolAlgo'
 				)
 				G.GAME.current_round.idol_card.rank = idol_card.base.value
 				G.GAME.current_round.idol_card.suit = idol_card.base.suit
