@@ -37,10 +37,11 @@ Requirements:
 
 Steps:
 
-1. Install Steamodded, Lovely and MultiplayerAPI.
+1. Install Steamodded and Lovely.
 2. Download the latest release of this mod from the [Releases page](https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI/releases).
 3. Extract it into its own folder in your Balatro `Mods` directory. Make sure the folder is not nested inside a second folder of the same name.
-4. Launch the game and pick **Speedrun** from the multiplayer menu.
+4. Install at least one gamemode mod ([PvP](https://github.com/Balatro-Multiplayer/BalatroMultiplayerPvP) or [Speedrunning](https://github.com/Balatro-Multiplayer/BalatroMultiplayerSpeedrunning)) the same way.
+5. Launch the game through Steam.
 
 ## Configuration
 
@@ -91,7 +92,7 @@ Options passed to `MPAPI.connect{ host, port, secure, server_key, web_url }` tak
 Declare the dependency in your mod's JSON:
 
 ```json
-"dependencies": ["Steamodded (>=1.0.0~BETA-1814a)", "Lovely (>=0.8)", "MultiplayerAPI"]
+"dependencies": ["Steamodded (>=1.0.0~BETA-1814a)", "Lovely (>=0.10)", "MultiplayerAPI"]
 ```
 
 The best reference is the gamemode mods. BalatroMultiplayerSpeedrunning's `core.lua` shows a complete registration.
@@ -226,15 +227,13 @@ Each one has its documentation in the header comment of the file that defines it
 
 ## AI Content Disclaimer
 
-This mod does NOT use AI for art or other assets. This mod uses generative AI in it's development as a tool for writing code.
+This library does NOT use AI for art or other assets. It uses generative AI in its development as a tool for writing code.
 
 ## Contributing
 
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-Content changes (new cards, blinds, rulesets, formats, or anything that alters competitive balance) are heavily scrutinized, so open an issue or ask on Discord first. Bug fixes and quality-of-life work are always welcome, check the [issues](https://github.com/Balatro-Multiplayer/BalatroMultiplayerSpeedrunning/issues), especially those tagged "Help Wanted".
-
-Testing happens against real, running game instances: launch two or more clients, put them in a lobby and play the change through.
+Changes to the public API affect every mod built on it, so open an issue or ask on [Discord](https://discord.gg/balatromp) first. Changes to the wire contract with the server also need a matching change in [BalatroMultiplayerServer](https://github.com/Balatro-Multiplayer/BalatroMultiplayerServer). Bug fixes and quality-of-life work are always welcome. Check the [issues](https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI/issues), especially those tagged "Help Wanted".
 
 ## License
 
