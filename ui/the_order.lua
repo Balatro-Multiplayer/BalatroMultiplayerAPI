@@ -139,6 +139,7 @@ local THE_ORDER_PAGES = {
 			{ label = 'To Do List', loc_key = 'to_p5t6', jokers = { 'j_todo_list' } },
 			{ label = 'Invisible Joker', loc_key = 'to_p5t7', jokers = { 'j_invisible' } },
 			{ label = 'Bloodstone', loc_key = 'to_p5t8', jokers = { 'j_bloodstone' } },
+			{ label = 'Idol / Mail-In Rebate', loc_key = 'to_p5t9', jokers = { 'j_idol', 'j_mail' } },
 		},
 	},
 

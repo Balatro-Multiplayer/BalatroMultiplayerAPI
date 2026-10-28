@@ -590,6 +590,17 @@ return {
 					' ',
 				},
 			},
+			to_p5t9 = {
+				name = 'Idol / Mail-In Rebate',
+				text = {
+					'The {C:attention}Idol{} and {C:attention}Mail-In Rebate{} pick their card from your deck.',
+					'To keep things fair between players, the cards they choose',
+					'from are sorted by how many copies of each card your deck has,',
+					'rather than by deck order, so neither player gets an',
+					'edge from how their deck happens to be arranged',
+					' ',
+				},
+			},
 			-- ── Misc ──────────────────────────────────────
 			to_p6t1 = {
 				name = 'Hand Smoothing',
