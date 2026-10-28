@@ -50,6 +50,7 @@ end
 --   build_popup_rows(major_node)   -- -> array of UI row defs shown on hover (nil/empty is fine)
 --   icon()                         -- (optional) leading icon node; defaults to the stake sprite
 --   swatch_minw                    -- (optional, default 2.8)
+--   popup_disabled()               -- (optional) true hides the hover popup; checked on each hover
 --
 -- Returns a controller { show, hide, popup }. show()/hide() splice the
 -- indicator in or out of row_dollars_chips; callers drive these from their
@@ -131,7 +132,7 @@ function MPAPI.enemy_location(config)
 			if old_hover then
 				old_hover(self, ...)
 			end
-			if not ctrl.popup then
+			if not ctrl.popup and not (config.popup_disabled and config.popup_disabled()) then
 				local ok, popup = pcall(build_popup, self)
 				if ok then
 					ctrl.popup = popup
