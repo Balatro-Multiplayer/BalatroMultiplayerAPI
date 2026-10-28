@@ -54,7 +54,7 @@ local function demux(_action_type, from, p)
 	local obj = resolve(p.obj)
 	if not obj then return end
 	if p.kind == 'phantom' then
-		if MPAPI._internal.phantom_apply then MPAPI._internal.phantom_apply(obj, p.data) end
+		if MPAPI._internal.phantom_apply then MPAPI._internal.phantom_apply(obj, p.data, from) end
 		return
 	end
 	if p.kind == 'sync' and obj.receive then

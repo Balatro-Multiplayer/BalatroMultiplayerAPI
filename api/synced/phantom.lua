@@ -5,22 +5,35 @@
 
 MPAPI._internal.phantom = MPAPI._internal.phantom or {}
 
--- cfg = { area = function() -> CardArea }
+-- cfg = { area = function(from) -> CardArea }
+-- `from` is the id of the player who owns the real card. The consumer picks the area per sender
+-- (for example a visible row for one player and a hidden store for the others).
 function MPAPI.configure_phantom(cfg)
 	MPAPI._internal.phantom.area = cfg.area
 	MPAPI._internal.install_phantom_patches()
 end
 
-local function phantom_area()
+local function phantom_area(from)
 	local a = MPAPI._internal.phantom.area
-	return a and a()
+	return a and a(from)
 end
 
-local function find_phantom(area, key)
-	if not (area and area.cards) then return nil end
-	for i = 1, #area.cards do
-		local c = area.cards[i]
-		if c.ability and c.ability.name == key and c.ability.mp_phantom then
+-- Every live phantom copy, whatever area it sits in. A copy is dead once the card is removed
+-- or has no area.
+MPAPI._internal.phantom.cards = MPAPI._internal.phantom.cards or {}
+
+local function prune_phantoms()
+	local list = MPAPI._internal.phantom.cards
+	for i = #list, 1, -1 do
+		local c = list[i]
+		if c.removed or not c.area then table.remove(list, i) end
+	end
+end
+
+-- The copy of `key` that `from` sent. A remove drops only that sender's copy.
+local function find_phantom(key, from)
+	for _, c in ipairs(MPAPI._internal.phantom.cards) do
+		if c.ability and c.ability.name == key and c.ability.mp_phantom and c.ability.mp_phantom_from == from then
 			return c
 		end
 	end
@@ -28,9 +41,10 @@ local function find_phantom(area, key)
 end
 
 -- Apply an incoming phantom add/remove (runs on the opponent's client via the bus demux).
-function MPAPI._internal.phantom_apply(obj, data)
-	local area = phantom_area()
+function MPAPI._internal.phantom_apply(obj, data, from)
+	local area = phantom_area(from)
 	if not area then return end
+	prune_phantoms()
 	local key = obj.key
 	if data and data.op == 'add' then
 		local menu = G.OVERLAY_MENU
@@ -42,17 +56,19 @@ function MPAPI._internal.phantom_apply(obj, data)
 		local new_card = create_card('Joker', area, false, nil, nil, nil, key)
 		G.GAME.banned_keys[key] = was_banned
 		new_card.ability.mp_phantom = true
+		new_card.ability.mp_phantom_from = from
 		new_card.ability.eternal = true
 		new_card:set_cost()
 		new_card:add_to_deck()
 		area:emplace(new_card)
+		table.insert(MPAPI._internal.phantom.cards, new_card)
 		G.OVERLAY_MENU = menu
 	elseif data and data.op == 'remove' then
-		local card = find_phantom(area, key)
+		local card = find_phantom(key, from)
 		if card then
 			card:remove_from_deck()
 			card:start_dissolve({ G.C.RED }, nil, 1.6)
-			area:remove_card(card)
+			card.area:remove_card(card)
 		end
 	end
 end
