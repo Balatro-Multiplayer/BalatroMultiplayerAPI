@@ -291,6 +291,22 @@ function reset_idol_card()
 		local W_GEN = 0.05
 		local GEN_FLOOR = 0.00
 
+		local function is_face_rank(rank_key)
+			local rank_obj = SMODS.Ranks[rank_key]
+			return rank_obj and rank_obj.face and true or false
+		end
+
+		local function is_low_rank(rank_key)
+			local rank_obj = SMODS.Ranks[rank_key]
+			return rank_obj and not rank_obj.face and rank_obj.nominal and rank_obj.nominal >= 2
+				and rank_obj.nominal <= 5 and true or false
+		end
+
+		-- Sock and Buskin / Hack retrigger face / 2-5 cards, so copies of those ranks are
+		-- worth more to a player holding the matching Joker (see the seal_score bonus below).
+		local has_sock = next(SMODS.find_card('j_sock_and_buskin')) ~= nil
+		local has_hack = next(SMODS.find_card('j_hack')) ~= nil
+
 		local function face_score_for_rank(rank_key)
 			local rank_obj = SMODS.Ranks[rank_key]
 			if rank_obj and rank_obj.face then
@@ -341,6 +357,14 @@ function reset_idol_card()
 			for _, card in ipairs(entry.cards) do
 				seal_score = seal_score + seal_weight(card)
 				edition_score = edition_score + edition_weight(card) + enhancement_weight(card)
+			end
+
+			-- Retrigger Jokers: with 3+ effective copies, +1 seal score per copy (max 5) for
+			-- face cards under Sock and Buskin, or 2-5s under Hack. Applies in both tiers.
+			if effective_count >= 3
+				and ((has_sock and is_face_rank(rank_key)) or (has_hack and is_low_rank(rank_key)))
+			then
+				seal_score = seal_score + math.min(effective_count, 5)
 			end
 
 			if effective_count >= TARGET_COPIES then
