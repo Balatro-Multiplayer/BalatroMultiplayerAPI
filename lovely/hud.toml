@@ -9,6 +9,10 @@ priority = 2147483600
 # Gated on MPAPI.get_current_lobby() -- the mod-agnostic "am I in an active
 # multiplayer lobby" signal -- rather than any one mod's own tracking global.
 # Landed between the Run Info and Options buttons.
+# The controller-pip func/focus_args live on the wrapping row, NOT on the
+# ref_table text node: calculate_xywh runs a ref_table T node's func during
+# UIBox construction, when set_button_pip would build a pip against a
+# not-yet-initialised major (crash: moveable.lua get_major, 'role' is nil).
 # While a Replay plays, the button reads "Replay settings" and opens the speed
 # control instead (ui/lobby_button.lua picks the click and the text each frame).
 #
@@ -32,8 +36,8 @@ MPAPI.get_current_lobby() and {n=G.UIT.R, config={id = 'mpapi_lobby_info_button'
     {n=G.UIT.R, config={align = "cm", padding = 0, maxw = 1.4}, nodes={
         {n=G.UIT.T, config={ref_table = MPAPI.refresh_lobby_button_label(), ref_value = 'top', scale = 1.2*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true}}
     }},
-    {n=G.UIT.R, config={align = "cm", padding = 0, maxw = 1.4}, nodes={
-        {n=G.UIT.T, config={ref_table = MPAPI.refresh_lobby_button_label(), ref_value = 'bottom', scale = 1*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true, focus_args = {button = G.F_GUIDE and 'guide' or 'back', orientation = 'bm'}, func = 'set_button_pip'}}
+    {n=G.UIT.R, config={align = "cm", padding = 0, maxw = 1.4, focus_args = {button = G.F_GUIDE and 'guide' or 'back', orientation = 'bm'}, func = 'set_button_pip'}, nodes={
+        {n=G.UIT.T, config={ref_table = MPAPI.refresh_lobby_button_label(), ref_value = 'bottom', scale = 1*scale, colour = G.C.UI.TEXT_LIGHT, shadow = true}}
     }}
 }} or nil,'''
 match_indent = true
