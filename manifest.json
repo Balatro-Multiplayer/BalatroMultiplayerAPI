@@ -4,6 +4,6 @@
   "website_url": "https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI",
   "description": "Multiplayer library and API for Balatro.",
   "dependencies": [
-    "Steamodded-Steamodded-1.1814.0"
+    "Steamodded-Steamodded-26.1002.0"
   ]
 }
