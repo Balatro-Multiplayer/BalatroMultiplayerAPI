@@ -170,6 +170,7 @@ The server also referees the ready/start/result flow for every gamemode:
 lobby:set_ready(true)
 lobby:start_game({ stake = 1, options = {...} })   -- host; fires 'game_started' { seed, stake, options, players }
 lobby:report_result({ ...placements... })          -- every player; the server fires 'game_ended'
+lobby:set_result_pending(true)                     -- any player; the server holds the run open until you pass false
 lobby:abandon_game()  lobby:restart_game()
 ```
 

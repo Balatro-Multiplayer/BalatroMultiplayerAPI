@@ -84,6 +84,18 @@ MPAPI.ActionType({
 	end,
 })
 
+-- pending = boolean, any participant. Marks the started game's result as
+-- pending (or clears it): the server keeps the run open instead of starting
+-- its result clock. Result params: { playerId, pending }.
+MPAPI.ActionType({
+	key = 'mpapi_set_result_pending',
+	authoritative = true,
+	parameters = {
+		{ key = 'pending', type = 'boolean', required = true },
+	},
+	on_receive = function() end,
+})
+
 -- One replay event (api/replay/recorder.lua), stored with the run by the
 -- server and passed on to the other players, who track how far each
 -- player's stream has got. Result params: { playerId, t, opcode, args }.
@@ -319,6 +331,16 @@ end
 -- server ends it (GAME_ENDED) when they're all in. cb(err).
 L.report_result = function(lobby, placements, cb)
 	ask_server_at_game_end(lobby, 'mpapi_report_result', { placements = placements }, cb and function(err)
+		cb(err)
+	end)
+end
+
+-- Any participant: holds the started game open as a pending result (true) or
+-- lets it settle (false). Events recorded this frame go first, like a report.
+-- cb(err).
+L.set_result_pending = function(lobby, pending, cb)
+	local params = { pending = pending and true or false }
+	ask_server_at_game_end(lobby, 'mpapi_set_result_pending', params, cb and function(err)
 		cb(err)
 	end)
 end

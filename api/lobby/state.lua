@@ -210,6 +210,10 @@ L.create_object = function(opts)
 		L.report_result(self, placements, cb)
 	end
 
+	function lobby:set_result_pending(pending, cb)
+		L.set_result_pending(self, pending, cb)
+	end
+
 	function lobby:abandon_game(cb)
 		L.abandon_game(self, cb)
 	end
