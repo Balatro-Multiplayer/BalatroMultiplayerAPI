@@ -68,8 +68,10 @@ MPAPI.ActionType({
 	on_receive = function() end,
 })
 
--- placements = { { playerId, place, performance?, metric? }, ... }, every
--- participant once. Result params: { playerId, reported }.
+-- placements = { { playerId, place, performance?, metric?, metricText? }, ... },
+-- every participant once. A score board reads metricText (score text, see
+-- MPAPI.BigScore) as the season best and ignores metric; a time board reads
+-- metric (milliseconds). Bad metricText drops only the season best. Result params: { playerId, reported }.
 MPAPI.ActionType({
 	key = 'mpapi_report_result',
 	authoritative = true,

@@ -400,6 +400,8 @@ MPAPI.matchmaking.get_rating = function(mod_id, game_mode, season, player_id, ca
 end
 
 -- Fetch leaderboard for a given mode. season may be nil to use the active season.
+-- An entry's seasonBest is score text on a score board (show it with
+-- MPAPI.BigScore.display) and a number of milliseconds on a time board.
 MPAPI.matchmaking.get_leaderboard = function(mod_id, game_mode, season, opts, callback)
 	-- Entries sorted by rank, plus the caller's own entry.
 	nakama_rating_rpc('leaderboard_get', mod_id, game_mode, function(err, data)
