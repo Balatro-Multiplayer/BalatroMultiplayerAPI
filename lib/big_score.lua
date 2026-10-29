@@ -256,7 +256,9 @@ end
 -- value without raising an error).
 -- Both mods take the bare array and the sign as two arguments: Talisman's
 -- to_big(array) goes to Big:create/Big:new, Amulet's to_big(array, sign) to
--- Big:create/Big:new. A table that wraps the array reads as 0 in both.
+-- Big:create/Big:new. A table that wraps the array reads as 0 in both. Amulet's
+-- default sign is 0, so an array needs the sign. A plain number goes alone,
+-- because Talisman's BigNum mode reads a second argument as an exponent.
 local function to_game_value(text)
 	local array = parse_text(text)
 	if not array then return nil, 'malformed score text' end
@@ -265,7 +267,12 @@ local function to_game_value(text)
 		if #array == 1 then return array[1] end
 		return nil, 'no number mod for a score past the double range'
 	end
-	local ok, value = pcall(to_big, #array == 1 and array[1] or array, 1)
+	local ok, value
+	if #array == 1 then
+		ok, value = pcall(to_big, array[1])
+	else
+		ok, value = pcall(to_big, array, 1)
+	end
 	if not ok then return nil, 'the number mod could not build the score: ' .. tostring(value) end
 	local back = parse_text(from_game_value(value))
 	if not back or not same_score(array, back) then
