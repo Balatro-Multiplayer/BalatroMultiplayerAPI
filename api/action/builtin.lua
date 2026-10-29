@@ -100,14 +100,21 @@ MPAPI.ActionType({
 -- participant of a matchmade game may contest its result, once: the server
 -- holds the run unrated and queues it for a moderator. Result params:
 -- { playerId, against }. Refusals (err.message): not_in_game, not_participant,
--- not_matchmade, already_contested, bad_params.
+-- not_matchmade, already_contested, bad_params. Every client in the game gets
+-- the result and fires MPAPI.LobbyEvent.CONTESTED.
 MPAPI.ActionType({
 	key = 'mpapi_contest',
 	authoritative = true,
 	parameters = {
 		{ key = 'opponentId', type = 'string' },
 	},
-	on_receive = function() end,
+	on_receive = function(_, _, result)
+		local lobby = MPAPI.get_current_lobby()
+		if not (lobby and type(result) == 'table' and type(result.playerId) == 'string') then
+			return
+		end
+		lobby:_fire(MPAPI.LobbyEvent.CONTESTED, { by = result.playerId, against = result.against })
+	end,
 })
 
 -- One replay event (api/replay/recorder.lua), stored with the run by the
@@ -260,7 +267,7 @@ L.apply_game_started = function(lobby, started)
 end
 
 -- GAME_ENDED event data: { runId, status, placements }. status is 'agreed',
--- 'partial', 'disputed' or 'abandoned' (see the server's results.ts).
+-- 'partial', 'disputed', 'contested' or 'abandoned' (see the server's results.ts).
 L.apply_game_ended = function(lobby, ended)
 	if type(ended) ~= 'table' then
 		return
