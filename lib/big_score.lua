@@ -228,6 +228,52 @@ local function from_game_value(x)
 	return '0'
 end
 
+-- True when a big-number mod is installed (the Talisman shim hands numbers back unchanged).
+local function has_number_mod()
+	if type(to_big) ~= 'function' then return false end
+	local ok, value = pcall(to_big, 0)
+	return ok and type(value) ~= 'number'
+end
+
+-- A mod builds a value with its own log10 and pow, so array[1] of the value read
+-- back can differ from the input by a few ulp. The higher entries must match
+-- exactly, and a plain number must match exactly.
+local FIRST_ENTRY_TOLERANCE = 1e-15
+
+local function same_score(wanted, got)
+	if #wanted ~= #got then return false end
+	for i = 2, #wanted do
+		if wanted[i] ~= got[i] then return false end
+	end
+	if #wanted == 1 then return wanted[1] == got[1] end
+	return math.abs(wanted[1] - got[1]) <= wanted[1] * FIRST_ENTRY_TOLERANCE
+end
+
+-- Game value of score text: a double, or the installed mod's number. Returns
+-- nil and a reason when the text is malformed, when the score is past the double
+-- range and no mod is installed, or when the mod's value does not read back as
+-- the same score (a mod whose constructor takes another shape builds a wrong
+-- value without raising an error).
+-- Both mods take the bare array and the sign as two arguments: Talisman's
+-- to_big(array) goes to Big:create/Big:new, Amulet's to_big(array, sign) to
+-- Big:create/Big:new. A table that wraps the array reads as 0 in both.
+local function to_game_value(text)
+	local array = parse_text(text)
+	if not array then return nil, 'malformed score text' end
+	local canonical = write_array(array)
+	if not has_number_mod() then
+		if #array == 1 then return array[1] end
+		return nil, 'no number mod for a score past the double range'
+	end
+	local ok, value = pcall(to_big, #array == 1 and array[1] or array, 1)
+	if not ok then return nil, 'the number mod could not build the score: ' .. tostring(value) end
+	local back = parse_text(from_game_value(value))
+	if not back or not same_score(array, back) then
+		return nil, 'the number mod built a different value for ' .. canonical
+	end
+	return value
+end
+
 -- -1, 0 or 1 like OmegaNum `cmp`, or nil when either text is malformed.
 local function compare(a, b)
 	local p = parse_text(a)
@@ -332,6 +378,13 @@ MPAPI.BigScore = {
 	-- Score text of any game value: a plain double, a Talisman OmegaNum or old
 	-- BigNum, an Amulet value, or a string.
 	from_game_value = from_game_value,
+
+	-- Game value of score text (a double, or the installed mod's number), or
+	-- nil and a reason. The reverse of from_game_value; checks its own result.
+	to_game_value = to_game_value,
+
+	-- True when a big-number mod (not the Talisman shim) is installed.
+	has_number_mod = has_number_mod,
 
 	-- Canonical score text, or nil when the text is malformed.
 	normalize = function(text)
