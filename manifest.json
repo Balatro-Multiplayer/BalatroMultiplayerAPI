@@ -1,6 +1,6 @@
 {
   "name": "MultiplayerAPI",
-  "version_number": "1.0.2",
+  "version_number": "1.0.3",
   "website_url": "https://github.com/Balatro-Multiplayer/BalatroMultiplayerAPI",
   "description": "Multiplayer library and API for Balatro.",
   "dependencies": [
