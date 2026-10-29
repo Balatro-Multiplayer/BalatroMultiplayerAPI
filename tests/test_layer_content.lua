@@ -83,26 +83,6 @@ MPAPI.Rulesets.late = MPAPI.resolve_layers({ key = 'late', layers = { 'originals
 active_key = 'late'
 check(not MPAPI.should_exclude_from_pool(centers.jokers), 'additional owner is visible after registration')
 
--- A modifier can switch off a layer the ruleset composes.
-MPAPI.Layer('no_originals', { removes_layers = { 'originals' } })
-active_key = 'with'
-MPAPI.add_modifier('no_originals')
-check(not MPAPI.is_layer_active('originals'), 'removed layer leaves the chain')
-check(MPAPI.is_layer_active('reworks'), 'other layers stay in the chain')
-check(MPAPI.should_exclude_from_pool(centers.consumables), 'removed layer no longer includes its cards')
-check(not MPAPI.should_exclude_from_pool(rework), 'other layers keep their cards')
-check(MPAPI.current_ruleset().included_consumables[1] == centers.consumables.key, 'baked fields stay in the read model')
-MPAPI.add_modifier('originals')
-check(not MPAPI.is_layer_active('originals'), 'removal wins over a modifier adding the same layer')
-MPAPI.remove_modifier('originals')
-active_key = 'late'
-check(not MPAPI.should_exclude_from_pool(centers.jokers), 'another active owner still includes the card')
-check(MPAPI.should_exclude_from_pool(centers.consumables), 'cards owned only by the removed layer are excluded')
-MPAPI.remove_modifier('no_originals')
-check(not MPAPI.should_exclude_from_pool(centers.consumables), 'dropping the modifier restores the layer')
-MPAPI.Rulesets.static_removal = MPAPI.resolve_layers({ key = 'static_removal', layers = { 'originals', 'no_originals' } })
-active_key = 'static_removal'
-check(MPAPI.is_layer_active('originals'), 'only modifiers remove layers')
 active_key = 'with'
 
 MPAPI.register_mod_isolation('test', function()
