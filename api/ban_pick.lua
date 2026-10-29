@@ -416,7 +416,17 @@ local function deck_tile(item, banned, area, decorate)
 								},
 							},
 						},
-						badges.nodes[1] and {
+						(self.mp_tile_note ~= nil) and {
+								n = G.UIT.R,
+								config = { align = "cm", padding = 0.05 },
+								nodes = {
+									{
+										n = G.UIT.T,
+										config = { text = self.mp_tile_note, scale = 0.4, colour = G.C.WHITE, shadow = true },
+									},
+								},
+							},
+							badges.nodes[1] and {
 							n = G.UIT.R,
 							config = { align = "cm", r = 0.1, minw = 3, maxw = 4, minh = 0.4 },
 							nodes = { badges },
