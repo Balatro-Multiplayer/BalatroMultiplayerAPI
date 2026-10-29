@@ -427,6 +427,11 @@ function Group._on_view(lobby, view)
 		ended = { reason = view.reason, home_code = lobby.code }
 		if view.reason == Group.Refusal.MEMBER_REFUSED and type(view.refused) == 'table' then
 			ended.refused = on_member_refused(lobby, lobby.code, view.refused)
+			-- The standing overlay tells the refused member; everyone else is
+			-- told who it was, as the group panel is gone with the queue.
+			if view.refused.userId ~= lobby.player_id then
+				notice(Group.refusal_text(ended.refused))
+			end
 		end
 		Group.last_end = ended
 	end

@@ -64,10 +64,17 @@ MPAPI.banned_notice_overlay = MPAPI.ui_element(create_UIBox_banned_notice_overla
 
 -- A titled one-line notice with an OK button. title_key: a localization
 -- key; body: the text to show (usually the server's own wording).
+-- The same notice raised again while its overlay is still up is dropped:
+-- two callers can report one refusal.
 function MPAPI.show_notice(title_key, body)
+	body = body or ''
+	if _state.shown and _state.shown == G.OVERLAY_MENU and _state.title_key == title_key and _state.body == body then
+		return
+	end
 	_state.title_key = title_key
-	_state.body = body or ''
+	_state.body = body
 	MPAPI.banned_notice_overlay:as_overlay()
+	_state.shown = G.OVERLAY_MENU
 end
 
 -- title_key: k_banned_title, k_network_banned_title, k_queue_banned_title or
