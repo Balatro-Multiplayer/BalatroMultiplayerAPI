@@ -26,9 +26,25 @@ MPAPI._LAYER_TABLE_FIELDS = {
 	'starting_params',
 }
 
+-- Hooks the layer chain already dispatches per layer (calculate_context runs
+-- every layer and then the ruleset; pool gating asks each owning layer). Never
+-- copied onto the ruleset, or the last layer's hook would run a second time.
+-- Other functions (is_disabled, force_lobby_options) are read off the ruleset
+-- only, so they still flow through like scalars.
+MPAPI._LAYER_HOOK_FIELDS = {
+	'calculate',
+	'pool_enabled',
+}
+
 local function table_field_set()
 	local set = {}
 	for _, f in ipairs(MPAPI._LAYER_TABLE_FIELDS) do set[f] = true end
+	return set
+end
+
+local function hook_field_set()
+	local set = {}
+	for _, f in ipairs(MPAPI._LAYER_HOOK_FIELDS) do set[f] = true end
 	return set
 end
 
@@ -63,6 +79,7 @@ local function merge_array_field(init, key, value)
 end
 
 -- Scalars: last layer wins, but the ruleset's own value always beats any layer.
+-- Hooks (MPAPI._LAYER_HOOK_FIELDS): never copied; reached through the layer chain.
 -- Arrays: concatenated across all layers + ruleset.
 -- Dict-tables: key-level merge; later layers overwrite earlier; ruleset wins over layers.
 function MPAPI.resolve_layers(init)
@@ -72,6 +89,7 @@ function MPAPI.resolve_layers(init)
 	end
 
 	local is_table_field = table_field_set()
+	local is_hook_field = hook_field_set()
 	local ruleset_owned = {}
 	for k in pairs(init) do
 		ruleset_owned[k] = true
@@ -85,6 +103,8 @@ function MPAPI.resolve_layers(init)
 				merge_dict_field(init, k, v, ruleset_owned[k])
 			elseif type(v) == 'table' then
 				merge_array_field(init, k, v)
+			elseif is_hook_field[k] then
+				-- stays on the layer, see MPAPI._LAYER_HOOK_FIELDS
 			elseif not ruleset_owned[k] then
 				init[k] = v
 			end
