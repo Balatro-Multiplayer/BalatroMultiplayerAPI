@@ -72,12 +72,37 @@ check(flat[1].key == 'b_red@4' and flat[2].key == 'b_blue@4' and flat[3].key == 
 local state = { pool = sorted, banned = { ['b_red@4'] = true }, step = { action = 'ban', count = 2 }, remaining = 2 }
 local kept = BP._selection.prune({ 'b_red@4', 'b_black@3', 'b_plasma@8' }, state)
 check(#kept == 2 and kept[1] == 'b_black@3' and kept[2] == 'b_plasma@8', 'a banned key is dropped, the others still resolve')
-local by_key = {}
+-- Field by field, against a snapshot of what the server sent (copies, so a
+-- tile that was swapped for another one cannot pass by identity): the tile at
+-- every sorted position is the server's tile for that key, with its art and
+-- stake, and sorting by index instead of by tile would fail here.
+local snapshot = {}
 for _, tile in ipairs(pool) do
-	by_key[tile.key] = tile
+	snapshot[tile.key] = { key = tile.key, art = tile.art, stake = tile.stake }
 end
-for _, tile in ipairs(sorted) do
-	check(by_key[tile.key] == tile, tile.key .. ' is the same tile in both orders')
+for i, tile in ipairs(sorted) do
+	local held = snapshot[tile.key]
+	check(held ~= nil, 'sorted position ' .. i .. ' holds a tile the server sent')
+	check(tile.art == held.art and tile.stake == held.stake, tile.key .. ' keeps its art and stake at position ' .. i)
+	check(tile.art == tile.key:match('^(.-)@') and tostring(tile.stake) == tile.key:match('@(%d+)$'), tile.key .. ' art and stake agree with its key')
+end
+
+-- Ban one key, whatever its sorted position: exactly that tile leaves the
+-- survivors and every other tile stays with its own art and stake.
+for banned_key, _ in pairs(snapshot) do
+	local view = { pool = sorted, banned = { [banned_key] = true }, step = { action = 'ban', count = 1 }, remaining = 1 }
+	local alive = {}
+	for _, tile in ipairs(view.pool) do
+		if not view.banned[tile.key] then
+			alive[#alive + 1] = tile
+		end
+	end
+	check(#alive == #pool - 1, 'banning ' .. banned_key .. ' removes one tile')
+	for _, tile in ipairs(alive) do
+		local held = snapshot[tile.key]
+		check(tile.key ~= banned_key and held and tile.art == held.art and tile.stake == held.stake, tile.key .. ' survives the ban of ' .. banned_key .. ' unchanged')
+	end
+	check(#BP._selection.prune({ banned_key }, view) == 0, 'a selection of ' .. banned_key .. ' is dropped once it is banned')
 end
 
 print('ban_pick order: ' .. checks .. ' checks passed')
