@@ -171,6 +171,7 @@ lobby:set_ready(true)
 lobby:start_game({ stake = 1, options = {...} })   -- host; fires 'game_started' { seed, stake, options, players }
 lobby:report_result({ ...placements... })          -- every player; the server fires 'game_ended'
 lobby:set_result_pending(true)                     -- any player; the server holds the run open until you pass false
+lobby:contest(opponent_id, cb)                     -- any player of a matchmade game; the server holds the run unrated for a moderator
 lobby:abandon_game()  lobby:restart_game()
 ```
 
