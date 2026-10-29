@@ -20,6 +20,9 @@ N.Code = {
 	-- Transient: the result of a run the player left before it settled
 	-- ({runId, code, modId, status, place, rating}).
 	RESULT_LATE = 110,
+	-- Transient: a ranked run settled, to every player it rated
+	-- ({runId, code, modId, status, place, tied, rating}).
+	RESULT_RANKED = 111,
 }
 
 local handlers = {} -- code -> { fn, ... }

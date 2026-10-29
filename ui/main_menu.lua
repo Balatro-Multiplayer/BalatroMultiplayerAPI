@@ -177,24 +177,11 @@ build_mod_button = function(mod, inner_width, engaged_mod_id)
 	local is_disconnected = MPAPI.connection_state.state ~= MPAPI.ConnectionState.CONNECTED
 	local is_disabled = not is_installed or is_blocked or is_disconnected
 
-	-- For an uninstalled, reachable official mod: show "Coming Soon" when the mod is
-	-- flagged as such, otherwise the download-page hint.
-	local subtext = nil
-	if not is_installed and not is_blocked and not is_disconnected then
-		subtext = mod.coming_soon and localize('b_coming_soon') or localize('b_open_download_page')
-	end
 	local button_ref = { mod_id = mod.id }
 
 	local button_nodes = {
 		{ n = G.UIT.T, config = { text = mod.name, scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
 	}
-	if subtext then
-		button_nodes[#button_nodes + 1] = {
-			n = G.UIT.T,
-			config = { text = subtext, scale = 0.25, colour = mix_colours(G.C.UI.TEXT_LIGHT, G.C.UI.TEXT_DARK, 0.8) },
-		}
-	end
-
 	local rows = {}
 	for _, node in ipairs(button_nodes) do
 		rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm' }, nodes = { node } }
