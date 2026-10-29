@@ -40,4 +40,5 @@ MPAPI.ErrorKind = {
 	MODS_NOT_ALLOWED = 'mods_not_allowed',
 	MODS_UNREPORTED = 'mods_unreported',
 	INTEGRITY_REQUIRED = 'integrity_required',
+	VERSION_MISMATCH = 'version_mismatch',
 }

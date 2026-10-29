@@ -39,7 +39,7 @@ local create_UIBox_mods_not_allowed_overlay = function()
 	if hint ~= 'ERROR' then
 		rows[#rows + 1] = text_row(hint, 0.32)
 	end
-	if refusal.code ~= Refusal.INTEGRITY_REQUIRED then
+	if refusal.code == Refusal.MODS_NOT_ALLOWED or refusal.code == Refusal.MODS_UNREPORTED then
 		rows[#rows + 1] = text_row(localize('k_queue_refused_private_ok'), 0.3, G.C.UI.TEXT_INACTIVE)
 	end
 	rows[#rows + 1] = { n = G.UIT.R, config = { minh = 0.2 } }

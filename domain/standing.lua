@@ -29,6 +29,9 @@ MPAPI.QueueRefusalCode = {
 	MODS_NOT_ALLOWED = 'mods_not_allowed',
 	MODS_UNREPORTED = 'mods_unreported',
 	INTEGRITY_REQUIRED = 'integrity_required',
+	-- The server found players of one game on different mod versions (PvP:
+	-- everyone needs the same MultiplayerPvP X.Y.Z). Nakama's `VERSION_MISMATCH`.
+	VERSION_MISMATCH = 'version_mismatch',
 }
 
 -- Why a matchmade game refused a join or rejoin (the `standing_refused:`

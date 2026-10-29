@@ -337,6 +337,7 @@ function MPAPI.standing_refusal_error(refusal)
 		[Refusal.MODS_NOT_ALLOWED] = MPAPI.ErrorKind.MODS_NOT_ALLOWED,
 		[Refusal.MODS_UNREPORTED] = MPAPI.ErrorKind.MODS_UNREPORTED,
 		[Refusal.INTEGRITY_REQUIRED] = MPAPI.ErrorKind.INTEGRITY_REQUIRED,
+		[Refusal.VERSION_MISMATCH] = MPAPI.ErrorKind.VERSION_MISMATCH,
 	}
 	return MPAPI.make_error(kind_of[refusal.code] or MPAPI.ErrorKind.SERVER, S.refusal_text(refusal))
 end
