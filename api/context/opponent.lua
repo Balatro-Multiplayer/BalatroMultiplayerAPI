@@ -28,8 +28,10 @@ MPAPI.ActionType({
 		for _, area in ipairs({ G.jokers, G.consumeables }) do
 			if area and area.cards then
 				for _, card in ipairs(area.cards) do
-					if card.calculate then
-						card:calculate(context)
+					-- Card has no :calculate method; the per-object hook lives on its center.
+					local center = card.config and card.config.center
+					if center and center.calculate then
+						center:calculate(card, context)
 					end
 				end
 			end
