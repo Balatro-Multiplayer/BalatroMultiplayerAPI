@@ -243,6 +243,10 @@ return {
 			k_chat_banned_body = 'You are banned from chat',
 			k_ok = 'OK',
 			-- Moderator warning notice (ui/warned_notice_overlay.lua)
+			-- Result of a run the player left early (ui/late_result_notice.lua)
+			k_late_result_ended = '[MultiplayerAPI] The match you left has ended.',
+			k_late_result_place = 'You finished in place',
+			k_late_result_rating = 'Rating change',
 			k_warned_title = 'Warning from a Moderator',
 			k_warned_body = 'A moderator has warned you:',
 			k_warned_body_plural = 'Moderators have warned you:',

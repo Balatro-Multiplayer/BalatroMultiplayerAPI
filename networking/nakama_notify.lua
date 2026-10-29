@@ -17,6 +17,9 @@ N.Code = {
 	STANDING_CHANGED = 108,
 	-- Persistent: a moderator's warning ({message, itemType, warnedAt}).
 	WARNED = 109,
+	-- Transient: the result of a run the player left before it settled
+	-- ({runId, code, modId, status, place, rating}).
+	RESULT_LATE = 110,
 }
 
 local handlers = {} -- code -> { fn, ... }
