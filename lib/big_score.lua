@@ -198,13 +198,19 @@ local function parse_text(text)
 	return normalize_array(array)
 end
 
+-- Text that vanilla Balatro shows for a score past the double range.
+local LARGEST_DOUBLE_WORDS = { nan = true, inf = true, infinity = true, naneinf = true }
+
 -- A number or a string: a string that is score text is read as score text,
--- else it is read as a plain decimal number, else it is 0.
+-- else a word for a score past the double range (nan, inf, infinity, naneinf)
+-- is the largest double, else it is read as a plain decimal number, else it is 0.
 local function from_string(text)
 	local normal = parse_text(text)
 	if normal then return write_array(normal) end
-	local n = tonumber((text:gsub('^%s+', ''):gsub('%s+$', '')))
-	if n then return from_number(n) end
+	local trimmed = text:gsub('^%s+', ''):gsub('%s+$', '')
+	if LARGEST_DOUBLE_WORDS[trimmed:lower()] then return from_number(math.huge) end
+	local n = tonumber(trimmed)
+	if n and n == n then return from_number(n) end
 	return '0'
 end
 
