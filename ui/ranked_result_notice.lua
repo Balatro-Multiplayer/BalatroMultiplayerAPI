@@ -8,7 +8,9 @@ local COLOUR_SYSTEM = { 1, 1, 0 }
 local function describe(content)
 	local lines = { localize('k_ranked_result_ended') }
 	local place = tonumber(content.place)
-	if place then
+	if place and (tonumber(content.players) or 2) > 2 then
+		lines[#lines + 1] = localize('k_late_result_place') .. ' ' .. tostring(place) .. '.'
+	elseif place then
 		local key = (place == 1 and content.tied and 'k_ranked_result_drew')
 			or (place == 1 and 'k_ranked_result_won')
 			or 'k_ranked_result_lost'

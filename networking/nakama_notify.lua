@@ -21,7 +21,7 @@ N.Code = {
 	-- ({runId, code, modId, status, place, rating}).
 	RESULT_LATE = 110,
 	-- Transient: a ranked run settled, to every player it rated
-	-- ({runId, code, modId, status, place, tied, rating}).
+	-- ({runId, code, modId, status, place, tied, players, rating}).
 	RESULT_RANKED = 111,
 }
 
