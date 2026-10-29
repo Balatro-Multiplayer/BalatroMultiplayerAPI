@@ -594,15 +594,12 @@ function G.FUNCS.play_cards_from_highlighted(...)
 	end
 end
 
--- The hand's own score as a string. SMODS stores it at the end of
--- evaluate_play (SMODS.last_hand_score, a Talisman big number when Talisman
--- is installed); tostring keeps every big-number form the server parses.
+-- The hand's own score as score text (MPAPI.BigScore). SMODS stores it at the
+-- end of evaluate_play (SMODS.last_hand_score: a plain number, or a Talisman or
+-- Amulet big number). The text does not depend on the notation setting.
 function RLOG.hand_score_string(score)
 	if score == nil then return nil end
-	if type(score) == 'number' and score == math.floor(score) and math.abs(score) < 1e15 then
-		return string.format('%d', score)
-	end
-	return tostring(score)
+	return MPAPI.BigScore.from_game_value(score)
 end
 
 function RLOG.record_hand_scored()
