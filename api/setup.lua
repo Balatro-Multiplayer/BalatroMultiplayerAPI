@@ -90,7 +90,8 @@ end
 
 -- Host only. opts = { id, candidates = { { key, stake?, ... }, ... },
 -- pool_size?, keep? (default 1), schedule? ({ { actor, action = 'ban' |
--- 'pick', count }, ... }), max_stake?, turn_seconds? }. Without a schedule,
+-- 'pick', count }, ... }), max_stake?, max_repeats? (how often one candidate
+-- may sit in the pool, each time on its own stake), turn_seconds? }. Without a schedule,
 -- single bans rotate through the players until `keep` tiles are left.
 -- cb(err, result).
 function Setup.start_draft(lobby, opts, cb)
@@ -101,6 +102,7 @@ function Setup.start_draft(lobby, opts, cb)
 		keep = opts.keep,
 		schedule = opts.schedule,
 		maxStake = opts.max_stake,
+		maxRepeats = opts.max_repeats,
 		turnSeconds = opts.turn_seconds,
 	}, cb)
 end
