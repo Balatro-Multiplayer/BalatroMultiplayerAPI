@@ -1,6 +1,5 @@
--- Credit to @MathIsFun_ and the Balatro Multiplayer project for the layer system this is based on.
 -- Layer registration and the reverse indices that map a full content key to the
--- layers that rework it.
+-- layers that list it. See docs/layers.md.
 MPAPI.Layers = MPAPI.Layers or {}
 
 -- full key -> array of layer names that list it, used to auto-attach mp_include
@@ -23,6 +22,15 @@ end
 function MPAPI.Layer(name, definition)
 	assert(not MPAPI.Layers[name], 'MPAPI.Layer: duplicate layer name: ' .. tostring(name))
 	MPAPI.Layers[name] = definition
+	-- included_* and reworked_* do the same thing: a listed card only spawns
+	-- while this layer is active. reworked_* is the old name, from when every
+	-- listed card was a replacement for a banned vanilla one.
+	index_keys(definition.included_jokers, MPAPI._JOKER_LAYERS, name)
+	index_keys(definition.included_consumables, MPAPI._CONSUMABLE_LAYERS, name)
+	index_keys(definition.included_tags, MPAPI._TAG_LAYERS, name)
+	index_keys(definition.included_vouchers, MPAPI._VOUCHER_LAYERS, name)
+	index_keys(definition.included_enhancements, MPAPI._ENHANCEMENT_LAYERS, name)
+	index_keys(definition.included_blinds, MPAPI._BLIND_LAYERS, name)
 	index_keys(definition.reworked_jokers, MPAPI._JOKER_LAYERS, name)
 	index_keys(definition.reworked_consumables, MPAPI._CONSUMABLE_LAYERS, name)
 	index_keys(definition.reworked_tags, MPAPI._TAG_LAYERS, name)

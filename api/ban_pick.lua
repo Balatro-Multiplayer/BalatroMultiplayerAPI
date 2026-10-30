@@ -19,6 +19,11 @@
 -- Pool items may be plain center KEYS ('b_red') or tables `{ key = 'b_red', ... }`
 -- carrying metadata (e.g. a stake); `config.decorate_tile(card, item)` decorates
 -- each tile (e.g. stamps a stake sticker).
+--
+-- `config.tile_order(a, b)` (optional) sorts the tiles for display: it gets two
+-- pool items in the shape the config gave them and returns true when `a` goes
+-- first. Without it the tiles show in the server's order. It only changes where
+-- a tile is drawn; bans and picks still go by the tile's key.
 
 MPAPI.BanPick = MPAPI.BanPick or {}
 local BP = MPAPI.BanPick
@@ -247,7 +252,35 @@ local function selection_randomize(state, rng)
 	return out
 end
 
+-- A copy of the server's pool in display order. `tile_order(a, b)` compares two
+-- items as the config gave them (from_candidate form); ties keep the server's
+-- order. No comparator (or not a function): the pool as is. Pure.
+local function ordered_pool(pool, tile_order)
+	if type(tile_order) ~= "function" then
+		return pool
+	end
+	local rows = {}
+	for i, candidate in ipairs(pool) do
+		rows[i] = { candidate = candidate, item = from_candidate(candidate), index = i }
+	end
+	-- A comparator that answers both ways (or neither) falls back to server order,
+	-- so a bad tile_order can never make table.sort raise mid-build.
+	table.sort(rows, function(a, b)
+		local lt, gt = not not tile_order(a.item, b.item), not not tile_order(b.item, a.item)
+		if lt ~= gt then
+			return lt
+		end
+		return a.index < b.index
+	end)
+	local out = {}
+	for i, row in ipairs(rows) do
+		out[i] = row.candidate
+	end
+	return out
+end
+
 -- Exposed for standalone tests of the selection rules.
+BP._ordered_pool = ordered_pool
 BP._selection = {
 	needed = selection_needed,
 	contains = selection_contains,
@@ -416,6 +449,16 @@ local function deck_tile(item, banned, area, decorate)
 								},
 							},
 						},
+						(self.mp_tile_note ~= nil) and {
+							n = G.UIT.R,
+							config = { align = "cm", padding = 0.05 },
+							nodes = {
+								{
+									n = G.UIT.T,
+									config = { text = self.mp_tile_note, scale = 0.4, colour = G.C.WHITE, shadow = true },
+								},
+							},
+						},
 						badges.nodes[1] and {
 							n = G.UIT.R,
 							config = { align = "cm", r = 0.1, minw = 3, maxw = 4, minh = 0.4 },
@@ -483,7 +526,7 @@ local function build_banpick_contents()
 	local areas = {}
 	local areas_container = {}
 	local cur_area = nil
-	for i, item in ipairs(state.pool) do
+	for i, item in ipairs(ordered_pool(state.pool, _config and _config.tile_order)) do
 		if (i - 1) % PER_ROW == 0 then
 			cur_area = CardArea(0, 0, G.CARD_W * ROW_SCALE * PER_ROW, G.CARD_H * ROW_SCALE, {
 				type = "joker",
