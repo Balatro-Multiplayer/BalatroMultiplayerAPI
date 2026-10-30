@@ -57,7 +57,7 @@ local function warn_if_ungated(center, kind, prefix)
 				.. ' '
 				.. key
 				.. ' has no mp_include and is not in any included/reworked list. '
-				.. 'Pool eligibility falls back to mod isolation instead of explicit layer ownership. '
+				.. 'Pool eligibility falls back to the mod isolation gate if the mod registered one, else the card is not gated. '
 				.. 'Either add the key to a layer included_/reworked_'
 				.. kind
 				.. 's, or define an explicit mp_include.'
