@@ -254,21 +254,21 @@ end
 
 -- A copy of the server's pool in display order. `tile_order(a, b)` compares two
 -- items as the config gave them (from_candidate form); ties keep the server's
--- order. No comparator: the pool as is. Pure.
+-- order. No comparator (or not a function): the pool as is. Pure.
 local function ordered_pool(pool, tile_order)
-	if not tile_order then
+	if type(tile_order) ~= "function" then
 		return pool
 	end
 	local rows = {}
 	for i, candidate in ipairs(pool) do
 		rows[i] = { candidate = candidate, item = from_candidate(candidate), index = i }
 	end
+	-- A comparator that answers both ways (or neither) falls back to server order,
+	-- so a bad tile_order can never make table.sort raise mid-build.
 	table.sort(rows, function(a, b)
-		if tile_order(a.item, b.item) then
-			return true
-		end
-		if tile_order(b.item, a.item) then
-			return false
+		local lt, gt = not not tile_order(a.item, b.item), not not tile_order(b.item, a.item)
+		if lt ~= gt then
+			return lt
 		end
 		return a.index < b.index
 	end)

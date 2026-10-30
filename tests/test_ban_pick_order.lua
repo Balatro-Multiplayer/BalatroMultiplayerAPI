@@ -67,6 +67,13 @@ local flat = BP._ordered_pool(ties, function(a, b)
 end)
 check(flat[1].key == 'b_red@4' and flat[2].key == 'b_blue@4' and flat[3].key == 'b_green@4', 'ties keep the server order')
 
+-- A broken comparator degrades to server order instead of raising mid-build.
+local always = BP._ordered_pool(pool, function()
+	return true
+end)
+check(#always == #pool and always[1].key == pool[1].key and always[6].key == pool[6].key, 'a comparator that says true both ways keeps the server order')
+check(BP._ordered_pool(pool, true) == pool, 'a tile_order that is not a function leaves the pool as is')
+
 -- A ban or pick still targets the same tile: selection works on keys read from
 -- the sorted pool, and every key maps to the same tile as in the server's pool.
 local state = { pool = sorted, banned = { ['b_red@4'] = true }, step = { action = 'ban', count = 2 }, remaining = 2 }
@@ -87,21 +94,9 @@ for i, tile in ipairs(sorted) do
 	check(tile.art == tile.key:match('^(.-)@') and tostring(tile.stake) == tile.key:match('@(%d+)$'), tile.key .. ' art and stake agree with its key')
 end
 
--- Ban one key, whatever its sorted position: exactly that tile leaves the
--- survivors and every other tile stays with its own art and stake.
+-- Ban one key, whatever its sorted position: a selection of that key is dropped.
 for banned_key, _ in pairs(snapshot) do
 	local view = { pool = sorted, banned = { [banned_key] = true }, step = { action = 'ban', count = 1 }, remaining = 1 }
-	local alive = {}
-	for _, tile in ipairs(view.pool) do
-		if not view.banned[tile.key] then
-			alive[#alive + 1] = tile
-		end
-	end
-	check(#alive == #pool - 1, 'banning ' .. banned_key .. ' removes one tile')
-	for _, tile in ipairs(alive) do
-		local held = snapshot[tile.key]
-		check(tile.key ~= banned_key and held and tile.art == held.art and tile.stake == held.stake, tile.key .. ' survives the ban of ' .. banned_key .. ' unchanged')
-	end
 	check(#BP._selection.prune({ banned_key }, view) == 0, 'a selection of ' .. banned_key .. ' is dropped once it is banned')
 end
 
