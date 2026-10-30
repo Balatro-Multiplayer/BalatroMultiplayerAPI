@@ -18,6 +18,10 @@ MPAPI.LobbyEvent = {
 	-- out, or the host abandoned it (Nakama lobbies). Also a server event
 	-- type. Args: { run_id, status, placements }.
 	GAME_ENDED = 'game_ended',
+	-- Client-side only: a player contested the started game (mpapi_contest,
+	-- Nakama lobbies). Fires on every client in the game, the contester
+	-- included. Args: { by, against } (player ids).
+	CONTESTED = 'contested',
 	-- Client-side only: the server is restarting (Nakama lobbies). The
 	-- connection drops next and the lobby is rejoined, under the same code,
 	-- once the server is back. Args: { grace_seconds }.

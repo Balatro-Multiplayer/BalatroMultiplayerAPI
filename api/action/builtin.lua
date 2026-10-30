@@ -84,6 +84,39 @@ MPAPI.ActionType({
 	end,
 })
 
+-- pending = boolean, any participant. Marks the started game's result as
+-- pending (or clears it): the server keeps the run open instead of starting
+-- its result clock. Result params: { playerId, pending }.
+MPAPI.ActionType({
+	key = 'mpapi_set_result_pending',
+	authoritative = true,
+	parameters = {
+		{ key = 'pending', type = 'boolean', required = true },
+	},
+	on_receive = function() end,
+})
+
+-- opponentId = the contested player (a participant other than you). Any
+-- participant of a matchmade game may contest its result, once: the server
+-- holds the run unrated and queues it for a moderator. Result params:
+-- { playerId, against }. Refusals (err.message): not_in_game, not_participant,
+-- not_matchmade, already_contested, bad_params. Every client in the game gets
+-- the result and fires MPAPI.LobbyEvent.CONTESTED.
+MPAPI.ActionType({
+	key = 'mpapi_contest',
+	authoritative = true,
+	parameters = {
+		{ key = 'opponentId', type = 'string' },
+	},
+	on_receive = function(_, _, result)
+		local lobby = MPAPI.get_current_lobby()
+		if not (lobby and type(result) == 'table' and type(result.playerId) == 'string') then
+			return
+		end
+		lobby:_fire(MPAPI.LobbyEvent.CONTESTED, { by = result.playerId, against = result.against })
+	end,
+})
+
 -- One replay event (api/replay/recorder.lua), stored with the run by the
 -- server and passed on to the other players, who track how far each
 -- player's stream has got. Result params: { playerId, t, opcode, args }.
@@ -234,7 +267,7 @@ L.apply_game_started = function(lobby, started)
 end
 
 -- GAME_ENDED event data: { runId, status, placements }. status is 'agreed',
--- 'partial', 'disputed' or 'abandoned' (see the server's results.ts).
+-- 'partial', 'disputed', 'contested' or 'abandoned' (see the server's results.ts).
 L.apply_game_ended = function(lobby, ended)
 	if type(ended) ~= 'table' then
 		return
@@ -320,6 +353,31 @@ end
 L.report_result = function(lobby, placements, cb)
 	ask_server_at_game_end(lobby, 'mpapi_report_result', { placements = placements }, cb and function(err)
 		cb(err)
+	end)
+end
+
+-- Any participant: holds the started game open as a pending result (true) or
+-- lets it settle (false). Events recorded this frame go first, like a report.
+-- cb(err).
+L.set_result_pending = function(lobby, pending, cb)
+	local params = { pending = pending and true or false }
+	ask_server_at_game_end(lobby, 'mpapi_set_result_pending', params, cb and function(err)
+		cb(err)
+	end)
+end
+
+-- Any participant of a matchmade game: contests its result against
+-- opponent_id (may be nil in a game of 2; a larger game must name them).
+-- The server holds the run unrated until a moderator decides. cb(err, result);
+-- result = { playerId, against }. An older server answers 'unknown_target':
+-- err.kind is then SERVER_TOO_OLD.
+local OLD_SERVER_REASON = 'unknown_target'
+L.contest = function(lobby, opponent_id, cb)
+	ask_server(lobby, 'mpapi_contest', { opponentId = opponent_id }, cb and function(err, result)
+		if err and err.kind == MPAPI.ErrorKind.ACTION_REJECTED and err.message == OLD_SERVER_REASON then
+			err = MPAPI.make_error(MPAPI.ErrorKind.SERVER_TOO_OLD, localize('k_mpapi_server_too_old'))
+		end
+		cb(err, result)
 	end)
 end
 

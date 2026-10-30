@@ -184,11 +184,21 @@ function A.answer_challenge(challenge_id, kind, nonce, player_id)
 	end
 end
 
-local port = os.getenv('BET_RANKED_SUPERVISOR_PORT')
-local secret_hex = os.getenv('BET_RANKED_SUPERVISOR_SECRET')
+-- BMP r2modman launches through Steam's -applaunch, which drops env vars,
+-- so it hands over the same pair as --ranked-port/--ranked-secret in argv.
+local function launch_arg(flag)
+	for i, value in ipairs(arg or {}) do
+		if value == flag then
+			return arg[i + 1]
+		end
+	end
+end
+
+local port = os.getenv('BET_RANKED_SUPERVISOR_PORT') or launch_arg('--ranked-port')
+local secret_hex = os.getenv('BET_RANKED_SUPERVISOR_SECRET') or launch_arg('--ranked-secret')
 
 if not port or not secret_hex or port == '' or secret_hex == '' then
-	-- Not launched via BET in Ranked mode - nothing more to do. A.active
+	-- Not launched via BET or BMP r2modman in Ranked mode. A.active
 	-- stays false; no thread is ever spawned. A.answer_challenge above
 	-- already handles this case (immediate refusal) regardless.
 	return A

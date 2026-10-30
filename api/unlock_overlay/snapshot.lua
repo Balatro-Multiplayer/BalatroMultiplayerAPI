@@ -9,6 +9,9 @@
 -- unconditionally, on every save (game.lua's Game:save_progress), so writing into it here would
 -- make the fake unlock state permanent and impossible to fully undo. See save_guard.lua for the
 -- other half of this safety story (never letting a save observe these fields at all).
+-- One exception: rebuilding the collection counts (tally_guard.lua) writes them into the
+-- profile. The old values go back in the same call, with no yield in between, so no save can
+-- observe the write.
 -- Defensive re-guard, not just state.lua's: load order between files in this directory isn't
 -- guaranteed (e.g. "snapshot.lua" sorts before "state.lua"), same reasoning api/matchmaking/'s
 -- files each re-guard MPAPI._internal.mm.
@@ -74,11 +77,20 @@ MPAPI._internal.unlock_overlay.capture = function()
 end
 
 -- Cosmetic-only, cached collection-progress stats (misc_functions.lua's set_profile_progress/
--- set_discover_tallies) -- never persisted, just re-derived lazily next time something reads
--- them. Nil both out so a stale count from before the transition can't linger on screen.
+-- set_discover_tallies), recomputed on every transition so a stale count from before it can't
+-- linger on screen. G.PROGRESS is dropped and re-derived lazily next time something reads it.
+-- DISCOVER_TALLIES is rebuilt now: only the vanilla collection menu rebuilds it itself, and
+-- Steamodded's consumables page (and others) index it directly, so leaving it nil crashes them.
+-- tally_guard.lua does the rebuild without its profile writes and unlock checks.
 local function clear_progress_caches()
 	G.DISCOVER_TALLIES = nil
 	G.PROGRESS = nil
+	if not ov.real_set_discover_tallies then
+		return
+	end
+	if not pcall(ov.rebuild_discover_tallies) then
+		G.DISCOVER_TALLIES = nil
+	end
 end
 
 MPAPI._internal.unlock_overlay.apply = function()
