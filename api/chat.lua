@@ -14,6 +14,32 @@ local _current_lobby = nil
 local _lobby_chat_active = false
 
 -----------------------------
+-- OPEN-CHAT KEY
+-----------------------------
+
+-- The key that opens the chat console (config.chat_key, 't' by default).
+function MPAPI.chat.get_key()
+	local key = MPAPI.config.chat_key
+	return (type(key) == 'string' and key ~= '') and key or 't'
+end
+
+-- Set by the account overlay's "Chat Key" button; the next key press is then
+-- taken as the new chat key instead of reaching the game.
+MPAPI.chat.rebinding = false
+
+-- Called first by each love.keypressed hook. Returns true when the press was
+-- consumed by a pending rebind. Escape cancels; '/' is left to DebugPlus.
+function MPAPI.chat.capture_key(key)
+	if not MPAPI.chat.rebinding then return false end
+	MPAPI.chat.rebinding = false
+	if key ~= 'escape' and #key == 1 and key ~= '/' then
+		MPAPI._internal.config_set('chat_key', key)
+	end
+	if account_overlay_inner then account_overlay_inner:update() end
+	return true
+end
+
+-----------------------------
 -- MESSAGE DISPLAY
 -----------------------------
 
@@ -102,9 +128,9 @@ local function activate_lobby_chat(announce)
 
 	if announce then
 		if using_dp then
-			MPAPI.chat.addMessage(localize('k_chat_ready_dp'), COLOUR_SYSTEM)
+			MPAPI.chat.addMessage(localize('k_chat_ready_dp'):format(MPAPI.chat.get_key():upper()), COLOUR_SYSTEM)
 		else
-			MPAPI.chat.addMessage(localize('k_chat_ready'), COLOUR_SYSTEM)
+			MPAPI.chat.addMessage(localize('k_chat_ready'):format(MPAPI.chat.get_key():upper()), COLOUR_SYSTEM)
 		end
 	end
 end

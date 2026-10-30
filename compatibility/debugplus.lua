@@ -3,8 +3,8 @@
 -- /say <message> sends a chat message. Everything else typed into the
 -- console (including every other /command) passes through to DebugPlus
 -- completely unmodified, so DP's own commands behave exactly as they do
--- without this mod installed. T is added as an alias for / to open the
--- console.
+-- without this mod installed. The chat key (T by default, see
+-- MPAPI.chat.get_key) is added as an alias for / to open the console.
 
 local M = {}
 
@@ -74,8 +74,10 @@ local function patch(dp_console, orig_render)
 
 	local dp_keypressed = love.keypressed
 	love.keypressed = function(key, scancode, isrepeat)
-		-- T opens the DP console (alias for /)
-		if key == 't' and not dp_console.isConsoleFocused() then
+		if MPAPI.chat.capture_key(key) then return end
+
+		-- The chat key (T by default) opens the DP console (alias for /)
+		if key == MPAPI.chat.get_key() and not dp_console.isConsoleFocused() then
 			dp_keypressed('/', '/', false)
 			return
 		end
