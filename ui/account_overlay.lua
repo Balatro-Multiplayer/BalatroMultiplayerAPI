@@ -358,6 +358,22 @@ chat_section = function()
 				}),
 			},
 		}
+		if MPAPI.config.chat_enabled then
+			nodes[#nodes + 1] = {
+				n = G.UIT.R,
+				config = { align = 'cm', padding = 0.04 },
+				nodes = {
+					UIBox_button({
+						label = { MPAPI.chat.rebinding and localize('b_chat_key_waiting')
+							or localize('b_chat_key'):format(MPAPI.chat.get_key():upper()) },
+						button = 'mpapi_chat_rebind',
+						minw = 3, minh = 0.6, scale = 0.35,
+						colour = MPAPI.chat.rebinding and G.C.ORANGE or G.C.BLUE,
+						focus_args = { nav = 'wide' },
+					}),
+				},
+			}
+		end
 	elseif chat_blocked then
 		nodes[#nodes + 1] = {
 			n = G.UIT.R,
@@ -656,6 +672,13 @@ G.FUNCS.mpapi_chat_toggle = function(e)
 	local new_value = not MPAPI.config.chat_enabled
 	MPAPI._internal.config_set('chat_enabled', new_value)
 	MPAPI.chat.on_config_changed(new_value)
+	account_overlay_inner:update()
+end
+
+-- Arms the rebind: the next key press becomes the chat key (see
+-- MPAPI.chat.capture_key). Pressing the button again cancels.
+G.FUNCS.mpapi_chat_rebind = function(e)
+	MPAPI.chat.rebinding = not MPAPI.chat.rebinding
 	account_overlay_inner:update()
 end
 

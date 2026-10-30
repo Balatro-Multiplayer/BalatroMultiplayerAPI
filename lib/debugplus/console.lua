@@ -48,10 +48,12 @@ end
 local orig_keypressed
 local function consoleHandleKey(key, scancode, isrepeat)
 	if not consoleOpen then
+		if MPAPI.chat.capture_key(key) then return true end
+
 		-- Not while a game text box (lobby code, seed, ...) has focus: a
-		-- typed 't' there would open the console and swallow the rest.
+		-- typed chat key there would open the console and swallow the rest.
 		local typing = G and G.CONTROLLER and G.CONTROLLER.text_input_hook
-		if key == 't' and not typing then
+		if key == MPAPI.chat.get_key() and not typing then
 			openNextFrame = true
 		end
 		if orig_keypressed then
