@@ -7,8 +7,8 @@
 -- `:inject()` themselves anymore (that would double-register).
 --
 -- §9.2: a ruleset is purely a named bundle of layers now -- it no longer
--- declares banned_*/reworked_* directly, so there's no longer a separate
--- reverse-index step needed here. Every reworked entry is indexed once, by
+-- declares banned_*/included_*/reworked_* directly, so there's no longer a separate
+-- reverse-index step needed here. Every included or reworked entry is indexed once, by
 -- MPAPI.Layer() itself, when the owning layer registers.
 MPAPI.Rulesets = MPAPI.Rulesets or {}
 
