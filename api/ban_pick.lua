@@ -693,6 +693,7 @@ local function open_if_host(lobby)
 		keep = config.keep and math.min(config.keep, pool_size),
 		schedule = config.schedule,
 		max_stake = config.max_stake,
+		max_repeats = config.max_repeats,
 		turn_seconds = config.turn_seconds,
 	}, function(err)
 		if err and err.kind == MPAPI.ErrorKind.SERVER_TOO_OLD then
@@ -753,6 +754,7 @@ end
 --   pool_size, keep, schedule,       -- the Draft shape (see the file header)
 --   candidates or build_pool,        -- the items the server samples the pool from
 --   max_stake,                       -- the server rolls a stake 1..max per item without one
+--   max_repeats,                     -- how often one candidate may sit in the pool (default 1), each on its own stake
 --   turn_seconds,                    -- the turn clock (server default 30)
 --   decorate_tile,                   -- per-tile decoration
 --   on_refresh,                      -- inline render callback (else a self-managed overlay)
