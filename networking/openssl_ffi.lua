@@ -362,13 +362,28 @@ local function load_openssl()
 			end
 		end
 
+		-- Exact paths from the environment (any OS) come first: a build that
+		-- ships its own OpenSSL under other names sets them, for example the
+		-- mobile mod on Android. Worker threads see them too.
+		local function try_path(path, label)
+			if not path or path == '' then
+				return nil
+			end
+			local ok2, lib = pcall(ffi.load, path)
+			if ok2 then
+				ssl_log('Loaded ' .. label .. ' library: ' .. path)
+				return lib
+			end
+			ssl_log('  tried ' .. label .. ': ' .. path .. ' -> ' .. tostring(lib))
+		end
+
 		-- crypto first: libssl depends on libcrypto already being loaded.
-		crypto_lib = try_load(crypto_names, 'crypto')
+		crypto_lib = try_path(os.getenv('BET_OPENSSL_CRYPTO_PATH'), 'crypto') or try_load(crypto_names, 'crypto')
 		if not crypto_lib then
 			ssl_warn('Could not load crypto library (ssl may still work if system-provided)')
 		end
 
-		ssl_lib = try_load(ssl_names, 'ssl')
+		ssl_lib = try_path(os.getenv('BET_OPENSSL_SSL_PATH'), 'ssl') or try_load(ssl_names, 'ssl')
 		if not ssl_lib then
 			if ffi.os == 'OSX' then
 				ssl_warn('macOS: unzip the mod into Mods/ (a zipped mod cannot load the bundled libraries), or set BET_OPENSSL_DYLIB_DIR to a folder holding libssl.3.dylib and libcrypto.3.dylib')
