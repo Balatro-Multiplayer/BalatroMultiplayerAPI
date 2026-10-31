@@ -175,8 +175,21 @@ end
 
 -- Opens a stream to host:port, TLS when use_tls. timeout (seconds) bounds
 -- the connect and every later blocking send.
+-- host itself when it is a dotted IPv4 address. Android's luasocket resolver
+-- rejects IP literals, so those never go through DNS.
+function M.ipv4_literal(host)
+	local a, b, c, d = tostring(host):match('^(%d+)%.(%d+)%.(%d+)%.(%d+)$')
+	if a and tonumber(a) <= 255 and tonumber(b) <= 255 and tonumber(c) <= 255 and tonumber(d) <= 255 then
+		return host
+	end
+	return nil
+end
+
 function M.open(host, port, use_tls, timeout)
-	local ip, dns_err = socket.dns.toip(host)
+	local ip, dns_err = M.ipv4_literal(host), nil
+	if not ip then
+		ip, dns_err = socket.dns.toip(host)
+	end
 	if not ip then
 		return nil, 'DNS: ' .. tostring(dns_err)
 	end
