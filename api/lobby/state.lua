@@ -256,11 +256,14 @@ L.cleanup = function(lobby)
 	end
 	lobby._destroyed = true
 
-	if lobby._nakama then
-		MPAPI.networking.nakama_lobby.forget()
+	-- A leave can be answered after the player is already in another lobby, which
+	-- by then owns the match and the chat: only let go of this lobby's own.
+	local NL = MPAPI.networking.nakama_lobby
+	if lobby._nakama and (not lobby._match_id or NL._current_match_id() == lobby._match_id) then
+		NL.forget()
 	end
 
-	MPAPI.chat.cleanup()
+	MPAPI.chat.cleanup(lobby)
 
 	lobby._pending_actions = {}
 
