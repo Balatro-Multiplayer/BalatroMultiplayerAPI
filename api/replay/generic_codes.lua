@@ -204,9 +204,8 @@ MPAPI.RLOG_CODE {
 	end,
 }
 
--- buy/open_pack/voucher share one write shape and one hook site (the opcode
--- chosen dynamically by the bought card's set, see the buy_from_shop hook
--- below) but are three distinct RLOG_CODEs, one per opcode string.
+-- Shop purchases share one write shape. Pack openings are recorded by use_card;
+-- ordinary purchases and vouchers by buy_from_shop.
 local function shop_purchase_write(self, area, idx, ref, cost, human, buy_and_use)
 	-- cost and the buy_and_use flag trail the existing {area, idx, ref}
 	-- positions -- appended, not inserted, so any reader keying off
@@ -248,8 +247,7 @@ MPAPI.RLOG_CODE {
 	replay = shop_purchase_replay,
 }
 
--- use/pack_pick share one write shape and one hook site (G.FUNCS.use_card;
--- the opcode is chosen by whether the card being used lives in G.pack_cards).
+-- use/pack_pick share one write shape; use_card also records shop pack openings.
 local function use_write(self, idx, targets, ref, target_refs, human)
 	self:record({ idx, targets, ref, target_refs }, human)
 end
@@ -523,6 +521,10 @@ end
 local buy_from_shop_ref = G.FUNCS.buy_from_shop
 function G.FUNCS.buy_from_shop(e)
 	local c1 = e.config.ref_table
+	-- Packs open through use_card; buying them first would charge their cost twice.
+	if c1 and c1:is(Card) and c1.ability.set == "Booster" then
+		return G.FUNCS.use_card(e)
+	end
 	if c1 and c1:is(Card) and RLOG.is_active() then
 		local human = string.format("action:boughtCardFromShop,card:%s,cost:%s", c1.ability.name, c1.cost)
 		local area = RLOG.area_enum(c1.area)
@@ -530,9 +532,7 @@ function G.FUNCS.buy_from_shop(e)
 		if area and idx then
 			local key = MPAPI.OPCODE.BUY
 			local set = c1.ability and c1.ability.set
-			if set == "Booster" then
-				key = MPAPI.OPCODE.OPEN_PACK
-			elseif set == "Voucher" then
+			if set == "Voucher" then
 				key = MPAPI.OPCODE.VOUCHER
 			end
 			local ref = RLOG.card_ref(c1)
@@ -547,7 +547,12 @@ function G.FUNCS.use_card(e, mute, nosave)
 	local card = e.config and e.config.ref_table
 	if card and card.ability and card.ability.name and RLOG.is_active() then
 		local human = string.format("action:usedCard,card:%s", card.ability.name)
-		if card.area == (G and G.pack_cards) then
+		if card.area and card.area == G.shop_booster and card.ability.set == "Booster" then
+			local idx = RLOG.index_in_area(card)
+			if idx then
+				MPAPI.RLOGCodes.open_pack:write(RLOG.area_enum(card.area), idx, RLOG.card_ref(card), card.cost, human)
+			end
+		elseif card.area == (G and G.pack_cards) then
 			local idx = RLOG.index_in_area(card, G.pack_cards)
 			if idx then
 				local targets = RLOG.highlighted_hand_indices()

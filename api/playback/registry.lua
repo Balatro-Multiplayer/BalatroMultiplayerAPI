@@ -24,6 +24,11 @@ end
 -- registered like any other opcode if a consumer wants to react to them (e.g.
 -- to seed initial run state from "manifest"), not treated specially here.
 function MPAPI.playback.dispatch(mod_id, opcode, args, ctx)
+	-- Older logs recorded a shop pack's OPEN click as USE, with its Booster identity.
+	local ref = type(args) == 'table' and args[3]
+	if opcode == MPAPI.OPCODE.USE and type(ref) == 'table' and ref[2] == 'Booster' then
+		opcode, args = MPAPI.OPCODE.OPEN_PACK, { MPAPI.replay.AREA.shop_booster, args[1], ref }
+	end
 	local mod_handlers = mod_id and MPAPI.playback._handlers[mod_id]
 	local fn = mod_handlers and mod_handlers[opcode]
 	if not fn then
