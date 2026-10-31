@@ -60,6 +60,20 @@ function reset_idol_card()
 					table.concat(tokens, ',')
 				)
 				sendDebugMessage('IDOL_ROLL::' .. love.data.encode('string', 'base64', idol_payload), 'IdolAlgo')
+
+				-- Also into the replay log, so the website sees idol rolls from a
+				-- server-stored match, not only from an uploaded Lovely log.
+				if MPAPI.RLOGCodes and MPAPI.RLOGCodes.idol_roll and MPAPI.replay.is_active() then
+					local card_tokens = {}
+					for _, reel_entry in ipairs(valid_idol_cards) do
+						card_tokens[#card_tokens + 1] = card_token(reel_entry.value, reel_entry.suit) .. tostring(reel_entry.count)
+					end
+					MPAPI.RLOGCodes.idol_roll:write(
+						raw_random,
+						card_token(idol_card.base.value, idol_card.base.suit),
+						card_tokens
+					)
+				end
 				break
 			end
 		end

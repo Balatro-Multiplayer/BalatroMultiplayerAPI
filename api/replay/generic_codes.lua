@@ -373,8 +373,10 @@ MPAPI.RLOG_CODE {
 MPAPI.RLOG_CODE {
 	key = MPAPI.OPCODE.PLAY,
 	mods = { 'pvp', 'spdrn' },
-	write = function(self, played, played_refs, human)
-		self:record({ played, played_refs }, human)
+	-- The third arg is the owned jokers (RLOG.joker_tokens), recorded for the
+	-- web viewer; replay() only reads args[1]/args[2].
+	write = function(self, played, played_refs, human, jokers)
+		self:record({ played, played_refs, jokers }, human)
 	end,
 	-- Confirmed live (against a real flagged production match, via SPDRN's own
 	-- copy of this same fix -- see that file's comment for the full crash
@@ -434,8 +436,11 @@ MPAPI.RLOG_CODE {
 MPAPI.RLOG_CODE {
 	key = MPAPI.OPCODE.SELECT_BLIND,
 	mods = { 'pvp', 'spdrn' },
-	write = function(self, human)
-		self:record(0, human)
+	-- args are [0, blind_key]: the leading 0 is the original (unused) payload,
+	-- kept so older readers keying off args[1] are unaffected; blind_key
+	-- (e.g. "bl_small", "bl_mp_nemesis") is appended for the web viewer.
+	write = function(self, human, blind_key)
+		self:record({ 0, blind_key }, human)
 	end,
 	replay = function(self, _args, ctx)
 		if ctx.schema_version >= 1 then
@@ -473,6 +478,38 @@ MPAPI.RLOG_CODE {
 	replay = function(self, _args, ctx)
 		if ctx.is_pov then
 			MPAPI.playback.leave_shop_if_needed()
+		end
+	end,
+}
+
+-- Web-viewer-only records: nothing to apply on replay.
+-- idol_roll: [roll, winner, cards] -- the roll in 0..1, the winning card as
+-- "<rank><suit>" (T = 10), and the deck's cards as "<rank><suit><count>" in
+-- selection order (the IDOL_ROLL:: debug line's payload, as a positional list).
+MPAPI.RLOG_CODE {
+	key = 'idol_roll',
+	mods = { 'pvp', 'spdrn' },
+	write = function(self, roll, winner, cards)
+		self:record({ roll, winner, cards })
+	end,
+	replay = function(self, _args, ctx)
+		if ctx.schema_version >= 1 then
+			-- no-op
+		end
+	end,
+}
+
+-- deck_snapshot: [cards] -- the full deck at the end of the run (see
+-- RLOG.deck_tokens), recorded just before the END trailer.
+MPAPI.RLOG_CODE {
+	key = 'deck_snapshot',
+	mods = { 'pvp', 'spdrn' },
+	write = function(self, cards)
+		self:record({ cards })
+	end,
+	replay = function(self, _args, ctx)
+		if ctx.schema_version >= 1 then
+			-- no-op
 		end
 	end,
 }
@@ -588,9 +625,16 @@ local play_cards_ref = G.FUNCS.play_cards_from_highlighted
 function G.FUNCS.play_cards_from_highlighted(...)
 	local played = RLOG.highlighted_hand_indices()
 	local played_refs = RLOG.card_refs(played)
+	-- Before the play resolves: scoring can destroy jokers (Gros Michel, ...).
+	local owned_jokers = RLOG.joker_tokens()
 	play_cards_ref(...)
 	if #played > 0 and RLOG.is_active() then
-		MPAPI.RLOGCodes.play:write(played, played_refs, "action:play,cards:" .. table.concat(played, "."))
+		MPAPI.RLOGCodes.play:write(
+			played,
+			played_refs,
+			"action:play,cards:" .. table.concat(played, "."),
+			owned_jokers
+		)
 	end
 end
 
@@ -651,8 +695,10 @@ local select_blind_ref = G.FUNCS.select_blind
 function G.FUNCS.select_blind(e)
 	select_blind_ref(e)
 	if RLOG.is_active() then
+		local blind_key = e.config.ref_table.key or e.config.ref_table.name
 		MPAPI.RLOGCodes.select_blind:write(
-			string.format("action:selectBlind,blind:%s", tostring(e.config.ref_table.key or e.config.ref_table.name))
+			string.format("action:selectBlind,blind:%s", tostring(blind_key)),
+			blind_key and tostring(blind_key) or nil
 		)
 	end
 end
