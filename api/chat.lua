@@ -167,7 +167,10 @@ function MPAPI.chat.init(lobby)
 	activate_lobby_chat(true)
 end
 
-function MPAPI.chat.cleanup()
+function MPAPI.chat.cleanup(lobby)
+	if lobby and _current_lobby and lobby ~= _current_lobby then
+		return
+	end
 	MPAPI.chat._send_fn = nil
 	MPAPI.chat._own_name = nil
 	_current_lobby = nil

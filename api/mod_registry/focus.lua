@@ -147,6 +147,12 @@ end
 
 -- Called by lobby.lua after a lobby fires its 'disconnected' event.
 MPAPI._internal.on_lobby_disconnected = function()
+	-- A leave answered after the player is already in another server lobby: that
+	-- disconnect isn't theirs. (A local lobby, e.g. a rejoin's playback, doesn't count.)
+	local current_lobby = MPAPI.get_current_lobby()
+	if current_lobby and not current_lobby._local_mode then
+		return
+	end
 	local current = MPAPI.pages.current()
 	local was_in_lobby_view = current and current.category == 'lobby_menu'
 	state.engaged_mod = nil
