@@ -12,6 +12,7 @@ local build_account_tab_content
 local build_chat_tab_content
 local format_run_date
 local match_status_label_and_colour
+local rating_change_label_and_colour
 local match_history_row
 local build_history_tab_content
 local fetch_history_page
@@ -451,6 +452,24 @@ match_status_label_and_colour = function(status)
 	return tostring(status), G.C.UI.TEXT_INACTIVE
 end
 
+-- A rated run's rating change and the rating it left ('+12 (1512)'), green,
+-- red or grey ('+0'), formatted like ui/ranked_result_notice.lua. Placement
+-- games have no change to show (the notice shows the new rating instead).
+-- nil when unrated.
+rating_change_label_and_colour = function(run)
+	local rating = run.rating
+	local delta = rating and not rating.isPlacement and not rating.justPlaced and tonumber(rating.delta)
+	if not delta then
+		return nil
+	end
+	local label = string.format('%+d', delta)
+	if tonumber(rating.newRating) then
+		label = label .. string.format(' (%d)', rating.newRating)
+	end
+	local colour = delta > 0 and G.C.GREEN or delta < 0 and G.C.RED or G.C.UI.TEXT_INACTIVE
+	return label, colour
+end
+
 -- One row per run: date / lobby code / status, plus "View Log" (opens the
 -- website's visual RLOG viewer -- apps/web's /matches/:runId page, same
 -- automatic-decode-and-render viewer the site's own "My Matches" list links
@@ -461,6 +480,7 @@ end
 -- BalatroMultiplayerPvP's replay_browser.lua already uses for its own list.
 match_history_row = function(run)
 	local status_label, status_colour = match_status_label_and_colour(run.status)
+	local rating_label, rating_colour = rating_change_label_and_colour(run)
 	local can_replay = run.status ~= 'active'
 
 	G.FUNCS['mpapi_match_history_view_log_' .. run.id] = function()
@@ -490,6 +510,9 @@ match_history_row = function(run)
 			{ n = G.UIT.C, config = { align = 'cl', minw = 2, padding = 0.05 }, nodes = {
 				{ n = G.UIT.T, config = { text = status_label, scale = 0.32, colour = status_colour } },
 			} },
+			{ n = G.UIT.C, config = { align = 'cl', minw = 1.8, padding = 0.05 }, nodes = rating_label and {
+				{ n = G.UIT.T, config = { text = rating_label, scale = 0.32, colour = rating_colour } },
+			} or {} },
 			{ n = G.UIT.C, config = { align = 'cm', padding = 0.05 }, nodes = {
 				UIBox_button({
 					label = { localize('b_view_log') },
