@@ -449,7 +449,7 @@ local function deck_tile(item, banned, area, decorate)
 								},
 							},
 						},
-						(self.mp_tile_note ~= nil) and {
+						self.mp_tile_note and {
 							n = G.UIT.R,
 							config = { align = "cm", padding = 0.05 },
 							nodes = {
