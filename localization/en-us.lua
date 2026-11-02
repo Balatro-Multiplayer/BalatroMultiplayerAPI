@@ -275,7 +275,7 @@ return {
 			k_queue_refused_unknown = 'You may not queue right now.',
 			k_queue_refused_hint_mods_not_allowed = 'Disable them and restart the game to queue.',
 			k_queue_refused_hint_mods_unreported = 'Reconnect and try again.',
-			k_queue_refused_hint_integrity_required = 'Launch the game through BET to play Ranked.',
+			k_queue_refused_hint_integrity_required = 'Launch the game through BET on a Ranked Mod Profile to play Ranked.',
 			k_queue_refused_hint_version_mismatch = 'Update the mod and try again.',
 			k_queue_refused_private_ok = 'Private lobbies allow any mods.',
 			k_rejoin_refused_title = 'Could Not Rejoin',
