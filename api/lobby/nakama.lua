@@ -279,6 +279,7 @@ end
 local function attach(lobby, match_id, on_ready)
 	local session = MPAPI.get_nakama_session()
 	lobby.player_id = session and session.user_id or lobby.player_id
+	lobby._match_id = match_id
 	NL().join(match_id, lobby.mod_id, {
 		data = function(op, data)
 			on_data(lobby, on_ready, op, data)
