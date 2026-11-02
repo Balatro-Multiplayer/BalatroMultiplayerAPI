@@ -212,16 +212,10 @@ local function shop_purchase_write(self, area, idx, ref, cost, human, buy_and_us
 	-- args[1]/args[2] (area/idx) is unaffected by their presence.
 	self:record({ area, idx, ref, cost, buy_and_use or false }, human)
 end
--- Confirmed live: vanilla's own G.FUNCS.buy_from_shop calls
--- G.FUNCS.check_for_buy_space(c1) unless e.config.id == 'buy_and_use' -- and
--- that check ONLY recognizes Voucher/Enhanced/Default/Joker/consumeable
--- cards as things it knows how to validate space for. A Booster Pack is none
--- of those (card.ability.set == 'Booster', card.ability.consumeable is nil),
--- so the check unconditionally fails and buy_from_shop silently returns
--- false -- no error, nothing added anywhere -- UNLESS the buy_and_use id is
--- set, which is how the real "BUY" button on a pack card is actually wired
--- (functions/UI_definitions.lua). Every replayed open_pack was therefore
--- silently failing to buy anything at all.
+-- Replay goes through G.FUNCS.buy_from_shop for every shop purchase. For a
+-- Booster Pack that hook hands over to use_card (vanilla's check_for_buy_space
+-- does not know packs, and buying first would charge the cost twice), so only
+-- Card:open charges the pack.
 local function shop_purchase_replay(self, args, ctx)
 	if ctx.schema_version >= 1 then
 		if not ctx.is_pov then return end
@@ -522,8 +516,8 @@ local buy_from_shop_ref = G.FUNCS.buy_from_shop
 function G.FUNCS.buy_from_shop(e)
 	local c1 = e.config.ref_table
 	-- Packs open through use_card; buying them first would charge their cost twice.
-	if c1 and c1:is(Card) and c1.ability.set == "Booster" then
-		return G.FUNCS.use_card(e)
+	if c1 and c1:is(Card) and c1.ability.set == 'Booster' then
+		return G.FUNCS.use_card(e, true)
 	end
 	if c1 and c1:is(Card) and RLOG.is_active() then
 		local human = string.format("action:boughtCardFromShop,card:%s,cost:%s", c1.ability.name, c1.cost)
@@ -547,7 +541,7 @@ function G.FUNCS.use_card(e, mute, nosave)
 	local card = e.config and e.config.ref_table
 	if card and card.ability and card.ability.name and RLOG.is_active() then
 		local human = string.format("action:usedCard,card:%s", card.ability.name)
-		if card.area and card.area == G.shop_booster and card.ability.set == "Booster" then
+		if card.area and card.area == G.shop_booster and card.ability.set == 'Booster' then
 			local idx = RLOG.index_in_area(card)
 			if idx then
 				MPAPI.RLOGCodes.open_pack:write(RLOG.area_enum(card.area), idx, RLOG.card_ref(card), card.cost, human)
