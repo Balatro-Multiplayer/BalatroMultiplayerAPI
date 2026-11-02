@@ -82,6 +82,9 @@ local function nakama_list_mine(opts, callback)
 				modId = r.modId,
 				status = r.status,
 				place = r.place,
+				-- The caller's RatingResult {delta, newRating, isPlacement,
+				-- justPlaced, gamesPlayed}; nil for a run that wasn't rated.
+				rating = type(r.rating) == 'table' and r.rating or nil,
 				startedAt = iso_time(r.startedAt),
 				finalizedAt = iso_time(r.endedAt),
 			}
@@ -107,7 +110,8 @@ end
 -- §22.2 (+pagination): the player's own past run ids. opts = {page=,
 -- page_size=} (both optional; server defaults to page 1, pageSize 20).
 -- callback(err, data) where data is {runs = [{id, lobbyCode, modId,
--- lobbyType, status, startedAt, finalizedAt}, ...], total, page, pageSize}.
+-- lobbyType, status, place, rating, startedAt, finalizedAt}, ...], total,
+-- page, pageSize}.
 MPAPI.replay.list_mine = function(opts, callback)
 	nakama_list_mine(opts, callback)
 end
