@@ -558,7 +558,22 @@ build_history_tab_content = function()
 		} } }
 	end
 
-	local rows = {}
+	-- Same column widths and padding as match_history_row, so the labels sit over their cells.
+	local function header_cell(minw, key)
+		return { n = G.UIT.C, config = { align = 'cl', minw = minw, padding = 0.05 }, nodes = {
+			{ n = G.UIT.T, config = { text = localize(key), scale = 0.28, colour = G.C.UI.TEXT_INACTIVE } },
+		} }
+	end
+	local rows = { {
+		n = G.UIT.R,
+		config = { align = 'cl', padding = 0.05 },
+		nodes = {
+			header_cell(2.2, 'k_match_history_col_date'),
+			header_cell(2.2, 'k_match_history_col_code'),
+			header_cell(2, 'k_match_history_col_status'),
+			header_cell(1.8, 'k_match_history_col_rating'),
+		},
+	} }
 	local first = (h.page - 1) * HISTORY_ROWS_PER_PAGE + 1
 	for i = first, math.min(#h.runs, first + HISTORY_ROWS_PER_PAGE - 1) do
 		rows[#rows + 1] = match_history_row(h.runs[i])
