@@ -98,12 +98,6 @@ local function show_reconnect_prompt(lobby_data)
 	_overlay:as_overlay({ no_esc = true })
 end
 
--- Seconds a rejoin into a game needing a verified account waits for the
--- launcher verdict (105) before saying it is still pending. The challenge
--- starts with the socket (launcher_session_start) and normally lands within
--- a few seconds.
-local VERDICT_WAIT_SECONDS = 15
-
 -- Back into the lobby the server kept our seat in (no active run: the
 -- waiting room, or mid-draft).
 local function rejoin_lobby(lobby_data)
@@ -137,26 +131,33 @@ end
 -- queued with (requiredStanding; nil for a private lobby, never gated). Check
 -- before the playback fast-forward, which would otherwise run the whole
 -- replay only to be refused at the join. A game needing a verified account
--- waits for the launcher verdict first. The server has the last word either
--- way (api/lobby/nakama.lua shows its refusal the same way).
+-- without a valid verdict starts Launcher verification again and waits for
+-- the verdict, with the "Checking your game..." overlay up: a failed verdict
+-- is a final refusal, and "pending" is only for a wait that timed out. The
+-- server has the last word either way (api/lobby/nakama.lua shows its
+-- refusal the same way).
 local function rejoin_if_standing_allows(lobby_data, active, view)
 	local S = MPAPI.standing
 	local required = active and active.requiredStanding
-	local function decide()
-		local refusal = S.rejoin_refusal(view or MPAPI.account_standing(), required, MPAPI.is_launcher_verified())
+	local function decide(verdict_failed, waited)
+		-- is_launcher_verified() is read again, so a verdict that landed counts
+		-- even though `view` predates it.
+		local refusal = S.rejoin_refusal(view or MPAPI.account_standing(), required, MPAPI.is_launcher_verified(), verdict_failed)
 		if refusal then
-			MPAPI.show_rejoin_refused(refusal)
+			MPAPI.show_rejoin_refused(refusal, { waited = waited })
 			return
 		end
+		MPAPI.close_rejoin_overlay()
 		rejoin(lobby_data, active)
 	end
 	if required == MPAPI.Standing.VERIFIED and not S.is_verified(view, MPAPI.is_launcher_verified()) then
-		-- decide() reads is_launcher_verified() again, so a verdict that
-		-- landed counts even though `view` predates it.
-		MPAPI._internal.conn.await_launcher_verdict(VERDICT_WAIT_SECONDS, decide)
+		MPAPI.show_rejoin_checking()
+		MPAPI._internal.conn.verify_again(S.VERDICT_WAIT_SECONDS, function(outcome)
+			decide(outcome == MPAPI.VerdictOutcome.FAILED, true)
+		end)
 		return
 	end
-	decide()
+	decide(false, false)
 end
 
 -- The Reconnect decision (see this file's header): the run, if any, then the

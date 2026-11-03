@@ -13,8 +13,18 @@ local function on_challenge(msg)
 	C.connection:_answer_launcher_challenge(msg.challengeId, msg.kind, msg.nonce)
 end
 
--- {verified, reason, message}. Failing is the normal outcome for any
--- non-BET launch, so it stays silent; it only closes ranked.
+local COLOUR_SYSTEM = { 1, 1, 0 }
+
+-- Failing is the normal outcome for any non-BET launch, so a definite failure
+-- is only announced to a player in a game that needs a verified launcher.
+local function warn_if_game_needs_launcher()
+	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
+	if lobby and MPAPI.standing.game_needs_verified_launcher(lobby.type, C.is_official_server()) then
+		MPAPI.chat.addMessage(localize('k_launcher_check_failed_in_game'), COLOUR_SYSTEM)
+	end
+end
+
+-- {verified, reason, message}. A failed verdict closes ranked.
 local function on_integrity(msg)
 	local A = MPAPI.anticheat
 	if not A then
@@ -24,6 +34,9 @@ local function on_integrity(msg)
 		A.mark_server_verified()
 	else
 		A.server_verified = false
+		if MPAPI.IntegrityFailureReason.DEFINITE_FAILURES[msg.reason] then
+			warn_if_game_needs_launcher()
+		end
 	end
 	-- A verdict makes the account verified for queues and rejoins
 	-- (api/connection/standing.lua).

@@ -40,4 +40,27 @@ MPAPI.RejoinRefusalCode = {
 	MODS_NOT_ALLOWED = 'mods_not_allowed',
 	MODS_UNREPORTED = 'mods_unreported',
 	VERIFICATION_PENDING = 'verification_pending',
+	-- A definite failed launcher verdict: waiting or retrying cannot help.
+	VERIFICATION_FAILED = 'verification_failed',
+}
+
+-- Why a launcher verdict failed, as the INTEGRITY notification's `reason`.
+-- DEFINITE_FAILURES mirrors DEFINITE_FAILURE_REASONS in
+-- BalatroMultiplayerServer nakama/src/integrity.ts: the reasons the server
+-- treats as a final "no". A timeout is not one.
+MPAPI.IntegrityFailureReason = {
+	WRONG_RESPONSE = 'wrong_response',
+	REFUSED = 'refused',
+	TIMEOUT = 'timeout',
+}
+MPAPI.IntegrityFailureReason.DEFINITE_FAILURES = {
+	[MPAPI.IntegrityFailureReason.WRONG_RESPONSE] = true,
+	[MPAPI.IntegrityFailureReason.REFUSED] = true,
+}
+
+-- How a wait for a launcher verdict ended (C.verify_again in api/connection/standing.lua).
+MPAPI.VerdictOutcome = {
+	VERIFIED = 'verified',
+	FAILED = 'failed',
+	TIMED_OUT = 'timed_out',
 }
