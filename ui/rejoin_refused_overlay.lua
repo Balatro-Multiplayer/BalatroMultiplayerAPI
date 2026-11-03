@@ -115,6 +115,11 @@ end
 G.FUNCS.mpapi_rejoin_refused_leave = function(e)
 	_state.rechecked_at = nil
 	close_overlay()
+	-- Money and round events queued by the dead run would run against a HUD
+	-- that go_to_menu is about to delete.
+	if G.E_MANAGER then
+		G.E_MANAGER:clear_queue()
+	end
 	MPAPI._internal.lobby.nakama_leave_current(function(err)
 		if err then
 			MPAPI.sendWarnMessage('[rejoin_refused] lobby_leave failed: ' .. tostring(err))
@@ -138,7 +143,21 @@ local function show_overlay()
 		return
 	end
 	_state.open = true
+	-- Paused before the overlay is built, as vanilla does, so the run behind
+	-- it stands still until the player picks Retry or Leave.
+	G.SETTINGS.paused = true
 	MPAPI.rejoin_refused_overlay:as_overlay({ no_esc = true })
+end
+
+-- The overlay is the only way out of a refused rejoin: if something else
+-- closes the overlay menu while the refusal is open, bring it back.
+local MPAPI_update_ref = MPAPI.update
+MPAPI.update = function(...)
+	if _state.open and not G.OVERLAY_MENU then
+		_state.open = false
+		show_overlay()
+	end
+	return MPAPI_update_ref(...)
 end
 
 -- Puts up the overlay in its "Checking your game..." state, or switches the
