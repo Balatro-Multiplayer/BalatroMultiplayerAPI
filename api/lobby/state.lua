@@ -167,6 +167,9 @@ L.create_object = function(opts)
 			return
 		end
 		self._leaving = true
+		-- Log events recorded this frame wait for the end-of-frame flush, which a
+		-- leave would cut off: send them before the server drops us.
+		L.flush_log_events(self)
 		MPAPI.networking.nakama_lobby.leave(function(err)
 			if err then
 				MPAPI.sendWarnMessage('[nakama_lobby] leave failed: ' .. tostring(err))
