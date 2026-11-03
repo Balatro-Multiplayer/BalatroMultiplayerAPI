@@ -92,6 +92,10 @@ MPAPI.update = function()
 	if C.nakama_engine then
 		C.nakama_engine.update()
 		MPAPI.networking.nakama_lobby.update()
+		local conn = MPAPI.get_connection()
+		if conn then
+			conn:update_session()
+		end
 	end
 	MPAPI_update_ref()
 end

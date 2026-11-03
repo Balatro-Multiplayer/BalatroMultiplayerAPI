@@ -37,8 +37,6 @@ local RECONNECT_BACKOFF = { 0.5, 1, 2, 4 }
 -- snapshot arrives, the server's default is assumed.
 local DEFAULT_GRACE_SECONDS = 120
 local RECONNECT_GIVE_UP_MARGIN_SECONDS = 10
--- Refresh the session this long before it expires.
-local SESSION_REFRESH_MARGIN = 60
 
 local socket = nil
 local socket_open = false
@@ -85,48 +83,14 @@ end
 -- Session
 ----------------------------------------------------------------------
 
-local function adopt_session(c, session)
-	c.nakama_session = session
-	c.nakama_client.set_bearer_token(session.token)
-end
-
-local function refresh_session(c, cb)
-	local session = c.nakama_session
-	local client = c.nakama_client
-	-- The refresh endpoint wants the server key, not the (expiring) bearer.
-	client.set_bearer_token(nil)
-	client.session_refresh(session.refresh_token, nil, function(refreshed)
-		if not refreshed or refreshed.error then
-			client.set_bearer_token(session.token)
-			if os.time() < session.expires then
-				cb(session)
-			else
-				cb(nil, 'Nakama session refresh failed: ' .. error_message(refreshed, 'no response'))
-			end
-			return
-		end
-		adopt_session(c, refreshed)
-		cb(refreshed)
-	end)
-end
-
 -- Calls cb(session) with a usable session, or cb(nil, message).
 local function with_session(cb)
 	local c = conn()
-	if not c or not c.nakama_client or not c.player_id then
+	if not c or not c.player_id then
 		cb(nil, 'Not connected')
 		return
 	end
-	local session = c.nakama_session
-	if session then
-		if session.refresh_token and session.expires - os.time() < SESSION_REFRESH_MARGIN then
-			refresh_session(c, cb)
-		else
-			cb(session)
-		end
-		return
-	end
-	cb(nil, 'No Nakama session')
+	c:with_session(cb)
 end
 
 ----------------------------------------------------------------------

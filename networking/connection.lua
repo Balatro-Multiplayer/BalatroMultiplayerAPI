@@ -18,6 +18,11 @@ local NAKAMA_DEV_DEVICE_PREFIX = 'bmp-dev-'
 -- ticket". Resending the same ticket a moment later succeeds.
 local NAKAMA_LOGIN_RETRY_INTERVALS = { 0.5, 0.5, 1, 1 }
 
+-- Refresh the Nakama session this long before it expires.
+local SESSION_REFRESH_MARGIN = 60
+-- Seconds before the timer tries again after a failed refresh.
+local SESSION_REFRESH_RETRY = 5
+
 -- Always the most recently constructed instance (connection.new() can run
 -- more than once per session - e.g. MPAPI.reconnect() - each call replacing
 -- the previous instance). The launcher-integrity challenge-answered callback
@@ -32,6 +37,9 @@ function connection.new(opts)
 		steam = opts.steam,
 		nakama_client = opts.nakama_client,
 		nakama_session = nil,
+		-- Callbacks waiting on an in-flight session refresh, or nil.
+		_session_waiters = nil,
+		_session_retry_at = 0,
 		config = opts.config or {},
 		-- Official server: Steam login. Any other server: Device login.
 		official = opts.official ~= false,
@@ -209,26 +217,104 @@ function connection:_cancel_auth_ticket()
 	end
 end
 
+function connection:_session_near_expiry()
+	local session = self.nakama_session
+	return session ~= nil and session.refresh_token ~= nil and session.expires - os.time() < SESSION_REFRESH_MARGIN
+end
+
+function connection:_refresh_session(cb)
+	if self._session_waiters then
+		self._session_waiters[#self._session_waiters + 1] = cb
+		return
+	end
+	self._session_waiters = { cb }
+	local session = self.nakama_session
+	local client = self.nakama_client
+	local function finish(usable, err)
+		local waiters = self._session_waiters
+		self._session_waiters = nil
+		for _, waiter in ipairs(waiters or {}) do
+			waiter(usable, err)
+		end
+	end
+	-- The refresh endpoint wants the server key, not the (expiring) bearer.
+	client.set_bearer_token(nil)
+	client.session_refresh(session.refresh_token, nil, function(refreshed)
+		if not refreshed or refreshed.error then
+			client.set_bearer_token(session.token)
+			self._session_retry_at = os.time() + SESSION_REFRESH_RETRY
+			if os.time() < session.expires then
+				finish(session)
+			else
+				local result = refreshed or {}
+				local detail = type(result.error) == 'table' and result.error.message or result.message
+				finish(nil, 'Nakama session refresh failed: ' .. tostring(detail or 'no response'))
+			end
+			return
+		end
+		self.nakama_session = refreshed
+		client.set_bearer_token(refreshed.token)
+		finish(refreshed)
+	end)
+end
+
+-- Calls cb(session) with a usable Nakama session, refreshed when it is near
+-- expiry, or cb(nil, message). Every RPC goes through here.
+function connection:with_session(cb)
+	if not self.nakama_client then
+		cb(nil, 'Not connected')
+		return
+	end
+	if not self.nakama_session then
+		cb(nil, 'No Nakama session')
+		return
+	end
+	if self:_session_near_expiry() then
+		self:_refresh_session(cb)
+		return
+	end
+	cb(self.nakama_session)
+end
+
+-- Per-frame tick: keeps the session fresh even when no RPC runs (a long match
+-- sends over the socket only).
+function connection:update_session()
+	if self._session_waiters or os.time() < self._session_retry_at or not self:_session_near_expiry() then
+		return
+	end
+	self:_refresh_session(function(_, err)
+		if err then
+			MPAPI.sendWarnMessage(err)
+		end
+	end)
+end
+
 -- Calls a Nakama RPC on this connection's client. cb(err_message, data,
 -- answered): on an error, answered is true when the message is the server's.
 function connection:_nakama_rpc(id, body, cb)
 	local encoded = (body and next(body)) and MPAPI.json_encode(body) or '{}'
-	self.nakama_client.rpc_func(id, encoded, nil, function(result)
-		if not result or result.error then
-			local e = result and result.error
-			if type(e) == 'table' and e.message then
-				cb(e.message, nil, true)
-			else
-				cb((result and result.message) or ('RPC ' .. id .. ' failed'), nil, false)
+	self:with_session(function(session, session_err)
+		if not session then
+			cb(session_err, nil, false)
+			return
+		end
+		self.nakama_client.rpc_func(id, encoded, nil, function(result)
+			if not result or result.error then
+				local e = result and result.error
+				if type(e) == 'table' and e.message then
+					cb(e.message, nil, true)
+				else
+					cb((result and result.message) or ('RPC ' .. id .. ' failed'), nil, false)
+				end
+				return
 			end
-			return
-		end
-		local ok, data = pcall(MPAPI.json_decode, result.payload or '{}')
-		if not ok or type(data) ~= 'table' then
-			cb('RPC ' .. id .. ' returned bad JSON')
-			return
-		end
-		cb(nil, data)
+			local ok, data = pcall(MPAPI.json_decode, result.payload or '{}')
+			if not ok or type(data) ~= 'table' then
+				cb('RPC ' .. id .. ' returned bad JSON')
+				return
+			end
+			cb(nil, data)
+		end)
 	end)
 end
 
@@ -532,6 +618,7 @@ function connection:disconnect()
 	self.player_id = nil
 	self.session_token = nil
 	self.nakama_session = nil
+	self._session_waiters = nil
 end
 
 MPAPI.networking.connection = connection
