@@ -251,6 +251,24 @@ MPAPI.ActionType({
 	end,
 })
 
+-- One part of a Run save (api/replay/run_save.lua). The server joins the parts and keeps the
+-- latest complete save per player; it answers nobody. data holds at most
+-- MPAPI.run_save.PART_BYTES characters; the limits are the server's (actions/run_save.ts).
+MPAPI.ActionType({
+	key = 'mpapi_run_save_part',
+	authoritative = true,
+	parameters = {
+		{ key = 'run', type = 'string' },
+		{ key = 'id', type = 'string', required = true },
+		{ key = 'index', type = 'number', required = true },
+		{ key = 'count', type = 'number', required = true },
+		{ key = 'pos', type = 'number', required = true },
+		{ key = 'hash', type = 'string', required = true },
+		{ key = 'data', type = 'string', required = true },
+	},
+	on_receive = function() end,
+})
+
 L.apply_game_started = function(lobby, started)
 	lobby._game.started = {
 		run_id = started.runId,

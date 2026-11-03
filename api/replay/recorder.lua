@@ -243,12 +243,24 @@ end
 -- reproducible server-side (Node's JSON.stringify over the same tuple shape)
 -- without needing to match Lua's dict key-iteration order, since the whole
 -- input is array-shaped end to end.
-local function canonical_hash_input()
+local function canonical_hash_input(count)
 	local parts = {}
-	for _, ev in ipairs(RLOG._structured_events) do
-		parts[#parts + 1] = encode_event_tuple(ev)
+	for i = 1, count or #RLOG._structured_events do
+		parts[#parts + 1] = encode_event_tuple(RLOG._structured_events[i])
 	end
 	return "[" .. table.concat(parts, ",") .. "]"
+end
+
+-- How many events this run has recorded so far, and the SHA-256 of their canonical
+-- encoding: the CHK hash the log would carry if the run ended now. A Run save keeps both so
+-- a later reader can tell whether the log it downloaded is the one the save was taken from.
+-- nil when the log cannot be hashed: no run is being recorded, or the run was resumed after
+-- a crash (only the events since the resume are held, so the hash would cover a partial log).
+function RLOG.log_position()
+	if not RLOG._run_active or RLOG._resumed then return nil end
+	local count = #RLOG._structured_events
+	local hash = love.data.encode("string", "hex", love.data.hash("sha256", canonical_hash_input(count)))
+	return count, hash
 end
 
 -- Cheap Adler-style checksum for the human stream (never server-verified,
