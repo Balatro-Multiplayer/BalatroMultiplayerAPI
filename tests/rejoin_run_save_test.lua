@@ -12,6 +12,7 @@ local fake_envelope = { v = 1, save = { GAME = {} }, mods = {}, card_ids = {} }
 local decode_result = fake_envelope
 MPAPI = {
 	playback = {},
+	OPCODE = { RUN_INFO = 'run_info' },
 	replay = {
 		new_resolver_state = function() return { by_id = {}, assigned = {} } end,
 	},
@@ -52,6 +53,16 @@ none, why = P.pick_rejoin_start(active({ runSave = false, runSaveSkipped = 'hash
 check(none == nil and why:find('hash_mismatch'), 'a save the server held back says why')
 none, why = P.pick_rejoin_start(active({ runSave = { id = 's', pos = 11, hash = 'h', data = 'T' } }), hooks)
 check(none == nil and why:find('beyond'), 'a save past the end of the log is refused')
+-- A run that started after the save (a restart, the next run of a race) makes the save an
+-- earlier run's: it is never loaded.
+local later_run = {}
+for i = 1, 10 do later_run[i] = { t = i, opcode = i == 8 and 'run_info' or 'x' } end
+none, why = P.pick_rejoin_start(active({ events = later_run }), hooks)
+check(none == nil and why:find('earlier run'), 'a save from before a later run start is refused')
+later_run[8].opcode = 'x'
+later_run[3].opcode = 'run_info'
+pick, pos = P.pick_rejoin_start(active({ events = later_run }), hooks)
+check(pick == fake_envelope and pos == 6, 'a run start before the save does not matter')
 decode_result = nil
 none, why = P.pick_rejoin_start(active(), hooks)
 check(none == nil and why:find('unreadable'), 'an unreadable save is refused with its reason')
