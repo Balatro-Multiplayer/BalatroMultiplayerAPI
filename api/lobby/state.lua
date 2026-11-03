@@ -32,7 +32,7 @@ L.create_object = function(opts)
 		-- Server-owned game state (Nakama lobbies): { ready = {id=true},
 		-- started = nil | { seed, stake, options }, setup = { open, results } }.
 		-- See api/action/builtin.lua.
-		_game = { ready = {}, started = nil, reported = {}, setup = { open = nil, results = {} } },
+		_game = { ready = {}, started = nil, reported = {}, result_pending = false, setup = { open = nil, results = {} } },
 	}
 
 	function lobby:on(event_name, handler)
@@ -208,6 +208,12 @@ L.create_object = function(opts)
 
 	function lobby:report_result(placements, cb)
 		L.report_result(self, placements, cb)
+	end
+
+	-- Whether the server holds the started game's result open (set_result_pending), as of the
+	-- latest snapshot: a host that took over mid-run reads it here, since it never asked for the hold.
+	function lobby:is_result_pending()
+		return self._game.result_pending == true
 	end
 
 	function lobby:set_result_pending(pending, cb)

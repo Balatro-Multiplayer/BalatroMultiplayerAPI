@@ -123,6 +123,7 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 			MPAPI.set_player_ready(lobby, id, true)
 		end
 	end
+	lobby._game.result_pending = game.resultPending == true
 	lobby._game.reported = {}
 	for _, id in ipairs(type(game.reported) == 'table' and game.reported or {}) do
 		lobby._game.reported[id] = true

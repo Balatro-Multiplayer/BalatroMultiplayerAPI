@@ -95,7 +95,12 @@ MPAPI.ActionType({
 	parameters = {
 		{ key = 'pending', type = 'boolean', required = true },
 	},
-	on_receive = function() end,
+	on_receive = function(_, _, result)
+		local lobby = MPAPI.get_current_lobby()
+		if lobby and type(result) == 'table' and type(result.pending) == 'boolean' then
+			lobby._game.result_pending = result.pending
+		end
+	end,
 })
 
 -- opponentId = the contested player (a participant other than you). Any
@@ -262,6 +267,7 @@ L.apply_game_started = function(lobby, started)
 	}
 	lobby._game.ready = {}
 	lobby._game.reported = {}
+	lobby._game.result_pending = false
 	-- A restart keeps the finished steps' results (the server does too).
 	local results = started.restarted and lobby._game.setup.results or {}
 	lobby._game.setup = { open = nil, results = results }
@@ -277,6 +283,7 @@ L.apply_game_ended = function(lobby, ended)
 	lobby._game.started = nil
 	lobby._game.ready = {}
 	lobby._game.reported = {}
+	lobby._game.result_pending = false
 	lobby._game.setup = empty_setup()
 	lobby:_fire(MPAPI.LobbyEvent.GAME_ENDED, {
 		run_id = ended.runId,
