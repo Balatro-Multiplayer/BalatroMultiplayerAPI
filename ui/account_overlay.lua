@@ -365,6 +365,7 @@ chat_section = function()
 				config = { align = 'cm', padding = 0.04 },
 				nodes = {
 					UIBox_button({
+						id = MPAPI.chat.REBIND_BUTTON_ID,
 						label = { MPAPI.chat.rebinding and localize('b_chat_key_waiting')
 							or localize('b_chat_key'):format(MPAPI.chat.get_key():upper()) },
 						button = 'mpapi_chat_rebind',
@@ -764,6 +765,7 @@ function MPAPI.open_account_overlay()
 		return
 	end
 	_state.tab = 'account'
+	MPAPI.chat.rebinding = false
 	_state.history = { page = 1, next_cursor = nil, loading = false, error = nil, runs = {} }
 	MPAPI.account_overlay:as_overlay()
 end

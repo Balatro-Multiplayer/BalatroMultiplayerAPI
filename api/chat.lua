@@ -20,22 +20,39 @@ local _lobby_chat_active = false
 -- The key that opens the chat console (config.chat_key, 't' by default).
 function MPAPI.chat.get_key()
 	local key = MPAPI.config.chat_key
-	return (type(key) == 'string' and key ~= '') and key or 't'
+	return (type(key) == 'string' and key ~= '') and key:lower() or 't'
 end
 
 -- Set by the account overlay's "Chat Key" button; the next key press is then
 -- taken as the new chat key instead of reaching the game.
 MPAPI.chat.rebinding = false
 
+-- Config id of the Chat Key button. A pending rebind only holds while that
+-- button is on screen, so it ends by itself on any way of closing the overlay.
+MPAPI.chat.REBIND_BUTTON_ID = 'mpapi_chat_key_button'
+
+local function rebind_button_on_screen()
+	local overlay = G.OVERLAY_MENU
+	return overlay ~= nil
+		and overlay ~= true
+		and overlay.get_UIE_by_ID ~= nil
+		and overlay:get_UIE_by_ID(MPAPI.chat.REBIND_BUTTON_ID) ~= nil
+end
+
 -- Called first by each love.keypressed hook. Returns true when the press was
--- consumed by a pending rebind. Escape cancels; '/' is left to DebugPlus.
+-- consumed by a pending rebind. Escape cancels; '/' is left to DebugPlus and
+-- 'r' would start the game's hold-to-restart.
 function MPAPI.chat.capture_key(key)
 	if not MPAPI.chat.rebinding then return false end
-	MPAPI.chat.rebinding = false
-	if key ~= 'escape' and #key == 1 and key ~= '/' then
-		MPAPI._internal.config_set('chat_key', key)
+	if not rebind_button_on_screen() then
+		MPAPI.chat.rebinding = false
+		return false
 	end
-	if account_overlay_inner then account_overlay_inner:update() end
+	MPAPI.chat.rebinding = false
+	if key ~= 'escape' and #key == 1 and key ~= '/' and key ~= 'r' then
+		MPAPI._internal.config_set('chat_key', key:lower())
+	end
+	MPAPI._internal.refresh_account_overlay()
 	return true
 end
 
