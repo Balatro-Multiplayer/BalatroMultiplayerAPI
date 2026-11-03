@@ -120,6 +120,9 @@ MPAPI.playback.RUN_SAVE_START_SECONDS = 30
 -- after its event `pos`; the seek then goes at least that far. If the run does not come up
 -- from the save, or the save's extras fail to load, on_load_failed(reason) is called instead of
 -- on_ready and the caller restarts without the save.
+-- run_save.events_follow (optional): the timeline holds only the events after the save, so the
+-- playback starts at its first entry. opts.live (optional): more entries will be pushed, so the
+-- driver is not told its timeline is complete.
 function MPAPI.playback.restart_session_and_seek(session, target_event_index, on_ready, opts)
 	if session.driver then
 		-- The old driver would keep ticking against a rebuilt game state it no longer matches.
@@ -184,10 +187,14 @@ function MPAPI.playback.restart_session_and_seek(session, target_event_index, on
 				end
 				return
 			end
-			driver._cursor = run_save.pos + 1
-			target = math.max(target, driver._cursor)
+			if not run_save.events_follow then
+				driver._cursor = run_save.pos + 1
+				target = math.max(target, driver._cursor)
+			end
 		end
-		driver:finish()
+		if not opts.live then
+			driver:finish()
+		end
 		driver:fast_forward_to(target, {
 			pause_gate = opts.pause_gate,
 			on_done = function()

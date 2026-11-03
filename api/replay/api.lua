@@ -184,6 +184,7 @@ end
 -- lobby/spectate.ts). callback(err, data) once the snapshot is in, data being
 -- {snapshot, players, runId, code}; then handlers.event({t,
 -- player_id, opcode, args}) for each participant replay event, and
+-- handlers.run(data) for each answer to request_spectate_run, and
 -- handlers.ended(reason) once watching stops (lobby closed, connection lost).
 local function nakama_spectate(code, mod_id, callback, handlers)
 	handlers = handlers or {}
@@ -221,6 +222,10 @@ local function nakama_spectate(code, mod_id, callback, handlers)
 					if handlers.event then
 						handlers.event({ t = data.t, player_id = data.playerId, opcode = data.opcode, args = data.args })
 					end
+				elseif op == NL.ServerOp.SPECTATE_RUN then
+					if handlers.run then
+						handlers.run(data)
+					end
 				elseif op == NL.ServerOp.EVENT and data.type == 'lobby_closed' then
 					NL.unspectate()
 					ended('Lobby closed')
@@ -240,6 +245,16 @@ end
 -- the server refuses a lobby of another mod.
 MPAPI.replay.spectate_lobby = function(code, callback, handlers, mod_id)
 	nakama_spectate(code, mod_id, callback, handlers)
+end
+
+-- Asks for a player's run as the spectated match has it now: their latest Run save (checked by
+-- the server against their log, nil when there is none) and the events after it. The answer
+-- comes to handlers.run as {playerId, runSave = {id, pos, hash, data}|nil, runSaveSkipped, pos,
+-- events = [{t, opcode, args}]}. Every live event received before the answer is already in
+-- `events`; those after it are not. from_start asks for the whole log and no Run save (when the
+-- save would not load). False when not spectating.
+MPAPI.replay.request_spectate_run = function(player_id, from_start)
+	return MPAPI.networking.nakama_lobby.spectate_view(player_id, from_start)
 end
 
 -- Stops watching a lobby.

@@ -9,7 +9,7 @@
 local NL = {}
 
 -- Must match nakama/src/lobby/protocol.ts.
-NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6 }
+NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6, SPECTATE_VIEW = 7 }
 NL.ServerOp = {
 	SNAPSHOT = 100,
 	EVENT = 101,
@@ -25,6 +25,8 @@ NL.ServerOp = {
 	REPLAY_TAIL = 111,
 	-- The lobby's group queue changed (nakama/src/lobby/group_queue.ts).
 	GROUP_QUEUE = 112,
+	-- A spectator's answer to SPECTATE_VIEW: the watched player's Run save and the events after it.
+	SPECTATE_RUN = 113,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'
@@ -587,6 +589,17 @@ function NL.unspectate()
 	if watched and socket and socket_open then
 		socket.match_data_send(watched.id, NL.ClientOp.LEAVE, '{}', nil, true, ignore)
 	end
+end
+
+-- Asks for the run of the player being watched (SPECTATE_RUN answers). from_start asks for the
+-- whole log and no Run save. False when not spectating.
+function NL.spectate_view(player_id, from_start)
+	local watched = spectating
+	if not (watched and socket and socket_open) then
+		return false
+	end
+	socket.match_data_send(watched.id, NL.ClientOp.SPECTATE_VIEW, MPAPI.json_encode({ playerId = player_id, fromStart = from_start and true or nil }), nil, true, ignore)
+	return true
 end
 
 function NL.is_spectating()

@@ -60,7 +60,7 @@ decode_result = fake_envelope
 -- restart_session_and_seek with a Run save.
 local function new_driver_stub()
 	local driver = { _cursor = 1, _card_resolvers = {}, stopped = false }
-	function driver:finish() end
+	function driver:finish() self.finished = true end
 	function driver:stop() self.stopped = true end
 	function driver:fast_forward_to(target, o)
 		self.ff_target = target
@@ -107,5 +107,18 @@ check(not ready and failed and failed:find('bad state') and made.stopped, 'a fai
 staged = nil
 P.restart_session_and_seek(session, 4, function() end, opts_with())
 check(staged == nil and made._cursor == 1 and made.ff_target == 4, 'no save: the cursor stays and the target stands')
+
+-- A spectator's seek: the timeline holds only the events after the save, and more arrive live.
+restore_result = true
+local watched = { my_id = 'them', timeline = { { t = 7, opcode = 'x' }, { t = 8, opcode = 'x' } }, bootstrap = { schema_version = 1 } }
+P.restart_session_and_seek(watched, 3, function() end, opts_with({
+	live = true,
+	run_save = { envelope = fake_envelope, pos = 6, events_follow = true },
+}))
+check(made._cursor == 1, 'events that follow the save are played from the first one')
+check(made.ff_target == 3, 'the seek target is not raised by the save position')
+check(not made.finished, 'a live driver is not told its timeline is complete')
+P.restart_session_and_seek(session, 3, function() end, opts_with())
+check(made.finished, 'a replay or rejoin driver is told its timeline is complete')
 
 print(string.format('rejoin_run_save_test: %d checks passed', checks))
