@@ -22,6 +22,20 @@ RS.PART_BYTES = 12 * 1024
 RS.MAX_PARTS = 16
 RS.FORMAT_VERSION = 1
 
+-- Why a rejoin or a spectator start does not use a Run save and plays the whole log instead.
+-- HASH_MISMATCH and BEYOND_LOG are the server's own words for a save it held back
+-- (runSaveSkipped); the rest come from the client.
+RS.SKIP = {
+	NOT_SUPPORTED = 'not_supported',
+	NO_SAVE = 'no_save',
+	HASH_MISMATCH = 'hash_mismatch',
+	BEYOND_LOG = 'beyond_log',
+	EARLIER_RUN = 'earlier_run',
+	UNREADABLE = 'unreadable',
+	LOAD_FAILED = 'load_failed',
+	START_TIMEOUT = 'start_timeout',
+}
+
 RS._state_hooks = RS._state_hooks or {}
 local seq = 0
 
@@ -47,7 +61,7 @@ RS.codec = RS.codec
 			return love.data.decompress('string', 'deflate', binary)
 		end,
 		unpack = function(text)
-			return (MPAPI.str_unpack_checked or STR_UNPACK)(text)
+			return MPAPI.str_unpack_checked(text)
 		end,
 	}
 
@@ -202,11 +216,13 @@ local function log_sizes(raw, compressed, encoded, parts, pos)
 end
 
 -- Takes a Run save of the current match and sends it. False when there is nothing to send
--- (not in a refereed match, the log cannot be hashed, the save is too big or could not be
+-- (not in a refereed match, the lobby is catching up, the log cannot be hashed, the save is too big or could not be
 -- built) or the socket is down; the next Blind Select takes a new one.
 function RS.take()
 	local lobby = MPAPI.get_current_lobby()
 	if not (lobby and MPAPI.has_server_referee(lobby) and lobby._game.started) then return false end
+	-- A client that is replaying its log is not at the state its recorder's position names.
+	if lobby._catching_up then return false end
 	local pos, hash = MPAPI.replay.log_position()
 	if not pos then return false end
 	local save = vanilla_save_table()

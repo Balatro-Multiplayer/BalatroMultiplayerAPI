@@ -155,6 +155,17 @@ end
 check(not RS.take(), 'a too large save is not taken')
 check(#sent == 0, 'and nothing is sent')
 
+-- A lobby that is catching up after a rejoin takes no save, whatever the recorder holds.
+RS.codec.pack = function()
+	return 'small'
+end
+sent = {}
+local runs_before = save_runs
+lobby._catching_up = true
+check(not RS.take() and #sent == 0 and save_runs == runs_before, 'no save while the lobby is catching up')
+lobby._catching_up = false
+check(RS.take() and #sent >= 1, 'a save is taken again once the catch-up is over')
+
 -- No log position (a resumed run): no save.
 RS.codec.pack = function()
 	return 'small'
