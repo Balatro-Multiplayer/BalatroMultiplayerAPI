@@ -186,6 +186,10 @@ local function fmt_args(args)
 	for _, tok in ipairs(args) do
 		parts[#parts + 1] = fmt_token(tok)
 	end
+	-- Trailing empty tokens (a play with no jokers) leave no dangling space.
+	while #parts > 0 and parts[#parts] == "" do
+		parts[#parts] = nil
+	end
 	return table.concat(parts, " ")
 end
 
