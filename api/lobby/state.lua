@@ -29,10 +29,20 @@ L.create_object = function(opts)
 		_local_mode = opts.local_mode or false,
 		-- Every other lobby is hosted as a Nakama match: see api/lobby/nakama.lua.
 		_nakama = opts.nakama or false,
-		-- Server-owned game state (Nakama lobbies): { ready = {id=true},
-		-- started = nil | { seed, stake, options }, setup = { open, results } }.
+		-- Server-owned game state (Nakama lobbies):
+		--   ready: { [player_id] = true }
+		--   started: nil | { seed, stake, options }
+		--   reported: { [player_id] = true } (players who reported a result)
+		--   result_pending: true while the server holds the started game's result open
+		--   setup: { open = nil | the open Setup, results = { [step id] = result } }
 		-- See api/action/builtin.lua.
-		_game = { ready = {}, started = nil, reported = {}, result_pending = false, setup = { open = nil, results = {} } },
+		_game = {
+			ready = {},
+			started = nil,
+			reported = {},
+			result_pending = false,
+			setup = { open = nil, results = {} },
+		},
 	}
 
 	function lobby:on(event_name, handler)
