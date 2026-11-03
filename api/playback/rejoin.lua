@@ -100,6 +100,14 @@ function MPAPI.playback.pick_rejoin_start(active, hooks)
 	if type(save.pos) ~= 'number' or save.pos > #(active.events or {}) then
 		return nil, 'the Run save is beyond the downloaded log'
 	end
+	-- The server holds one Run save per player for the whole match. A mod whose match has more
+	-- than one run (a restart, the next run of a race) can have a save from the run before: a
+	-- run_info after the save's position means the save is not this run's.
+	for i = save.pos + 1, #(active.events or {}) do
+		if active.events[i].opcode == MPAPI.OPCODE.RUN_INFO then
+			return nil, 'the Run save is from an earlier run'
+		end
+	end
 	local envelope, err = MPAPI.run_save.decode(save.data)
 	if not envelope then
 		return nil, 'the Run save is unreadable: ' .. tostring(err)
