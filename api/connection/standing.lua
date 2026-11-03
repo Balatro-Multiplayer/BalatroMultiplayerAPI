@@ -143,6 +143,14 @@ function S.parse_rejoin_refusal(message)
 	return { code = data.reason, mods = string_list(data.mods) }
 end
 
+-- Whether a player in a game of this lobby type (MPAPI.LobbyType) must keep a
+-- verified launcher: Ranked, on the Official server only (a Dev or Community
+-- server does not need the launcher, ADR 0001). `official` nil counts as
+-- Official, as in queue_refusal. Pure.
+function S.game_needs_verified_launcher(lobby_type, official)
+	return lobby_type == MPAPI.LobbyType.RANKED and official ~= false
+end
+
 -- Whether a refusal is final: no Retry can clear it. Pure.
 function S.is_final_refusal(refusal)
 	return refusal ~= nil and refusal.code == Rejoin.VERIFICATION_FAILED
@@ -304,7 +312,9 @@ end
 -- Starts Launcher verification again and waits for the verdict: for a
 -- rejoin whose account holds no valid verdict. The cached "verified" flag is
 -- dropped first, because it is the very thing the server just said it does
--- not trust. cb(outcome (MPAPI.VerdictOutcome)).
+-- not trust. A start that fails still waits out the window, so the caller
+-- sees the same timed-out answer as for a launcher that never replies.
+-- cb(outcome (MPAPI.VerdictOutcome)).
 function C.verify_again(timeout_secs, cb)
 	local conn = C.connection
 	if not conn then
@@ -314,17 +324,10 @@ function C.verify_again(timeout_secs, cb)
 	if MPAPI.anticheat then
 		MPAPI.anticheat.server_verified = false
 	end
-	local finished = false
-	local function finish(outcome)
-		if not finished then
-			finished = true
-			cb(outcome)
-		end
-	end
-	await_new_verdict(timeout_secs, finish)
+	await_new_verdict(timeout_secs, cb)
 	conn:start_launcher_verification(function(err)
 		if err then
-			finish(MPAPI.VerdictOutcome.TIMED_OUT)
+			MPAPI.sendWarnMessage('[standing] launcher verification did not start: ' .. tostring(err))
 		end
 	end)
 end

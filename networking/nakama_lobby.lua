@@ -45,6 +45,10 @@ local connect_waiters = nil -- callbacks waiting on an in-flight socket connect
 -- The lobby match this client is in, or nil.
 local match = nil -- { id, metadata, listener, lost_since, attempt }
 
+-- What the client last knew of its seat's grace period, kept after the match
+-- is gone: { grace_seconds, lost_at }.
+local last_seat = {}
+
 -- The lobby match this client watches as a spectator, or nil. Kept apart from
 -- `match`: watching doesn't take a seat, so it can't clash with the lobby (or
 -- rejoin) this client is in.
@@ -381,7 +385,24 @@ end
 function NL.set_grace_seconds(grace_seconds)
 	if match then
 		match.grace_seconds = tonumber(grace_seconds)
+		last_seat.grace_seconds = match.grace_seconds
+		last_seat.lost_at = nil
 	end
+end
+
+-- About how many seconds the server still holds this client's seat, for a
+-- player told to restart the game. Counts from the socket drop when this
+-- client saw one; otherwise it is the whole grace period, because the client
+-- cannot know how long the seat has been dropped. At least 1.
+function NL.seat_grace_seconds_left()
+	local left = last_seat.grace_seconds
+	if not left or left <= 0 then
+		left = DEFAULT_GRACE_SECONDS
+	end
+	if last_seat.lost_at then
+		left = left - (love.timer.getTime() - last_seat.lost_at)
+	end
+	return math.max(1, math.floor(left))
 end
 
 -- gave_up is true when reconnecting ran out of time (the match is over, as the
@@ -389,6 +410,7 @@ end
 local function lose(reason, gave_up)
 	local lost = match
 	match = nil
+	last_seat.lost_at = lost and lost.lost_since or nil
 	if lost and lost.listener.lost then
 		lost.listener.lost(reason, gave_up == true)
 	end

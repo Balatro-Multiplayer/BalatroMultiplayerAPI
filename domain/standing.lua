@@ -44,7 +44,7 @@ MPAPI.RejoinRefusalCode = {
 	VERIFICATION_FAILED = 'verification_failed',
 }
 
--- How a wait for a launcher verdict ended (MPAPI.standing.verify_again).
+-- How a wait for a launcher verdict ended (C.verify_again in api/connection/standing.lua).
 MPAPI.VerdictOutcome = {
 	VERIFIED = 'verified',
 	FAILED = 'failed',
