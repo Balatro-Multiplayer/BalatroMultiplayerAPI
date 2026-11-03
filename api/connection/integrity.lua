@@ -15,8 +15,8 @@ end
 
 local COLOUR_SYSTEM = { 1, 1, 0 }
 
--- Failing is the normal outcome for any non-BET launch, so a failed verdict is
--- only announced to a player in a game that needs a verified launcher.
+-- Failing is the normal outcome for any non-BET launch, so a definite failure
+-- is only announced to a player in a game that needs a verified launcher.
 local function warn_if_game_needs_launcher()
 	local lobby = MPAPI.get_current_lobby and MPAPI.get_current_lobby()
 	if lobby and MPAPI.standing.game_needs_verified_launcher(lobby.type, C.is_official_server()) then
@@ -34,7 +34,9 @@ local function on_integrity(msg)
 		A.mark_server_verified()
 	else
 		A.server_verified = false
-		warn_if_game_needs_launcher()
+		if MPAPI.IntegrityFailureReason.DEFINITE_FAILURES[msg.reason] then
+			warn_if_game_needs_launcher()
+		end
 	end
 	-- A verdict makes the account verified for queues and rejoins
 	-- (api/connection/standing.lua).
