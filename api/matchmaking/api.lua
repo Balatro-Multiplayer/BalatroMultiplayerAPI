@@ -89,7 +89,7 @@ MPAPI.matchmaking._on_nakama_tickets_lost = function(lost)
 	for _, handle in ipairs(mm.handles) do
 		if handle._nakama_ticket and gone[handle._nakama_ticket] and not handle._left and handle._nakama_requeue then
 			handle._nakama_ticket = nil
-			MPAPI.sendDebugMessage('[matchmaking] ticket lost with the socket; queueing again')
+			MPAPI.match_log('debug', '[matchmaking] ticket lost with the socket; queueing again')
 			handle._nakama_requeue()
 		end
 	end
@@ -182,7 +182,7 @@ local function nakama_queue(opts, handle, ranked)
 			handle._requeue_floor = at
 			local spread = MPAPI.matchmaking.ranked_spread(math.max(queue_wait(handle), at))
 			if spread > (handle._nakama_spread or 0) then
-				MPAPI.sendDebugMessage('[matchmaking] widening the ranked window to +-' .. spread)
+				MPAPI.match_log('debug', '[matchmaking] widening the ranked window to +-' .. spread)
 			end
 			local fresh = MPAPI.matchmaking._nakama_ticket(opts, ranked, handle._nakama_rating, spread)
 			NL.requeue(ticket, fresh, on_matched, function(err, new_ticket)
@@ -311,12 +311,12 @@ MPAPI.matchmaking.queue = function(opts)
 	-- anticheat gate above. An unknown standing passes and the server decides.
 	local standing_refusal = MPAPI.standing.queue_refusal(MPAPI.account_standing(), MPAPI.QueueKind.CASUAL, MPAPI.is_launcher_verified())
 	if standing_refusal then
-		MPAPI.sendDebugMessage('[mmdbg] matchmaking.queue: refused by standing (' .. standing_refusal.code .. ')')
+		MPAPI.match_log('debug', '[mmdbg] matchmaking.queue: refused by standing (' .. standing_refusal.code .. ')')
 		MPAPI.show_standing_refusal(standing_refusal)
 		return refused_handle(MPAPI.standing_refusal_error(standing_refusal))
 	end
 
-	MPAPI.sendDebugMessage('[mmdbg] matchmaking.queue mod=' .. tostring(opts.mod_id) .. ' gameMode=' .. tostring(opts.game_mode) .. ' min=' .. tostring(opts.min_players) .. ' max=' .. tostring(opts.max_players))
+	MPAPI.match_log('debug', '[mmdbg] matchmaking.queue mod=' .. tostring(opts.mod_id) .. ' gameMode=' .. tostring(opts.game_mode) .. ' min=' .. tostring(opts.min_players) .. ' max=' .. tostring(opts.max_players))
 
 	local handle = MPAPI.matchmaking._make_handle(opts.mod_id, opts.game_mode)
 	mm.handles[#mm.handles + 1] = handle

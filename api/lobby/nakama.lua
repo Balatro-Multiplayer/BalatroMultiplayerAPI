@@ -285,14 +285,14 @@ local function attach(lobby, match_id, on_ready)
 			on_data(lobby, on_ready, op, data)
 		end,
 		dropped = function()
-			MPAPI.sendDebugMessage('[nakama_lobby] socket dropped, rejoining ' .. tostring(lobby.code))
+			MPAPI.match_log('debug', '[nakama_lobby] socket dropped, rejoining ' .. tostring(lobby.code))
 		end,
 		rejoined = function()
 			lobby._server_restarting = nil
 			-- Usually a no-op: the rejoin snapshot already flushed. It catches the
 			-- case where that snapshot came before the socket counted as up.
 			L.flush_log_events(lobby)
-			MPAPI.sendDebugMessage('[nakama_lobby] rejoined ' .. tostring(lobby.code))
+			MPAPI.match_log('debug', '[nakama_lobby] rejoined ' .. tostring(lobby.code))
 			-- The new session starts as "not catching up" on the server.
 			if lobby._catching_up then
 				lobby:set_catching_up(true)

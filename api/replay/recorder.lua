@@ -194,7 +194,7 @@ local function fmt_args(args)
 end
 
 local function emit(msg)
-	sendTraceMessage(msg, "MULTIPLAYER")
+	MPAPI.match_log('trace', msg, 'MULTIPLAYER')
 end
 
 -- Milliseconds elapsed since begin_run, for each event's `t`. Falls back to a
@@ -240,7 +240,7 @@ end
 -- RLOG.broadcast_event.
 local function emit_carbon(msg, t, opcode, args)
 	RLOG._carbon_full[#RLOG._carbon_full + 1] = msg
-	sendTraceMessage(msg, "MULTIPLAYER")
+	MPAPI.match_log('trace', msg, 'MULTIPLAYER')
 	RLOG.broadcast_event(t, opcode, args)
 end
 

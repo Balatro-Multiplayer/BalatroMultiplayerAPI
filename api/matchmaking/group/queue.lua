@@ -206,7 +206,7 @@ local function finish(reason)
 		mm().remove_handle(h)
 		h:_fire(MPAPI.MatchmakingEvent.LEFT, nil)
 	end
-	MPAPI.sendDebugMessage('[group] queue over: ' .. tostring(reason))
+	MPAPI.match_log('debug', '[group] queue over: ' .. tostring(reason))
 end
 Group._finish = finish
 

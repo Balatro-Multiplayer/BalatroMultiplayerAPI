@@ -88,7 +88,7 @@ function Group.return_home()
 		return nil
 	end
 	p.returning = true
-	MPAPI.sendDebugMessage('[group] returning to lobby ' .. tostring(p.home_code))
+	MPAPI.match_log('debug', '[group] returning to lobby ' .. tostring(p.home_code))
 	local reg = Group._registration(p.mod_id)
 	-- Leaving the public game lands on the game's own main menu with no mod
 	-- focused, where a joined lobby has no page to show: focus the mod first,
@@ -193,7 +193,7 @@ function Home.on_public_game_ended(lobby, match_id)
 		return at_main_menu() or lobby._destroyed
 	end, function()
 		if not lobby._destroyed and MPAPI.get_current_lobby() == lobby then
-			MPAPI.sendDebugMessage('[group] public game over; leaving lobby ' .. tostring(lobby.code))
+			MPAPI.match_log('debug', '[group] public game over; leaving lobby ' .. tostring(lobby.code))
 			lobby:leave()
 		end
 	end)

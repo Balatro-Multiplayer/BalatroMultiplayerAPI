@@ -16,7 +16,7 @@ function MPAPI._internal.mm.on_nakama_matched(handle, match_id)
 	if not match_id then
 		handle._nakama_ticket = nil
 		if handle._nakama_requeue then
-			MPAPI.sendDebugMessage('[mmdbg] matched group refused by the server, queueing again')
+			MPAPI.match_log('debug', '[mmdbg] matched group refused by the server, queueing again')
 			handle._nakama_requeue()
 		else
 			mm.remove_handle(handle)

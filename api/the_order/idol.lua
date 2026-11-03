@@ -28,7 +28,8 @@ function reset_idol_card()
 			threshold = threshold + (entry.count / total_weight)
 			if raw_random < threshold then
 				local idol_card = entry.card
-			sendDebugMessage(
+				MPAPI.match_log(
+					'debug',
 					string.format(
 						'(Idol) Selected %s of %s, with a count of %d',
 						idol_card.base.value, idol_card.base.suit, entry.count
@@ -59,7 +60,7 @@ function reset_idol_card()
 					card_token(idol_card.base.value, idol_card.base.suit),
 					table.concat(tokens, ',')
 				)
-				sendDebugMessage('IDOL_ROLL::' .. love.data.encode('string', 'base64', idol_payload), 'IdolAlgo')
+				MPAPI.match_log('debug', 'IDOL_ROLL::' .. love.data.encode('string', 'base64', idol_payload), 'IdolAlgo')
 
 				-- Also into the replay log, so the website sees idol rolls from a
 				-- server-stored match, not only from an uploaded Lovely log.

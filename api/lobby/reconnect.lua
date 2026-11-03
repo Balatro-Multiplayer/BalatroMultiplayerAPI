@@ -22,7 +22,7 @@ end
 function MPAPI.lobby_reconnect(mod_id, lobby)
 	local fn = mod_id and MPAPI._lobby_reconnect_handlers[mod_id]
 	if not fn then
-		MPAPI.sendDebugMessage('MPAPI: no lobby_reconnect handler for ' .. tostring(mod_id) .. ' (ignored)')
+		MPAPI.match_log('debug', 'MPAPI: no lobby_reconnect handler for ' .. tostring(mod_id) .. ' (ignored)')
 		return
 	end
 	return fn(lobby)

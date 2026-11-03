@@ -15,6 +15,12 @@ local function mark_dev_mod_loaded()
 	MPAPI._internal.dev_mod_loaded = true
 end
 
+-- True when the Dev mod is installed. Read it at each call: the Dev mod loads
+-- after MPAPI, so the answer changes while MPAPI's files load.
+function MPAPI.dev.active()
+	return MPAPI._internal.dev_mod_loaded == true
+end
+
 -- Replaces the given endpoint defaults (host, port, secure, server_key,
 -- web_url; keys left out keep MPAPI's value) and marks the server as not
 -- Official, so the client sends a Device login and skips the Ranked launcher

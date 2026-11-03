@@ -6,10 +6,14 @@ local traces = {}
 function sendTraceMessage(m) traces[#traces + 1] = m end
 love = { data = { hash = function(_, s) return s end, encode = function(_, _, s) return s end } }
 MPAPI = {
+  _internal = {},
   OPCODE = { END = 'end', CHK = 'chk' },
   get_current_lobby = function() return nil end,
   has_server_referee = function() return false end,
 }
+dofile('api/dev.lua')
+dofile('lib/match_log.lua')
+MPAPI._internal.dev_mod_loaded = true
 dofile('api/replay/recorder.lua')
 local RLOG = MPAPI.replay
 local fails = 0
@@ -56,4 +60,11 @@ eq('joker_tokens no G', #RLOG.joker_tokens(), 0)
 -- a small roll sent as a fixed-point string encodes the same in Lua and in JS JSON
 local json = require('json')
 eq('small roll string encodes without exponent', json.encode({ string.format('%.6f', 0.00005) }), '["0.000050"]')
+-- without the Dev mod the recorder still hashes and keeps the carbon buffer, but writes no log lines
+MPAPI._internal.dev_mod_loaded = nil
+RLOG.begin_run(); traces = {}
+RLOG.record('reroll', nil)
+eq('no log line without the Dev mod', #traces, 0)
+eq('carbon buffer still filled', #RLOG._carbon_full > 0, true)
+MPAPI._internal.dev_mod_loaded = true
 os.exit(fails == 0 and 0 or 1)

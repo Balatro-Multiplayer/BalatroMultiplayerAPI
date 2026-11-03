@@ -29,7 +29,7 @@ ease_ante = function(amt, ...)
 	local result = _orig_ease_ante(amt, ...)
 	local ante = current_ante()
 	if ante then
-		MPAPI.sendDebugMessage('ease_ante: amt=' .. tostring(amt) .. ' round_resets.ante=' .. tostring(ante) .. ' => firing with ' .. tostring(ante + amt))
+		MPAPI.match_log('debug', 'ease_ante: amt=' .. tostring(amt) .. ' round_resets.ante=' .. tostring(ante) .. ' => firing with ' .. tostring(ante + amt))
 		MPAPI.calculate_context({ ante_change = true, ante = ante + amt })
 	end
 	return result
