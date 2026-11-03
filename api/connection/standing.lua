@@ -16,6 +16,11 @@ local Standing = MPAPI.Standing
 local Refusal = MPAPI.QueueRefusalCode
 local Rejoin = MPAPI.RejoinRefusalCode
 
+-- Seconds a rejoin into a game needing a verified account waits for the
+-- launcher verdict (105) before saying it is still pending. The challenge
+-- starts with launcher_session_start and normally lands within a few seconds.
+S.VERDICT_WAIT_SECONDS = 15
+
 -- How many mods a refusal names before "and N more".
 S.MODS_SHOWN = 4
 
@@ -102,10 +107,14 @@ function S.meets(view, required, launcher_verified)
 end
 
 -- Why the account can't rejoin a game needing `required`, or nil when it
--- can: {code (MPAPI.RejoinRefusalCode), mods}. Pure.
-function S.rejoin_refusal(view, required, launcher_verified)
+-- can: {code (MPAPI.RejoinRefusalCode), mods}. verdict_failed: the launcher
+-- verdict came back as a definite no, which is final. Pure.
+function S.rejoin_refusal(view, required, launcher_verified, verdict_failed)
 	if S.meets(view, required, launcher_verified) then
 		return nil
+	end
+	if verdict_failed and required == Standing.VERIFIED then
+		return { code = Rejoin.VERIFICATION_FAILED, mods = {} }
 	end
 	if view ~= nil and view.standing == Standing.NONE then
 		if view.reason == MPAPI.StandingReason.UNREPORTED then
@@ -132,6 +141,11 @@ function S.parse_rejoin_refusal(message)
 		return nil
 	end
 	return { code = data.reason, mods = string_list(data.mods) }
+end
+
+-- Whether a refusal is final: no Retry can clear it. Pure.
+function S.is_final_refusal(refusal)
+	return refusal ~= nil and refusal.code == Rejoin.VERIFICATION_FAILED
 end
 
 -- "A, B, C, D and 2 more": the first MODS_SHOWN names.
@@ -253,22 +267,19 @@ function C.on_launcher_verdict(verified)
 	local waiters = cache.verdict_waiters
 	cache.verdict_waiters = {}
 	for _, fn in ipairs(waiters) do
-		fn(verified)
+		fn(verified and MPAPI.VerdictOutcome.VERIFIED or MPAPI.VerdictOutcome.FAILED)
 	end
 end
 
--- cb(verified) once a launcher verdict lands, or cb(false) after
--- timeout_secs. Straight away when the account is already verified.
-function C.await_launcher_verdict(timeout_secs, cb)
-	if S.is_verified(cache.view, MPAPI.is_launcher_verified()) then
-		cb(true)
-		return
-	end
+-- cb(outcome (MPAPI.VerdictOutcome)) once a launcher verdict lands, or
+-- TIMED_OUT after timeout_secs. Waits for a verdict that arrives after the
+-- call, whatever the cached standing says.
+local function await_new_verdict(timeout_secs, cb)
 	local done = false
-	local function finish(verified)
+	local function finish(outcome)
 		if not done then
 			done = true
-			cb(verified)
+			cb(outcome)
 		end
 	end
 	table.insert(cache.verdict_waiters, finish)
@@ -282,12 +293,40 @@ function C.await_launcher_verdict(timeout_secs, cb)
 				return true
 			end
 			if love.timer.getTime() >= deadline then
-				finish(false)
+				finish(MPAPI.VerdictOutcome.TIMED_OUT)
 				return true
 			end
 			return false
 		end,
 	}))
+end
+
+-- Starts Launcher verification again and waits for the verdict: for a
+-- rejoin whose account holds no valid verdict. The cached "verified" flag is
+-- dropped first, because it is the very thing the server just said it does
+-- not trust. cb(outcome (MPAPI.VerdictOutcome)).
+function C.verify_again(timeout_secs, cb)
+	local conn = C.connection
+	if not conn then
+		cb(MPAPI.VerdictOutcome.TIMED_OUT)
+		return
+	end
+	if MPAPI.anticheat then
+		MPAPI.anticheat.server_verified = false
+	end
+	local finished = false
+	local function finish(outcome)
+		if not finished then
+			finished = true
+			cb(outcome)
+		end
+	end
+	await_new_verdict(timeout_secs, finish)
+	conn:start_launcher_verification(function(err)
+		if err then
+			finish(MPAPI.VerdictOutcome.TIMED_OUT)
+		end
+	end)
 end
 
 -----------------------------

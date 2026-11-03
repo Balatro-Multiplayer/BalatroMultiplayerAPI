@@ -40,4 +40,13 @@ MPAPI.RejoinRefusalCode = {
 	MODS_NOT_ALLOWED = 'mods_not_allowed',
 	MODS_UNREPORTED = 'mods_unreported',
 	VERIFICATION_PENDING = 'verification_pending',
+	-- A definite failed launcher verdict: waiting or retrying cannot help.
+	VERIFICATION_FAILED = 'verification_failed',
+}
+
+-- How a wait for a launcher verdict ended (MPAPI.standing.verify_again).
+MPAPI.VerdictOutcome = {
+	VERIFIED = 'verified',
+	FAILED = 'failed',
+	TIMED_OUT = 'timed_out',
 }

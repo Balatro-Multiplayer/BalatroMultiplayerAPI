@@ -464,11 +464,21 @@ function connection:_nakama_connect()
 		end)
 		-- The socket carries the launcher-integrity challenges
 		-- (api/connection/integrity.lua), so they only start now.
-		self:_nakama_rpc('launcher_session_start', {}, function(err)
-			if err then
-				MPAPI.sendWarnMessage('launcher_session_start failed: ' .. tostring(err))
-			end
-		end)
+		self:start_launcher_verification()
+	end)
+end
+
+-- Asks the server to start Launcher verification (again). The RPC refreshes
+-- the session first. A verdict that is still valid stays valid on the server.
+-- cb(err_message) is optional.
+function connection:start_launcher_verification(cb)
+	self:_nakama_rpc('launcher_session_start', {}, function(err)
+		if err then
+			MPAPI.sendWarnMessage('launcher_session_start failed: ' .. tostring(err))
+		end
+		if cb then
+			cb(err)
+		end
 	end)
 end
 
