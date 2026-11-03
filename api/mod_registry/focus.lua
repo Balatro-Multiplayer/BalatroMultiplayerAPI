@@ -17,8 +17,11 @@ end
 -- when lobby state that the view reads at build time changes (deck, host) and the view must
 -- re-render structurally. Guarded to the main menu so it never rebuilds the menu over an
 -- active run (a lobby page stays "current" in the page manager's own state during a run).
+-- Also skipped when no menu is on screen: start_run tears the menu down a tick before the
+-- run stage begins, and a menu rebuilt in that gap is never removed (it stays drawn behind
+-- the whole run).
 MPAPI.refresh_current_view = function()
-	if G.STAGE ~= G.STAGES.MAIN_MENU then
+	if G.STAGE ~= G.STAGES.MAIN_MENU or not G.MAIN_MENU_UI then
 		return false
 	end
 	return MPAPI._internal.rebuild_current_menu()
