@@ -253,7 +253,9 @@ local function canonical_hash_input(count)
 	local prefix = RLOG._resumed and RLOG._prefix
 	if prefix then
 		local lead = prefix.text:sub(1, -2)
-		if prefix.count > 0 and #parts > 0 then lead = lead .. "," end
+		if prefix.count > 0 and #parts > 0 then
+			lead = lead .. ","
+		end
 		return lead .. table.concat(parts, ",") .. "]"
 	end
 	return "[" .. table.concat(parts, ",") .. "]"
@@ -266,9 +268,13 @@ end
 -- a crash without the server's text of the events before it (RLOG.resume_run's third
 -- argument), so the hash would cover a partial log.
 function RLOG.log_position()
-	if not RLOG._run_active then return nil end
+	if not RLOG._run_active then
+		return nil
+	end
 	local prefix = RLOG._resumed and RLOG._prefix
-	if RLOG._resumed and not prefix then return nil end
+	if RLOG._resumed and not prefix then
+		return nil
+	end
 	local count = #RLOG._structured_events
 	local hash = love.data.encode("string", "hex", love.data.hash("sha256", canonical_hash_input(count)))
 	return count + (prefix and prefix.count or 0), hash

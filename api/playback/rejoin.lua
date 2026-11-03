@@ -82,35 +82,38 @@ function MPAPI.playback.read_rejoin_log(events, my_id, hooks)
 end
 
 -- Whether a rejoin can start from the Run save the server gave. Returns the decoded save and the
--- number of log events it covers, or nil and the reason the whole log is played instead.
+-- number of log events it covers, or nil, a MPAPI.run_save.SKIP code and a detail text for the
+-- reason the whole log is played instead.
 -- The server has already checked the save's hash against the log it holds (ActiveRun.runSave
 -- is nil when it does not match), so what is left to check here is that the log reaches the
 -- save's position and that the text reads.
 function MPAPI.playback.pick_rejoin_start(active, hooks)
+	local SKIP = MPAPI.run_save.SKIP
 	if not hooks.supports_run_save then
-		return nil, 'the mod does not load Run saves'
+		return nil, SKIP.NOT_SUPPORTED, 'the mod does not load Run saves'
 	end
 	local save = active.runSave
 	if not save then
-		if active.runSaveSkipped then
-			return nil, 'the server held back the Run save: ' .. tostring(active.runSaveSkipped)
+		local held_back = active.runSaveSkipped
+		if held_back == SKIP.HASH_MISMATCH or held_back == SKIP.BEYOND_LOG then
+			return nil, held_back, 'the server held back the Run save'
 		end
-		return nil, 'no Run save'
+		return nil, SKIP.NO_SAVE, 'no Run save'
 	end
 	if type(save.pos) ~= 'number' or save.pos > #(active.events or {}) then
-		return nil, 'the Run save is beyond the downloaded log'
+		return nil, SKIP.BEYOND_LOG, 'the Run save is beyond the downloaded log'
 	end
 	-- The server holds one Run save per player for the whole match. A mod whose match has more
 	-- than one run (a restart, the next run of a race) can have a save from the run before: a
 	-- run_info after the save's position means the save is not this run's.
 	for i = save.pos + 1, #(active.events or {}) do
 		if active.events[i].opcode == MPAPI.OPCODE.RUN_INFO then
-			return nil, 'the Run save is from an earlier run'
+			return nil, SKIP.EARLIER_RUN, 'the Run save is from an earlier run'
 		end
 	end
 	local envelope, err = MPAPI.run_save.decode(save.data)
 	if not envelope then
-		return nil, 'the Run save is unreadable: ' .. tostring(err)
+		return nil, SKIP.UNREADABLE, tostring(err)
 	end
 	return envelope, save.pos
 end
@@ -124,13 +127,11 @@ MPAPI.playback.RUN_SAVE_START_SECONDS = 30
 -- (a rejoin, a replay's checkpoint seek, a perspective switch).
 -- opts: mod_id (handler namespace), start_run(bootstrap, on_ready), pause_gate(),
 -- on_run_started() (optional; right after the local run is up, before the driver exists).
--- run_save = { envelope, pos } (optional): start the run from that Run save and begin the playback
--- after its event `pos`; the seek then goes at least that far. If the run does not come up
--- from the save, or the save's extras fail to load, on_load_failed(reason) is called instead of
--- on_ready and the caller restarts without the save.
--- run_save.events_follow (optional): the timeline holds only the events after the save, so the
--- playback starts at its first entry. opts.live (optional): more entries will be pushed, so the
--- driver is not told its timeline is complete.
+-- run_save = { envelope, pos, events_follow? } (optional): start the run from that Run save and
+-- play the timeline after its event `pos`; with events_follow the timeline already holds only
+-- the events after the save. If the run does not come up from the save, on_load_failed(code,
+-- detail) (a MPAPI.run_save.SKIP code) is called instead of on_ready.
+-- live (optional): more entries will be pushed, so the driver is not told its timeline is complete.
 function MPAPI.playback.restart_session_and_seek(session, target_event_index, on_ready, opts)
 	if session.driver then
 		-- The old driver would keep ticking against a rebuilt game state it no longer matches.
@@ -155,7 +156,7 @@ function MPAPI.playback.restart_session_and_seek(session, target_event_index, on
 						abandoned = true
 						MPAPI.run_save.unstage_load()
 						if opts.on_load_failed then
-							opts.on_load_failed('the run did not reach Blind Select from the Run save')
+							opts.on_load_failed(MPAPI.run_save.SKIP.START_TIMEOUT, 'the run did not reach Blind Select from the Run save')
 						end
 					end
 					return true
@@ -191,7 +192,7 @@ function MPAPI.playback.restart_session_and_seek(session, target_event_index, on
 			if not restored then
 				driver:stop()
 				if opts.on_load_failed then
-					opts.on_load_failed(tostring(err))
+					opts.on_load_failed(MPAPI.run_save.SKIP.LOAD_FAILED, tostring(err))
 				end
 				return
 			end
@@ -254,8 +255,7 @@ local function now_seconds()
 	return os.clock()
 end
 
--- One info line per rejoin: which way the catch-up went (from the Run save, or the whole log
--- and why) and how long it took, from the start of the catch-up to the run going live.
+-- One info line per rejoin: how the catch-up went and how long it took.
 local function log_caught_up(session, event_count)
 	local seconds = now_seconds() - (session.catch_up_started or now_seconds())
 	local line
@@ -387,26 +387,25 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 			end, opts)
 		end
 
-		local envelope, pos_or_reason = MPAPI.playback.pick_rejoin_start(active, hooks)
-		if not envelope then
-			session.run_save_skipped = pos_or_reason
+		local function play_whole_log(code, detail)
+			MPAPI.sendWarnMessage('[rejoin] Run save not used, playing the whole log: ' .. code .. ' (' .. tostring(detail) .. ')')
+			session.run_save_pos = nil
+			session.run_save_skipped = code
 			seek(restart_opts)
+		end
+
+		local envelope, pos_or_code, detail = MPAPI.playback.pick_rejoin_start(active, hooks)
+		if not envelope then
+			play_whole_log(pos_or_code, detail)
 			return
 		end
-		session.run_save_pos = pos_or_reason
-		local from_save = {}
-		for k, v in pairs(restart_opts) do
-			from_save[k] = v
-		end
-		from_save.run_save = { envelope = envelope, pos = pos_or_reason }
-		from_save.on_load_failed = function(reason)
-			if aborted then
-				return
+		session.run_save_pos = pos_or_code
+		local from_save = MPAPI.shallow_copy(restart_opts)
+		from_save.run_save = { envelope = envelope, pos = pos_or_code }
+		from_save.on_load_failed = function(code, reason)
+			if not aborted then
+				play_whole_log(code, reason)
 			end
-			MPAPI.sendWarnMessage('[rejoin] Run save not used, playing the whole log: ' .. tostring(reason))
-			session.run_save_pos = nil
-			session.run_save_skipped = 'the load failed: ' .. tostring(reason)
-			seek(restart_opts)
 		end
 		seek(from_save)
 	end
