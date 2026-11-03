@@ -47,7 +47,7 @@ local function refuse_foreign_action(lobby, action_type)
 		warned_foreign[action_type.key] = true
 		MPAPI.sendWarnMessage(message)
 	else
-		MPAPI.sendDebugMessage(message)
+		MPAPI.match_log('debug', message)
 	end
 end
 

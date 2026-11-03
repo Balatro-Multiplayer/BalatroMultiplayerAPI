@@ -40,7 +40,7 @@ function reset_idol_card()
 				G.GAME.current_round.idol_card.suit = idol_card.base.suit
 				G.GAME.current_round.idol_card.id = idol_card.base.id
 
-				-- Log the hit so the website log parser can show which card won and how
+				-- Log the hit so the match log (match page) can show which card won and how
 				-- likely it was. Cards are compact "<rank><suit><count>" tokens in
 				-- selection order (T = 10), base64'd so the line stays one token:
 				--   IDOL_ROLL::<base64 of {"roll":0.62,"winner":"QH","cards":["KS4","QH3","AS1"]}>

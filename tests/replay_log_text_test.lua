@@ -62,7 +62,8 @@ local json = require('json')
 eq('small roll string encodes without exponent', json.encode({ string.format('%.6f', 0.00005) }), '["0.000050"]')
 -- without the Dev mod the recorder still hashes and keeps the carbon buffer, but writes no log lines
 MPAPI._internal.dev_mod_loaded = nil
-RLOG.begin_run(); traces = {}
+RLOG.begin_run()
+traces = {}
 RLOG.record('reroll', nil)
 eq('no log line without the Dev mod', #traces, 0)
 eq('carbon buffer still filled', #RLOG._carbon_full > 0, true)
