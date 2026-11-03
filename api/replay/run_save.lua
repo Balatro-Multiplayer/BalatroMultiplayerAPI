@@ -39,6 +39,16 @@ RS.codec = RS.codec
 		to_text = function(binary)
 			return love.data.encode('string', 'base64', binary)
 		end,
+		-- The way back. unpack refuses code in the text when the sandboxed unpack is there.
+		from_text = function(text)
+			return love.data.decode('string', 'base64', text)
+		end,
+		decompress = function(binary)
+			return love.data.decompress('string', 'deflate', binary)
+		end,
+		unpack = function(text)
+			return (MPAPI.str_unpack_checked or STR_UNPACK)(text)
+		end,
 	}
 
 function RS.register_state(mod_id, hooks)
@@ -89,6 +99,74 @@ function RS.card_ids(card_areas)
 		end
 	end
 	return out
+end
+
+-- The envelope a Run save text holds, or nil and the reason. The text is what take sent
+-- (the server gives it back whole). Refused: a text the codec cannot read, a newer format
+-- than this client knows, a save without the parts a start needs.
+function RS.decode(text)
+	local ok, envelope = pcall(function()
+		local value = RS.codec.unpack(RS.codec.decompress(RS.codec.from_text(text)))
+		if type(value) ~= 'table' then error('not a table') end
+		if value.v ~= RS.FORMAT_VERSION then
+			error(string.format('format version %s, this client reads %s', tostring(value.v), tostring(RS.FORMAT_VERSION)))
+		end
+		if type(value.save) ~= 'table' then error('no save table') end
+		if type(value.save.GAME) ~= 'table' then error('the save has no GAME') end
+		return value
+	end)
+	if not ok then return nil, tostring(envelope) end
+	return envelope
+end
+
+-- Puts a decoded Run save's extras back, after the game has started from its save table:
+-- each mod's state through its load hook, and the recorder's card ids into `resolver` (a
+-- playback resolver state, MPAPI.replay.new_resolver_state), so the events that follow find
+-- the cards they name. True, or false and the reason (the caller then plays the whole log).
+function RS.restore(envelope, resolver)
+	for mod_id, state in pairs(envelope.mods or {}) do
+		local hooks = RS._state_hooks[mod_id]
+		if hooks and hooks.load then
+			local ok, err = pcall(hooks.load, state)
+			if not ok then return false, 'state hook of ' .. mod_id .. ' failed to load: ' .. tostring(err) end
+		end
+	end
+	for name, list in pairs(envelope.card_ids or {}) do
+		local area = G[name]
+		for i, id in ipairs(list) do
+			local card = area and area.cards and area.cards[i]
+			if id ~= 0 and card then
+				resolver.by_id[id] = card
+				resolver.assigned[card] = true
+			end
+		end
+	end
+	return true
+end
+
+-- The next Game:start_run starts from this Run save's save table (vanilla's own way of
+-- continuing a run) instead of a new run. Used once; unstage_load drops it unused.
+function RS.stage_load(envelope)
+	RS._staged = envelope
+end
+
+function RS.unstage_load()
+	RS._staged = nil
+end
+
+if Game and Game.start_run then
+	local start_run_ref = Game.start_run
+	function Game:start_run(args)
+		local staged = RS._staged
+		if staged then
+			RS._staged = nil
+			local from_save = {}
+			for k, v in pairs(args or {}) do from_save[k] = v end
+			from_save.savetext = staged.save
+			args = from_save
+		end
+		return start_run_ref(self, args)
+	end
 end
 
 -- Vanilla's save table for the run as it is now. Saving is switched off inside a lobby, so it

@@ -167,6 +167,12 @@ MPAPI.replay.get_active_run = function(callback)
 				-- What the game takes back (MPAPI.Standing 'valid' or
 				-- 'verified'); nil for a private lobby, which never gates.
 				requiredStanding = type(active.requiredStanding) == 'string' and active.requiredStanding or nil,
+				-- The caller's own latest Run save ({id, pos, hash, data}) when the server
+				-- holds one that matches the log; else nil, with runSaveSkipped saying why a
+				-- held one was left out. logText is the text the log hash is taken over.
+				runSave = type(active.runSave) == 'table' and active.runSave or nil,
+				runSaveSkipped = type(active.runSaveSkipped) == 'string' and active.runSaveSkipped or nil,
+				logText = type(active.logText) == 'string' and active.logText or nil,
 			} or nil,
 			-- The caller's StandingView now, to compare against it.
 			standing = data and data.standing or nil,

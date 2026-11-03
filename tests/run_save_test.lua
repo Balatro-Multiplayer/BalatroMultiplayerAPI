@@ -62,6 +62,13 @@ function save_run()
 	G.FILE_HANDLER.update_queued = true
 end
 
+local started_with
+Game = {
+	start_run = function(_, args)
+		started_with[#started_with + 1] = args
+	end,
+}
+started_with = {}
 dofile('api/replay/run_save.lua')
 local RS = MPAPI.run_save
 
@@ -155,5 +162,65 @@ end
 position = nil
 sent = {}
 check(not RS.take() and #sent == 0, 'no save without a log position')
+
+-- decode: the reverse of take's codec. A good text gives the envelope; a bad one gives nil and why.
+local good_env = {
+	v = RS.FORMAT_VERSION,
+	save = { STATE = 7, GAME = {}, cardAreas = {} },
+	mods = { demo = { lives = 2 } },
+	card_ids = { hand = { 5, 0, 7 } },
+	next_card_id = 7,
+}
+RS.codec = {
+	pack = function(v) return v end,
+	compress = function(t) return t end,
+	to_text = function(t) return t end,
+	unpack = function(t) return t end,
+	decompress = function(t) return t end,
+	from_text = function(t) return t end,
+}
+local env = RS.decode(good_env)
+check(env == good_env, 'a good text decodes to its envelope')
+local bad, why = RS.decode(setmetatable({}, { __index = function() error('boom') end }))
+check(bad == nil and why:find('boom'), 'a codec failure is a reason, not an error')
+bad, why = RS.decode({ v = RS.FORMAT_VERSION + 1, save = { GAME = {} } })
+check(bad == nil and why:find('version'), 'a newer format is refused')
+bad, why = RS.decode({ v = RS.FORMAT_VERSION })
+check(bad == nil and why:find('save'), 'an envelope with no save table is refused')
+bad, why = RS.decode({ v = RS.FORMAT_VERSION, save = { STATE = 7 } })
+check(bad == nil and why:find('GAME'), 'a save with no GAME is refused')
+
+-- restore: mod state goes back through load, the card id map goes into the resolver.
+local loaded
+RS.register_state('demo', {
+	save = function() return {} end,
+	load = function(state) loaded = state end,
+})
+RS.register_state('noload', { save = function() return {} end })
+local live_hand = { {}, {}, {} }
+G.hand = { cards = live_hand }
+local resolver = { by_id = {}, assigned = {} }
+local restored, err = RS.restore(good_env, resolver)
+check(restored, 'restore succeeds: ' .. tostring(err))
+check(loaded and loaded.lives == 2, 'the mod got its state back')
+check(resolver.by_id[5] == live_hand[1] and resolver.by_id[7] == live_hand[3] and resolver.by_id[0] == nil, 'ids map to cards by place')
+check(resolver.assigned[live_hand[1]] and resolver.assigned[live_hand[3]] and not resolver.assigned[live_hand[2]], 'mapped cards are marked taken')
+RS.register_state('failing', { save = function() return {} end, load = function() error('nope') end })
+good_env.mods.failing = {}
+restored, err = RS.restore(good_env, { by_id = {}, assigned = {} })
+check(not restored and tostring(err):find('failing'), 'a failing load is a failed restore naming the mod')
+
+-- stage_load: the next Game:start_run gets the save as its savetext, once.
+started_with = {}
+check(type(RS.stage_load) == 'function', 'stage_load exists')
+RS.stage_load(good_env)
+Game:start_run({ seed = 'X' })
+check(started_with[1].savetext == good_env.save and started_with[1].seed == 'X', 'the staged save is the savetext')
+Game:start_run({ seed = 'Y' })
+check(started_with[2].savetext == nil, 'and only for one start')
+RS.stage_load(good_env)
+RS.unstage_load()
+Game:start_run({})
+check(started_with[3].savetext == nil, 'an unstaged save is not used')
 
 print(string.format('run_save_test: %d checks passed', checks))

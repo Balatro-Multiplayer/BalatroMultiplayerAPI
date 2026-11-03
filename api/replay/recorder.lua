@@ -248,6 +248,14 @@ local function canonical_hash_input(count)
 	for i = 1, count or #RLOG._structured_events do
 		parts[#parts + 1] = encode_event_tuple(RLOG._structured_events[i])
 	end
+	-- A log resumed after a crash holds only the events since the resume. The ones before
+	-- come as the text the server hashes (RLOG.resume_run), which leads the input as it is.
+	local prefix = RLOG._resumed and RLOG._prefix
+	if prefix then
+		local lead = prefix.text:sub(1, -2)
+		if prefix.count > 0 and #parts > 0 then lead = lead .. "," end
+		return lead .. table.concat(parts, ",") .. "]"
+	end
 	return "[" .. table.concat(parts, ",") .. "]"
 end
 
@@ -255,12 +263,15 @@ end
 -- encoding: the CHK hash the log would carry if the run ended now. A Run save keeps both so
 -- a later reader can tell whether the log it downloaded is the one the save was taken from.
 -- nil when the log cannot be hashed: no run is being recorded, or the run was resumed after
--- a crash (only the events since the resume are held, so the hash would cover a partial log).
+-- a crash without the server's text of the events before it (RLOG.resume_run's third
+-- argument), so the hash would cover a partial log.
 function RLOG.log_position()
-	if not RLOG._run_active or RLOG._resumed then return nil end
+	if not RLOG._run_active then return nil end
+	local prefix = RLOG._resumed and RLOG._prefix
+	if RLOG._resumed and not prefix then return nil end
 	local count = #RLOG._structured_events
 	local hash = love.data.encode("string", "hex", love.data.hash("sha256", canonical_hash_input(count)))
-	return count, hash
+	return count + (prefix and prefix.count or 0), hash
 end
 
 -- Cheap Adler-style checksum for the human stream (never server-verified,
@@ -457,6 +468,7 @@ function RLOG.begin_run()
 	RLOG._card_ids = {}
 	RLOG._next_card_id = 0
 	RLOG._resumed = false
+	RLOG._prefix = nil
 end
 
 -- Resume recording a match this client was already recording, after a crash-relaunch
@@ -489,9 +501,16 @@ local function max_first_seen_id(v, best)
 	return best
 end
 
-function RLOG.resume_run(events, cards_by_id)
+--
+-- `log_text` (optional) is the text the server hashes the events over: the same events as one
+-- JSON array, in the form they arrived in (ActiveRun.logText). With it the resumed log can
+-- still give a log position and hash (RLOG.log_position) over the whole log.
+function RLOG.resume_run(events, cards_by_id, log_text)
 	RLOG.begin_run()
 	RLOG._resumed = true
+	if type(log_text) == "string" and log_text:sub(-1) == "]" then
+		RLOG._prefix = { text = log_text, count = #(events or {}) }
+	end
 	local last_t = 0
 	for _, ev in ipairs(events or {}) do
 		if type(ev.t) == "number" and ev.t > last_t then last_t = ev.t end
