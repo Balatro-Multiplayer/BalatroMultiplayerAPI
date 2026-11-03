@@ -22,7 +22,7 @@ MPAPI.ErrorKind = {
 	-- api/matchmaking/api.lua's queue() and anticheat/launcher_channel.lua).
 	ANTICHEAT_REQUIRED = 'anticheat_required',
 	-- Already-queued Ranked player got dequeued because the server's
-	-- post-join ranked_readiness challenge came back (or timed out)
+	-- post-join ranked_readiness challenge came back
 	-- reporting BET itself isn't on the latest version. Takes priority
 	-- over RANKED_MODS_OUTDATED when both are true, since updating BET
 	-- also resolves stale mods on the next launch - see
@@ -34,6 +34,9 @@ MPAPI.ErrorKind = {
 	-- pre-launch pipeline redeploys automatically), not by updating BET
 	-- itself.
 	RANKED_MODS_OUTDATED = 'ranked_mods_outdated',
+	-- Same challenge, but the launcher never answered in time, so nothing was
+	-- found to be out of date - retrying is the fix, not updating anything.
+	RANKED_VERIFICATION_TIMEOUT = 'ranked_verification_timeout',
 	-- The account's standing (domain/standing.lua) refuses the queue: a mod
 	-- outside the allowlist, no mod report yet, or ranked without a launcher
 	-- verdict. See api/connection/standing.lua's MPAPI.can_queue.

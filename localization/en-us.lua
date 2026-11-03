@@ -299,6 +299,7 @@ return {
 			k_connection_lost_menu = 'Main Menu',
 			k_ranked_launcher_outdated_body = 'A new version of Balatro Essentials Toolkit is required to continue playing Ranked. Update BET to keep playing.',
 			k_ranked_mods_outdated_body = 'Your Ranked mods are out of date. Relaunch through BET to update them, then queue again.',
+			k_ranked_verification_timeout_body = 'Could not verify your launcher in time. Make sure BET is still running, then queue again.',
 			-- Ready-status hover badge (lobby player list)
 			k_ready = 'Ready',
 			k_not_ready = 'Not Ready',

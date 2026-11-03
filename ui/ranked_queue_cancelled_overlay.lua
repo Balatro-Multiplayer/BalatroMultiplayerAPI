@@ -6,13 +6,16 @@
 -- on top of) rather than duplicated into each ranked-queueing mod's own
 -- handle:on("error", ...) handler.
 local _state = {
-	reason = nil, -- 'launcher_outdated' | 'mods_outdated'
+	reason = nil, -- 'launcher_outdated' | 'mods_outdated' | 'verification_timeout'
+}
+
+local BODY_KEYS = {
+	launcher_outdated = 'k_ranked_launcher_outdated_body',
+	verification_timeout = 'k_ranked_verification_timeout_body',
 }
 
 local create_UIBox_ranked_queue_cancelled_overlay = function()
-	local body_key = _state.reason == 'launcher_outdated'
-		and 'k_ranked_launcher_outdated_body'
-		or 'k_ranked_mods_outdated_body'
+	local body_key = BODY_KEYS[_state.reason] or 'k_ranked_mods_outdated_body'
 
 	local contents = {
 		{
@@ -67,7 +70,7 @@ end
 
 MPAPI.ranked_queue_cancelled_overlay = MPAPI.ui_element(create_UIBox_ranked_queue_cancelled_overlay)
 
--- reason: 'launcher_outdated' | 'mods_outdated' (straight off the server's
+-- reason: 'launcher_outdated' | 'mods_outdated' | 'verification_timeout' (straight off the server's
 -- QUEUE_CANCELLED notification - see api/connection/moderation.lua).
 function MPAPI.show_ranked_queue_cancelled_notice(reason)
 	_state.reason = reason
