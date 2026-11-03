@@ -68,8 +68,10 @@ function reset_idol_card()
 					for _, reel_entry in ipairs(valid_idol_cards) do
 						card_tokens[#card_tokens + 1] = card_token(reel_entry.value, reel_entry.suit) .. tostring(reel_entry.count)
 					end
+					-- A fixed-point string: a float under 1e-4 would print differently in Lua and in
+					-- the server's JSON, which breaks the replay hash.
 					MPAPI.RLOGCodes.idol_roll:write(
-						raw_random,
+						string.format('%.6f', raw_random),
 						card_token(idol_card.base.value, idol_card.base.suit),
 						card_tokens
 					)
