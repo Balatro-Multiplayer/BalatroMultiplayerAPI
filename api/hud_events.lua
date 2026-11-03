@@ -11,14 +11,13 @@ local function round_ready()
 	return G.HUD and G.GAME and G.hand_text_area and G.hand_text_area.round ~= nil
 end
 
--- Wraps `fn` so that every event it queues, and its own instant work, only
--- runs while `ready()` holds.
+local unpack = _G.unpack or table.unpack
+
+-- Wraps `fn` so that every event it queues only runs while `ready()` holds.
 local function guard_events(fn, ready)
 	return function(...)
-		if not ready() then
-			return
-		end
 		local manager = G.E_MANAGER
+		local previous = rawget(manager, 'add_event')
 		local add_event = manager.add_event
 		manager.add_event = function(self, event, ...)
 			local func = event.func
@@ -32,12 +31,12 @@ local function guard_events(fn, ready)
 			end
 			return add_event(self, event, ...)
 		end
-		local results = table.pack(pcall(fn, ...))
-		manager.add_event = nil
+		local results = { pcall(fn, ...) }
+		manager.add_event = previous
 		if not results[1] then
 			error(results[2], 0)
 		end
-		return table.unpack(results, 2, results.n)
+		return unpack(results, 2, #results)
 	end
 end
 
