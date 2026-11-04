@@ -86,6 +86,10 @@ function connection.new(opts)
 		MPAPI.on_launcher_challenge_answered(function(result)
 			if current_instance then
 				current_instance:_publish_challenge_response(result)
+			else
+				MPAPI.sendWarnMessage(
+					'[integrity] challenge ' .. tostring(result.challenge_id) .. ' answer dropped: no active connection'
+				)
 			end
 		end)
 	end
@@ -570,6 +574,9 @@ end
 -- on_launcher_challenge_answered callback, not a return value from here.
 function connection:_answer_launcher_challenge(challenge_id, kind, nonce)
 	if not MPAPI.anticheat or not MPAPI.anticheat.answer_challenge then
+		MPAPI.sendWarnMessage(
+			'[integrity] challenge ' .. tostring(challenge_id) .. ' not relayed: anticheat module unavailable'
+		)
 		return
 	end
 	MPAPI.anticheat.answer_challenge(challenge_id, kind, nonce, self.player_id)
@@ -587,6 +594,9 @@ end
 -- RANKED_READINESS_SPEC.md in the server repo for the exact wire contract.
 function connection:_publish_challenge_response(result)
 	if not self.player_id then
+		MPAPI.sendWarnMessage(
+			'[integrity] challenge ' .. tostring(result.challenge_id) .. ' answer dropped: no player id on this connection'
+		)
 		return
 	end
 
@@ -604,9 +614,14 @@ function connection:_publish_challenge_response(result)
 		body.response = result.signature
 	end
 
+	local shape = result.refused and 'refused' or (result.launcher_current ~= nil and 'readiness' or 'signature')
+	local challenge_id = tostring(result.challenge_id)
+	MPAPI.sendDebugMessage('[integrity] challenge ' .. challenge_id .. ' sending answer to server (' .. shape .. ')')
 	self:_nakama_rpc('launcher_challenge_answer', body, function(err)
 		if err then
 			MPAPI.sendWarnMessage('launcher_challenge_answer failed: ' .. tostring(err))
+		else
+			MPAPI.sendDebugMessage('[integrity] challenge ' .. challenge_id .. ' answer accepted by server RPC')
 		end
 	end)
 end

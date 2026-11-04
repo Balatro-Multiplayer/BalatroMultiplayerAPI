@@ -390,12 +390,25 @@ while running do
 			-- post-handshake, though launcher_channel.lua's own pending-
 			-- challenge queue means this shouldn't actually trigger.
 			if authenticated then
-				send_frame({
+				local sent = send_frame({
 					type = 'challenge_request',
 					challenge_id = cmd.challenge_id,
 					kind = cmd.kind,
 					nonce = cmd.nonce,
 					player_id = cmd.player_id,
+				})
+				push_event({
+					type = 'log',
+					message = '[integrity] challenge '
+						.. tostring(cmd.challenge_id)
+						.. (sent and ' forwarded to launcher' or ' NOT forwarded: encrypt failed'),
+				})
+			else
+				push_event({
+					type = 'log',
+					message = '[integrity] challenge '
+						.. tostring(cmd.challenge_id)
+						.. ' dropped in launcher thread: handshake not complete',
 				})
 			end
 		end
@@ -445,6 +458,9 @@ while running do
 				-- content is otherwise unused, last_received above is already
 				-- all it needed to trigger.
 				local decode_ok, frame = pcall(decode_json, plaintext)
+				if not decode_ok or type(frame) ~= 'table' then
+					push_event({ type = 'log', message = '[integrity] undecodable frame from launcher ignored' })
+				end
 				if decode_ok and type(frame) == 'table' and frame.type == 'challenge_response' then
 					push_event({
 						type = 'challenge_answered',

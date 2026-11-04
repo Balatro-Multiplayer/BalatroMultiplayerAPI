@@ -162,11 +162,17 @@ end
 -- out the server's own challenge timeout.
 function A.answer_challenge(challenge_id, kind, nonce, player_id)
 	if not A.active then
+		MPAPI.sendDebugMessage(
+			'[integrity] challenge ' .. tostring(challenge_id) .. ' refused locally: not launched through BET in Ranked'
+		)
 		run_challenge_answered_callbacks({ challenge_id = challenge_id, refused = true })
 		return
 	end
 
 	if A.launcher_connected then
+		MPAPI.sendDebugMessage(
+			'[integrity] challenge ' .. tostring(challenge_id) .. ' (kind=' .. tostring(kind) .. ') passed to launcher thread'
+		)
 		tx_channel:push({
 			cmd = 'answer_challenge',
 			challenge_id = challenge_id,
@@ -175,6 +181,15 @@ function A.answer_challenge(challenge_id, kind, nonce, player_id)
 			player_id = player_id,
 		})
 	else
+		MPAPI.sendWarnMessage(
+			'[integrity] challenge '
+				.. tostring(challenge_id)
+				.. ' (kind='
+				.. tostring(kind)
+				.. ') queued: launcher channel not connected (thread alive='
+				.. tostring(thread ~= nil)
+				.. ')'
+		)
 		A._internal.pending_challenges[#A._internal.pending_challenges + 1] = {
 			challenge_id = challenge_id,
 			kind = kind,
@@ -285,6 +300,9 @@ function A.update()
 			MPAPI.sendDebugMessage('Ranked anti-cheat supervision channel authenticated.')
 			if #A._internal.pending_challenges > 0 then
 				for _, pending in ipairs(A._internal.pending_challenges) do
+					MPAPI.sendDebugMessage(
+						'[integrity] queued challenge ' .. tostring(pending.challenge_id) .. ' passed to launcher thread'
+					)
 					tx_channel:push({
 						cmd = 'answer_challenge',
 						challenge_id = pending.challenge_id,
@@ -326,11 +344,27 @@ function A.update()
 			A.launcher_connected = false
 			if #A._internal.pending_challenges > 0 then
 				for _, pending in ipairs(A._internal.pending_challenges) do
+					MPAPI.sendWarnMessage(
+						'[integrity] queued challenge ' .. tostring(pending.challenge_id) .. ' refused: channel failed'
+					)
 					run_challenge_answered_callbacks({ challenge_id = pending.challenge_id, refused = true })
 				end
 				A._internal.pending_challenges = {}
 			end
 		elseif event.type == 'challenge_answered' then
+			MPAPI.sendDebugMessage(
+				'[integrity] challenge '
+					.. tostring(event.challenge_id)
+					.. ' answer received from launcher: '
+					.. (event.error and ('launcher error=' .. tostring(event.error)) or 'ok')
+					.. (
+						event.launcher_current ~= nil
+							and (' launcher_current=' .. tostring(event.launcher_current) .. ' mods_current=' .. tostring(
+								event.mods_current
+							))
+						or ''
+					)
+			)
 			if event.error then
 				run_challenge_answered_callbacks({ challenge_id = event.challenge_id, refused = true })
 			else
@@ -353,6 +387,12 @@ function A.update()
 			MPAPI.sendWarnMessage('Ranked anti-cheat supervision thread crashed: ' .. tostring(err))
 			thread = nil
 			A.launcher_connected = false
+			-- Later challenges would otherwise queue forever with nothing to flush them.
+			MPAPI.sendWarnMessage(
+				'[integrity] challenges can no longer reach the launcher until the game restarts (pending='
+					.. #A._internal.pending_challenges
+					.. ')'
+			)
 		end
 	end
 end
