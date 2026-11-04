@@ -8,8 +8,20 @@ local C = MPAPI._internal.conn
 
 local function on_challenge(msg)
 	if msg.type ~= 'issued' or not msg.challengeId or not C.connection then
+		-- Status only (never the nonce): why a server challenge was ignored.
+		MPAPI.sendDebugMessage(
+			'[integrity] challenge notification ignored: type='
+				.. tostring(msg.type)
+				.. ' hasId='
+				.. tostring(msg.challengeId ~= nil)
+				.. ' hasConnection='
+				.. tostring(C.connection ~= nil)
+		)
 		return
 	end
+	MPAPI.sendDebugMessage(
+		'[integrity] challenge ' .. tostring(msg.challengeId) .. ' received from server (kind=' .. tostring(msg.kind) .. ')'
+	)
 	C.connection:_answer_launcher_challenge(msg.challengeId, msg.kind, msg.nonce)
 end
 
@@ -27,6 +39,9 @@ end
 -- {verified, reason, message}. A failed verdict closes ranked.
 local function on_integrity(msg)
 	local A = MPAPI.anticheat
+	MPAPI.sendDebugMessage(
+		'[integrity] server verdict: verified=' .. tostring(msg.verified == true) .. ' reason=' .. tostring(msg.reason)
+	)
 	if not A then
 		return
 	end
