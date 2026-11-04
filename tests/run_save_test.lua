@@ -234,4 +234,14 @@ RS.unstage_load()
 Game:start_run({})
 check(started_with[3].savetext == nil, 'an unstaged save is not used')
 
+-- is_staged: a query for "a Run save waits for the next start".
+check(RS.is_staged() == false, 'nothing is staged at first')
+RS.stage_load(good_env)
+check(RS.is_staged() == true, 'a staged save is reported')
+Game:start_run({})
+check(RS.is_staged() == false, 'the start used it')
+RS.stage_load(good_env)
+RS.unstage_load()
+check(RS.is_staged() == false, 'an unstaged save is not reported')
+
 print(string.format('run_save_test: %d checks passed', checks))

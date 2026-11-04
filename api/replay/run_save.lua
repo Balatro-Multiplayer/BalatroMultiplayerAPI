@@ -168,6 +168,11 @@ function RS.unstage_load()
 	RS._staged = nil
 end
 
+-- True while a Run save waits for the next Game:start_run.
+function RS.is_staged()
+	return RS._staged ~= nil
+end
+
 if Game and Game.start_run then
 	local start_run_ref = Game.start_run
 	function Game:start_run(args)
