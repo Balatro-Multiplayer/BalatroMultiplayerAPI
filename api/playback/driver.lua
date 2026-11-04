@@ -19,9 +19,8 @@ MPAPI.playback._active_drivers = MPAPI.playback._active_drivers or {}
 local Driver = {}
 Driver.__index = Driver
 
--- A replay handler's bounded wait (a screen, a shop, a hand) that ran out and let the driver go
--- on. Whatever follows probably acts on the wrong state, so a rejoin counts them and logs a
--- catch-up that had any as degraded.
+-- A bounded replay wait that ran out lets the driver go on, and what follows probably acts on the
+-- wrong state: the rejoin counts these to log a degraded catch-up.
 MPAPI.playback._gave_up_waits = 0
 
 function MPAPI.playback.wait_gave_up(message)

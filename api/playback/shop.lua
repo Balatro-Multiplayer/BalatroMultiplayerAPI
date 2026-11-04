@@ -108,14 +108,11 @@ function MPAPI.playback.cashout_wait_over(button_exists, round_eval_built, state
 	return not round_eval_built and state ~= S.ROUND_EVAL and not before_round_eval
 end
 
--- Replays a Cash Out. The driver dispatches the next entry as soon as no blocking event is
--- queued, and a fast-forward dispatches many in one frame, so a cashout can arrive while the
--- last hand is still being evaluated (a PvP blind ends on its hands, not on its score, and its
--- evaluation has no blocking event until the next frame): clicked then, it does nothing, and the
--- round evaluation that follows waits for a click that never comes. Pauses the driver, waits for
--- the button (bounded), clicks it, waits for the shop (bounded) and resumes the driver.
--- `wait_for(predicate, callback)` is the mod's own one-shot condition poll. `before_click()` (optional)
--- runs right before the click.
+-- Replays a Cash Out. A fast-forward can dispatch it while the last hand is still being
+-- evaluated (a PvP blind ends on its hands, and that evaluation has no blocking event until the
+-- next frame), and a click then does nothing: the round evaluation waits for a click that never
+-- comes. So the driver pauses until the button exists. `wait_for(predicate, callback)` is the
+-- mod's own one-shot condition poll; `before_click()` (optional) runs right before the click.
 function MPAPI.playback.cash_out_when_ready(ctx, wait_for, before_click)
 	local driver = ctx.driver
 	if driver then driver:pause() end
