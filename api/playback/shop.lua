@@ -78,3 +78,74 @@ function MPAPI.playback.with_shop_ready(ctx, fn, wait_for)
 		end
 	end)
 end
+
+MPAPI.playback.CASHOUT_WAIT_SECONDS = 10
+
+-- The Cash Out button is its own UIBox, built some time after the round_eval screen. Calling
+-- cash_out before it exists removes G.round_eval first, and the button is then built with no
+-- major to follow: it leaks off screen.
+function MPAPI.playback.find_cash_out_button()
+	for _, box in pairs(G.I.UIBOX) do
+		local found
+		local function walk(node)
+			if found or not node then return end
+			if node.config and node.config.button == 'cash_out' then found = node return end
+			for _, child in ipairs(node.children or {}) do walk(child) end
+		end
+		walk(box.UIRoot)
+		if found then return found end
+	end
+end
+
+-- True when the wait for a Cash Out can end: the button exists, the round was already cashed out
+-- (no round_eval and the state is past ROUND_EVAL), or time ran out. A state before ROUND_EVAL
+-- also has no round_eval, so those states keep waiting: the last hand of a round has been
+-- scored, but the game needs more frames to evaluate the round.
+function MPAPI.playback.cashout_wait_over(button_exists, round_eval_built, state, timed_out)
+	if button_exists or timed_out then return true end
+	local S = G.STATES
+	local before_round_eval = state == S.SELECTING_HAND or state == S.HAND_PLAYED or state == S.DRAW_TO_HAND or state == S.NEW_ROUND
+	return not round_eval_built and state ~= S.ROUND_EVAL and not before_round_eval
+end
+
+-- Replays a Cash Out. The driver dispatches the next entry as soon as no blocking event is
+-- queued, and a fast-forward dispatches many in one frame, so a cashout can arrive while the
+-- last hand is still being evaluated (a PvP blind ends on its hands, not on its score, and its
+-- evaluation has no blocking event until the next frame): clicked then, it does nothing, and the
+-- round evaluation that follows waits for a click that never comes. Pauses the driver, waits for
+-- the button (bounded), clicks it, waits for the shop (bounded) and resumes the driver.
+-- `wait_for(predicate, callback)` is the mod's own one-shot condition poll. `before_click()` (optional)
+-- runs right before the click.
+function MPAPI.playback.cash_out_when_ready(ctx, wait_for, before_click)
+	local driver = ctx.driver
+	if driver then driver:pause() end
+	local timeout = MPAPI.playback.CASHOUT_WAIT_SECONDS
+	local button_deadline = love.timer.getTime() + timeout
+	wait_for(function()
+		return MPAPI.playback.cashout_wait_over(MPAPI.playback.find_cash_out_button() ~= nil, G.round_eval ~= nil, G.STATE, love.timer.getTime() >= button_deadline)
+	end, function()
+		if before_click then before_click() end
+		G.FUNCS.cash_out(MPAPI.playback.find_cash_out_button() or { config = {} })
+		local deadline = love.timer.getTime() + timeout
+		wait_for(function()
+			if G.STATE == G.STATES.ROUND_EVAL then
+				if love.timer.getTime() >= deadline then
+					MPAPI.sendWarnMessage('[replay] cashout: still in ROUND_EVAL after ' .. timeout .. 's, resuming anyway')
+					return true
+				end
+				return false
+			end
+			if G.STATE == G.STATES.SHOP then
+				if MPAPI.playback.shop_is_built() then return true end
+				if love.timer.getTime() >= deadline then
+					MPAPI.sendWarnMessage('[replay] cashout: shop never became ready after ' .. timeout .. 's, resuming anyway')
+					return true
+				end
+				return false
+			end
+			return true
+		end, function()
+			if driver then driver:play() end
+		end)
+	end)
+end
