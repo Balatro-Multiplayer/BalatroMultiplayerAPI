@@ -25,7 +25,7 @@ We recommend downloading the mod with r2mm if you intend to play it casually. Yo
 
 #### BET
 
-Otherwise you can use own custom closed source launcher called BET, which is intended to be a successor of BMM. You can download BET here: [https://new.balatromp.com/download](https://new.balatromp.com/download)
+Otherwise you can use own custom closed source launcher called BET, which is intended to be a successor of BMM. You can download BET here: [https://balatromp.com/download](https://balatromp.com/download)
 
 ### Manual
 
@@ -75,7 +75,7 @@ Each key falls back to the Official server's value when it is unset. The game re
 | `server_port` | `443` |
 | `server_secure` | `true` (TLS) |
 | `nakama_server_key` | `defaultkey` |
-| `web_url` | `https://new.balatromp.com` (match-log and report links) |
+| `web_url` | `https://balatromp.com` (match-log and report links) |
 
 On Windows, write `127.0.0.1` rather than `localhost`. Windows tries IPv6 first, and the connection then stalls for about 20 seconds before it falls back to IPv4.
 
