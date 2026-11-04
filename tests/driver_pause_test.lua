@@ -48,4 +48,13 @@ driver:_tick(0.016)
 check(done, 'the fast-forward ends once the driver is resumed')
 check(driver:is_playing(), 'the driver plays on')
 
+-- Waits that gave up are counted for the rejoin's log.
+MPAPI.playback.reset_gave_up_waits()
+check(MPAPI.playback.gave_up_waits() == 0, 'the count starts at zero')
+MPAPI.playback.wait_gave_up('[replay] a wait ran out')
+MPAPI.playback.wait_gave_up('[replay] another wait ran out')
+check(MPAPI.playback.gave_up_waits() == 2, 'each wait that gave up is counted')
+MPAPI.playback.reset_gave_up_waits()
+check(MPAPI.playback.gave_up_waits() == 0, 'a new catch-up starts at zero')
+
 print('driver_pause_test: ' .. checks .. ' checks passed')

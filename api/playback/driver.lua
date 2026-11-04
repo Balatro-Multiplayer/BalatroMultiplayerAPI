@@ -19,6 +19,24 @@ MPAPI.playback._active_drivers = MPAPI.playback._active_drivers or {}
 local Driver = {}
 Driver.__index = Driver
 
+-- A replay handler's bounded wait (a screen, a shop, a hand) that ran out and let the driver go
+-- on. Whatever follows probably acts on the wrong state, so a rejoin counts them and logs a
+-- catch-up that had any as degraded.
+MPAPI.playback._gave_up_waits = 0
+
+function MPAPI.playback.wait_gave_up(message)
+	MPAPI.playback._gave_up_waits = MPAPI.playback._gave_up_waits + 1
+	MPAPI.sendWarnMessage(message)
+end
+
+function MPAPI.playback.reset_gave_up_waits()
+	MPAPI.playback._gave_up_waits = 0
+end
+
+function MPAPI.playback.gave_up_waits()
+	return MPAPI.playback._gave_up_waits
+end
+
 -- Defaults for Driver:fast_forward_to (below) -- exposed on MPAPI.playback rather than on
 -- the (module-local, never exported) Driver table itself, matching this file's existing
 -- external-surface convention (everything public hangs off MPAPI.playback.*). Deliberately

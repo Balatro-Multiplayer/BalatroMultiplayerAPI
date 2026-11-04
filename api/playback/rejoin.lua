@@ -264,6 +264,10 @@ local function log_caught_up(session, event_count)
 	else
 		line = string.format('[rejoin] caught up by replaying the whole log (%d events) in %.1f s; Run save not used: %s', event_count, seconds, tostring(session.run_save_skipped or 'unknown'))
 	end
+	local gave_up = MPAPI.playback.gave_up_waits()
+	if gave_up > 0 then
+		MPAPI.sendWarnMessage(string.format('[rejoin] DEGRADED: %d replay wait(s) gave up during the catch-up, so the state may differ', gave_up))
+	end
 	if sendInfoMessage then
 		sendInfoMessage(line, MPAPI.id or 'MPAPI')
 	else
@@ -375,6 +379,7 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 		local starts = MPAPI.playback.timeline_ante_starts(timeline, options.boundary_opcodes)
 		local cutoff = MPAPI.playback.rejoin_cutoff(starts)
 		session.catch_up_started = now_seconds()
+		MPAPI.playback.reset_gave_up_waits()
 
 		local function seek(opts)
 			MPAPI.playback.restart_session_and_seek(session, cutoff, function(driver)

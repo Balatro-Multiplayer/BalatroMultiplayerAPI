@@ -64,7 +64,7 @@ function MPAPI.playback.with_shop_ready(ctx, fn, wait_for)
 			return true
 		end
 		if love.timer.getTime() >= deadline then
-			MPAPI.sendWarnMessage('[replay] shop never became ready after ' .. timeout .. 's, skipping this action')
+			MPAPI.playback.wait_gave_up('[replay] shop never became ready after ' .. timeout .. 's, skipping this action')
 			return true
 		end
 		return false
@@ -138,7 +138,7 @@ function MPAPI.playback.cash_out_when_ready(ctx, wait_for, before_click)
 			if G.STATE == G.STATES.SHOP then
 				if MPAPI.playback.shop_is_built() then return true end
 				if love.timer.getTime() >= deadline then
-					MPAPI.sendWarnMessage('[replay] cashout: shop never became ready after ' .. timeout .. 's, resuming anyway')
+					MPAPI.playback.wait_gave_up('[replay] cashout: shop never became ready after ' .. timeout .. 's, resuming anyway')
 					return true
 				end
 				return false
