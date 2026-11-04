@@ -516,7 +516,10 @@ function Driver:_fast_forward_tick(dt)
 		end
 	end
 
-	if self._cursor >= self._ff_target or not self:has_pending() then
+	-- Not while a handler has paused the driver to wait on its action: on_done typically starts
+	-- the driver, which would cancel that pause and let the next entry run before the action
+	-- applied. The tick after the handler resumes the driver ends the fast-forward.
+	if self._playing and (self._cursor >= self._ff_target or not self:has_pending()) then
 		self:_end_fast_forward()
 	end
 end
