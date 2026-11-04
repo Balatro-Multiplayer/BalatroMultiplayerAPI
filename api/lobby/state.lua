@@ -4,6 +4,31 @@
 MPAPI._internal.lobby = MPAPI._internal.lobby or {}
 local L = MPAPI._internal.lobby
 
+-- How long a leave waits for the server to confirm the last log batch. More than
+-- one server tick, so the batch is handled before the leave signal.
+local LEAVE_ACK_TIMEOUT_SECONDS = 1
+
+-- Runs fn after `seconds` of real time, not game time, so a paused game still
+-- leaves; at once when there is no event manager (headless tests).
+L.after_real_seconds = function(seconds, fn)
+	if not (G and G.E_MANAGER and Event) then
+		fn()
+		return
+	end
+	G.E_MANAGER:add_event(Event({
+		trigger = 'after',
+		delay = seconds,
+		timer = 'REAL',
+		blocking = false,
+		blockable = false,
+		no_delete = true,
+		func = function()
+			fn()
+			return true
+		end,
+	}))
+end
+
 L.create_object = function(opts)
 	local lobby = {
 		code = opts.code,
@@ -168,18 +193,35 @@ L.create_object = function(opts)
 		end
 		self._leaving = true
 		-- Log events recorded this frame wait for the end-of-frame flush, which a
-		-- leave would cut off: send them before the server drops us.
-		L.flush_log_events(self)
-		MPAPI.networking.nakama_lobby.leave(function(err)
-			if err then
-				MPAPI.sendWarnMessage('[nakama_lobby] leave failed: ' .. tostring(err))
+		-- leave would cut off. The server runs a leave signal at once but handles
+		-- match data on its next tick, so the last batch asks for an ack and the
+		-- leave waits for it (or a refusal, or the timeout: an older server never
+		-- acks).
+		local left = false
+		local function leave_server()
+			if left then
+				return
 			end
-			L.cleanup(self)
-			self:_fire(MPAPI.LobbyEvent.DISCONNECTED)
-			if MPAPI._internal.on_lobby_disconnected then
-				MPAPI._internal.on_lobby_disconnected()
+			left = true
+			if self._destroyed then
+				return
 			end
-		end)
+			MPAPI.networking.nakama_lobby.leave(function(err)
+				if err then
+					MPAPI.sendWarnMessage('[nakama_lobby] leave failed: ' .. tostring(err))
+				end
+				L.cleanup(self)
+				self:_fire(MPAPI.LobbyEvent.DISCONNECTED)
+				if MPAPI._internal.on_lobby_disconnected then
+					MPAPI._internal.on_lobby_disconnected()
+				end
+			end)
+		end
+		if L.flush_log_events(self, leave_server) and not left then
+			L.after_real_seconds(LEAVE_ACK_TIMEOUT_SECONDS, leave_server)
+		else
+			leave_server()
+		end
 	end
 
 	lobby._pending_actions = {}

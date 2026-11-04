@@ -135,6 +135,7 @@ MPAPI.ActionType({
 		{ key = 'opcode', type = 'string', required = true },
 		{ key = 'args', type = 'table' },
 		{ key = 'run', type = 'string' },
+		{ key = 'ack', type = 'boolean' },
 	},
 	on_receive = function(_, _, result)
 		local lobby = MPAPI.get_current_lobby()
@@ -234,12 +235,15 @@ end
 -- Up to LOG_BATCH_MAX replay events in one message, in order (the same events
 -- mpapi_log_event takes one by one). The server tells the others once:
 -- { playerId, t, opcode, args, count } of the last event kept. A batch costs the
--- server's log budget one token per event, as single events do.
+-- server's log budget one token per event, as single events do. `ack = true` (on
+-- this action and on mpapi_log_event) also makes the server answer the sender
+-- with the request's cid and params { ack = true }.
 MPAPI.ActionType({
 	key = 'mpapi_log_events',
 	authoritative = true,
 	parameters = {
 		{ key = 'events', type = 'table', required = true },
+		{ key = 'ack', type = 'boolean' },
 	},
 	on_receive = function(_, _, result)
 		local lobby = MPAPI.get_current_lobby()
@@ -428,11 +432,26 @@ local function event_bytes(event)
 end
 
 -- Sends one batch (a single event goes as plain mpapi_log_event); false when the socket is down.
-local function transmit_log_events(lobby, batch)
-	if #batch == 1 then
-		return lobby:action(MPAPI.ActionTypes.mpapi_log_event):send(nil, batch[1]) ~= false
+-- With on_ack the batch asks the server for an ack, and on_ack(err) runs when the
+-- server answers or refuses it (at once when the socket is down).
+local function transmit_log_events(lobby, batch, on_ack)
+	local single = #batch == 1
+	local params = single and batch[1] or { events = batch }
+	if on_ack then
+		local asked = {}
+		for k, v in pairs(params) do
+			asked[k] = v
+		end
+		asked.ack = true
+		params = asked
 	end
-	return lobby:action(MPAPI.ActionTypes.mpapi_log_events):send(nil, { events = batch }) ~= false
+	local action = lobby:action(MPAPI.ActionTypes[single and 'mpapi_log_event' or 'mpapi_log_events'])
+	if on_ack then
+		action:callback(function(_, _, err)
+			on_ack(err)
+		end)
+	end
+	return action:send(nil, params) ~= false
 end
 
 -- Drops kept events of a run that is not the current one (or when no game is on).
@@ -452,12 +471,14 @@ local function keep_current_run(lobby)
 end
 
 -- Sends the kept events in order, in batches; stops at the first batch that
--- can't go, and keeps it and the rest for the next flush.
-L.flush_log_events = function(lobby)
+-- can't go, and keeps it and the rest for the next flush. With on_ack, the last
+-- batch asks the server for an ack and on_ack(err) runs when it comes back; the
+-- result is true when that last batch went out, so on_ack is still to come.
+L.flush_log_events = function(lobby, on_ack)
 	keep_current_run(lobby)
 	local kept = lobby._unsent_log_events
 	if not kept then
-		return
+		return false
 	end
 	local sent = 0
 	while sent < #kept do
@@ -470,20 +491,22 @@ L.flush_log_events = function(lobby)
 			batch[#batch + 1] = kept[i]
 			bytes = bytes + size
 		end
-		if not transmit_log_events(lobby, batch) then
+		local is_last = sent + #batch == #kept
+		if not transmit_log_events(lobby, batch, is_last and on_ack or nil) then
 			break
 		end
 		sent = sent + #batch
 	end
 	if sent == #kept then
 		lobby._unsent_log_events = nil
-		return
+		return on_ack ~= nil
 	end
 	local rest = {}
 	for i = sent + 1, #kept do
 		rest[#rest + 1] = kept[i]
 	end
 	lobby._unsent_log_events = rest
+	return false
 end
 
 -- Flushes at the end of this frame (once however many events are recorded
