@@ -20,7 +20,7 @@ C.SERVER_DEFAULTS = {
 	port = 443,
 	secure = true,
 	server_key = 'defaultkey',
-	web_url = 'https://new.balatromp.com',
+	web_url = 'https://balatromp.com',
 }
 
 local CONFIG_KEYS = {
