@@ -124,13 +124,17 @@ function MPAPI.playback.cash_out_when_ready(ctx, wait_for, before_click)
 	wait_for(function()
 		return MPAPI.playback.cashout_wait_over(MPAPI.playback.find_cash_out_button() ~= nil, G.round_eval ~= nil, G.STATE, love.timer.getTime() >= button_deadline)
 	end, function()
+		local button = MPAPI.playback.find_cash_out_button()
+		if not button then
+			MPAPI.playback.wait_gave_up('[replay] cashout: no Cash Out button after ' .. timeout .. 's, clicking anyway')
+		end
 		if before_click then before_click() end
-		G.FUNCS.cash_out(MPAPI.playback.find_cash_out_button() or { config = {} })
+		G.FUNCS.cash_out(button or { config = {} })
 		local deadline = love.timer.getTime() + timeout
 		wait_for(function()
 			if G.STATE == G.STATES.ROUND_EVAL then
 				if love.timer.getTime() >= deadline then
-					MPAPI.sendWarnMessage('[replay] cashout: still in ROUND_EVAL after ' .. timeout .. 's, resuming anyway')
+					MPAPI.playback.wait_gave_up('[replay] cashout: still in ROUND_EVAL after ' .. timeout .. 's, resuming anyway')
 					return true
 				end
 				return false

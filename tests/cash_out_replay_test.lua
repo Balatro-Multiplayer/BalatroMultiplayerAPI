@@ -15,7 +15,7 @@ G = {
 }
 local shop_built = false
 MPAPI = {
-	playback = { shop_is_built = function() return shop_built end },
+	playback = { shop_is_built = function() return shop_built end, wait_gave_up = function() end },
 	sendWarnMessage = function() end,
 }
 dofile('api/playback/shop.lua')
@@ -78,5 +78,23 @@ check(#log == 1, 'still waiting')
 now = now + P.CASHOUT_WAIT_SECONDS + 1
 poll()
 check(log[2] == 'click', 'the timeout clicks anyway')
+
+-- Both timeouts count as a wait that gave up.
+local gave_up = 0
+P.wait_gave_up = function() gave_up = gave_up + 1 end
+check(gave_up == 0, 'no give-up yet')
+log = {}
+G.I.UIBOX = {}
+G.round_eval = nil
+G.STATE = S.HAND_PLAYED
+P.cash_out_when_ready({ driver = driver }, wait_for)
+now = now + P.CASHOUT_WAIT_SECONDS + 1
+poll()
+check(gave_up == 1, 'a button wait that ran out is counted')
+G.STATE = S.ROUND_EVAL
+now = now + P.CASHOUT_WAIT_SECONDS + 1
+poll()
+check(gave_up == 2, 'a round evaluation that never ends is counted')
+check(log[#log] == 'play', 'the driver resumes')
 
 print('cash_out_replay_test: ' .. checks .. ' checks passed')
