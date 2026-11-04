@@ -262,3 +262,77 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 		lobby:on(MPAPI.LobbyEvent.DISCONNECTED, abort)
 	end
 end
+
+-----------------------------------------------------------------------------
+-- Reattaching a run that never stopped
+--
+-- The crash rejoin above rebuilds a run from its log, because the game was relaunched and has no
+-- run. A lobby that was only lost (a dropped socket whose rejoin was refused, as for a launcher
+-- verdict still pending) is a different case: the player's own run is still on screen, intact. Running the
+-- fast-forward there starts a second local run over the live one, replays the log into it, and
+-- strands the player in the local catch-up lobby if it does not finish.
+--
+-- So the lobby that was lost is remembered, and a rejoin that finds its run still live takes the seat
+-- back into that run: no fast-forward, no second run.
+-----------------------------------------------------------------------------
+
+MPAPI._internal.dropped_live_lobby = nil
+
+-- Called when a lobby is lost (api/lobby/nakama.lua), before it is torn down. Only a lobby whose
+-- game has started, while its run is on screen and recording, is worth coming back to.
+function MPAPI.playback.remember_dropped_lobby(lobby)
+	local started = lobby._game and lobby._game.started
+	if started and G and G.STAGE == G.STAGES.RUN and MPAPI.replay and MPAPI.replay._run_active then
+		MPAPI._internal.dropped_live_lobby = lobby
+	else
+		MPAPI._internal.dropped_live_lobby = nil
+	end
+end
+
+-- The remembered lobby, when `lobby_data` is its seat and its run is still the live one on screen:
+-- no lobby is current (the catch-up's local lobby counts as one), and the run is still recording.
+-- nil otherwise, which sends the caller to the crash rejoin.
+function MPAPI.playback.live_run_lobby(lobby_data)
+	local old = MPAPI._internal.dropped_live_lobby
+	if not old or not lobby_data or old.code ~= lobby_data.code then
+		return nil
+	end
+	if not (G and G.STAGE == G.STAGES.RUN and MPAPI.replay and MPAPI.replay._run_active) then
+		MPAPI._internal.dropped_live_lobby = nil
+		return nil
+	end
+	if MPAPI.get_current_lobby() then
+		return nil
+	end
+	return old
+end
+
+-- Takes the seat back into the live run. Same wiring as go_live above (the mod's attach hook,
+-- the held messages), minus everything the fast-forward needed. `old` carries over what only it
+-- knows: the replay events recorded while the lobby was gone and not yet sent, and the
+-- gamemode instance (run count, run decks, win latch).
+function MPAPI.playback.reattach_live_run(old, lobby_data, hooks)
+	local lobby
+	lobby = MPAPI._internal.create_detached_lobby(lobby_data, function()
+		-- The first snapshot is in: the seat is ours.
+		if lobby._destroyed then
+			return
+		end
+		MPAPI._internal.dropped_live_lobby = nil
+		lobby._unsent_log_events = old._unsent_log_events
+		local instance = old:get_gamemode_instance()
+		if instance then
+			lobby:set_gamemode_instance(instance)
+		end
+		-- The run is already live: do not exit it when the lobby connects (api/mod_registry/focus.lua).
+		lobby._skip_run_exit_on_connect = true
+		local ctx = { events = {}, session = nil, playback_lobby = old, live = true }
+		hooks.attach(lobby, ctx)
+		MPAPI._internal.lobby.attach_detached(lobby)
+		-- The events kept while the lobby was gone go out now; the server's log has no gap.
+		MPAPI._internal.lobby.flush_log_events(lobby)
+		if hooks.resumed then
+			hooks.resumed(lobby, ctx)
+		end
+	end)
+end

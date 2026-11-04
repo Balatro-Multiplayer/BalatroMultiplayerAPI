@@ -120,6 +120,14 @@ end
 -- up, which left the player on the main menu outside their lobby. That
 -- player rejoins the lobby instead, like one in the waiting room.
 local function rejoin(lobby_data, active)
+	-- The run is still on screen and only its lobby was lost: take the seat back into it. The
+	-- fast-forward below is for a game that was relaunched and has no run.
+	local hooks = MPAPI.playback._rejoin_hooks and MPAPI.playback._rejoin_hooks[lobby_data.modId]
+	local live = hooks and MPAPI.playback.live_run_lobby(lobby_data)
+	if live then
+		MPAPI.playback.reattach_live_run(live, lobby_data, hooks)
+		return
+	end
 	if active and #(active.events or {}) > 0 then
 		MPAPI.playback.rejoin(active.modId, active, lobby_data)
 		return

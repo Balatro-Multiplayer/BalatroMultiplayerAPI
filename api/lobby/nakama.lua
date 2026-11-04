@@ -301,6 +301,12 @@ local function attach(lobby, match_id, on_ready)
 		end,
 		lost = function(reason, gave_up)
 			MPAPI.sendWarnMessage('[nakama_lobby] lost lobby ' .. tostring(lobby.code) .. ': ' .. tostring(reason))
+			-- A run still on screen keeps going without its lobby. Remember the lobby so a
+			-- later Retry/Reconnect can take the seat back into that run
+			-- (MPAPI.playback.reattach_live_run) instead of rebuilding it from the log.
+			if MPAPI.playback and MPAPI.playback.remember_dropped_lobby then
+				MPAPI.playback.remember_dropped_lobby(lobby)
+			end
 			tear_down(lobby)
 			-- A reconnect after a socket drop can be refused for standing too
 			-- (the allowlist changed while the connection was down). The seat
