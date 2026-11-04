@@ -267,7 +267,9 @@ function RS.take()
 end
 
 -- Vanilla saves the run as the Blind Select screen is built, in an event it queues. The Run
--- save is queued behind it, so it sees the same state.
+-- save is queued behind it, so it sees the same state. It is blockable like vanilla's: the
+-- start of a run queues delayed events (the Ghost Deck's Hex), and a save that ran ahead of them
+-- would lack what they add.
 if Game and Game.update_blind_select then
 	local update_blind_select_ref = Game.update_blind_select
 	function Game:update_blind_select(dt)
@@ -276,7 +278,6 @@ if Game and Game.update_blind_select then
 		if building and G.STATE_COMPLETE and G.E_MANAGER then
 			G.E_MANAGER:add_event(Event({
 				trigger = 'immediate',
-				blockable = false,
 				no_delete = true,
 				func = function()
 					local ok, err = pcall(RS.take)
