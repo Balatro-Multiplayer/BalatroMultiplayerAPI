@@ -261,6 +261,18 @@ return {
 			k_result_changed = 'A match you played was changed to %s.',
 			-- Staff acted on a player the recipient reported (ui/report_action_notice.lua)
 			k_report_action = 'Action has been taken against a player you reported, thank you for reporting.',
+			-- An appeal was decided, or a ban ended (ui/punishment_notice.lua)
+			k_punishment_chat = 'chat ban',
+			k_punishment_queue = 'queue ban',
+			k_punishment_account = 'account ban',
+			k_punishment_warning = 'warning',
+			k_punishment_network = 'network ban',
+			k_appeal_lifted = 'Your appeal was accepted: your %s is lifted.',
+			k_appeal_shortened = 'Your appeal was accepted: your %s is shortened.',
+			k_appeal_declined = 'Your appeal was declined.',
+			k_ban_ended_chat = 'Your chat ban has ended. You can chat again.',
+			k_ban_ended_queue = 'Your queue ban has ended. You can join Ranked again.',
+			k_ban_ended_account = 'Your account ban has ended. You can play again.',
 			-- Result of a run the player left early (ui/late_result_notice.lua)
 			k_late_result_ended = '[MultiplayerAPI] The match you left has ended.',
 			k_late_result_place = 'You finished in place',
