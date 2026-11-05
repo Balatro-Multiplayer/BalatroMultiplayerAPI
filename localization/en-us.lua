@@ -251,6 +251,14 @@ return {
 			-- Notification overlay at login (ui/notification_overlay.lua)
 			k_notification_title = 'Notification',
 			k_notification_position = '%d of %d',
+			-- Staff decisions on a match (ui/contest_result_notice.lua)
+			k_staff_result_win = 'a win',
+			k_staff_result_draw = 'a draw',
+			k_staff_result_loss = 'a loss',
+			k_contest_decided_contester = 'A match you contested was resolved as %s.',
+			k_contest_decided_opponent = 'Your opponent contested a match you played. A moderator resolved it as %s for you.',
+			k_result_voided = 'A match you played was voided.',
+			k_result_changed = 'A match you played was changed to %s.',
 			-- Result of a run the player left early (ui/late_result_notice.lua)
 			k_late_result_ended = '[MultiplayerAPI] The match you left has ended.',
 			k_late_result_place = 'You finished in place',
