@@ -5,9 +5,12 @@
 -- warning that arrived meanwhile is shown together.
 --
 -- 109 is persistent: a warning issued while offline waits in the notification
--- list and is read at login. Each is deleted once shown, so it is shown once.
+-- list. At login each waiting one joins the Notification overlay queue
+-- (api/notification/queue.lua), so no pop up covers another, and is deleted as
+-- it shows. A warning that arrives while online keeps this notice.
 local notify = MPAPI.networking.nakama_notify
 local C = MPAPI._internal.conn
+local Queue = MPAPI.load_mpapi_file('api/notification/queue.lua')
 
 -- BalatroMultiplayerServer apps/server features/service-queue command.ts:
 -- a warning's message is at most 500 characters.
@@ -182,6 +185,35 @@ local function enqueue(content, notification_id)
 	end
 end
 
+-- A warning listed at login: one entry of the Notification overlay queue,
+-- deleted from the stored list as it shows.
+local function enqueue_waiting(content, notification_id)
+	local queue = MPAPI._internal.notification_inbox.queue
+	local queue_id = 'stored:' .. tostring(notification_id)
+	if _state.seen[notification_id] or Queue.is_seen(queue, queue_id) then
+		return
+	end
+	_state.seen[notification_id] = true
+	local warning = warning_of(content)
+	if not warning then
+		-- Nothing to show: delete it.
+		notify.delete_persistent(nakama_client(), { notification_id })
+		return
+	end
+	local text = localize('k_warned_title') .. ': ' .. warning.message
+	local date = date_text(warning.warned_at)
+	if date then
+		text = text .. ' (' .. date .. ')'
+	end
+	Queue.add(queue, {
+		id = queue_id,
+		text = text,
+		on_shown = function()
+			notify.delete_persistent(nakama_client(), { notification_id })
+		end,
+	})
+end
+
 -- Outside a run, on the main menu, with no other overlay up.
 local function can_show_now()
 	return G.STAGE == G.STAGES.MAIN_MENU and not G.OVERLAY_MENU and G.MAIN_MENU_UI ~= nil
@@ -222,7 +254,7 @@ local function on_state_change(new_state, context)
 	if new_state == MPAPI.ConnectionState.CONNECTED and old_state ~= nil and old_state ~= new_state then
 		notify.list_persistent(nakama_client(), notify.Code.WARNED, function(stored)
 			for _, notification in ipairs(stored) do
-				enqueue(notification.content_table, notification.id)
+				enqueue_waiting(notification.content_table, notification.id)
 			end
 		end)
 	elseif new_state == MPAPI.ConnectionState.DISCONNECTED then
@@ -262,6 +294,7 @@ MPAPI._internal.warned_notice = {
 		return _state.shown
 	end,
 	enqueue = enqueue,
+	enqueue_waiting = enqueue_waiting,
 	can_show_now = can_show_now,
 	on_state_change = on_state_change,
 	reset = forget_all,
