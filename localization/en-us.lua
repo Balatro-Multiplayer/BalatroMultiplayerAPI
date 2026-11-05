@@ -248,6 +248,9 @@ return {
 			k_chat_banned_body = 'You are banned from chat',
 			k_ok = 'OK',
 			-- Moderator warning notice (ui/warned_notice_overlay.lua)
+			-- Notification overlay at login (ui/notification_overlay.lua)
+			k_notification_title = 'Notification',
+			k_notification_position = '%d of %d',
 			-- Result of a run the player left early (ui/late_result_notice.lua)
 			k_late_result_ended = '[MultiplayerAPI] The match you left has ended.',
 			k_late_result_place = 'You finished in place',
