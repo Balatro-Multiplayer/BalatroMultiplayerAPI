@@ -278,10 +278,10 @@ return {
 			k_late_result_place = 'You finished in place',
 			k_late_result_rating = 'Rating change',
 			-- A Contest the other player withdrew (ui/contest_withdrawn_notice.lua)
-			k_contest_withdrawn = 'A player withdrew their Contest of your match.',
-			k_contest_withdrawn_won = 'The match counts as their forfeit. You won.',
-			k_contest_withdrawn_drew = 'The match counts as their forfeit. It was a draw.',
-			k_contest_withdrawn_lost = 'The match counts as their forfeit. You lost.',
+			k_contest_withdrawn = 'Your opponent withdrew their Contest.',
+			k_contest_withdrawn_won = 'You won.',
+			k_contest_withdrawn_drew = 'It was a draw.',
+			k_contest_withdrawn_lost = 'You lost.',
 			-- Result of a ranked match (ui/ranked_result_notice.lua)
 			k_ranked_result_ended = 'Your ranked match has ended.',
 			k_ranked_result_won = 'You won.',
