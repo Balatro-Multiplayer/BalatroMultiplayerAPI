@@ -17,8 +17,11 @@ N.Code = {
 	STANDING_CHANGED = 108,
 	-- Persistent: a moderator's warning ({message, itemType, warnedAt}).
 	WARNED = 109,
-	-- 110 and 111 (late and ranked results) are retired: those results are
-	-- Notifications now (112); don't reuse them.
+	-- Kept for older clients: the server still sends 110 (late result) and 111
+	-- (ranked result) to online players. This client has no handler for them
+	-- and shows each result once, through the Notification (112).
+	RESULT_LATE = 110,
+	RESULT_RANKED = 111,
 	-- A stored Notification, pushed live to an online player: {id, kind,
 	-- params, sentAt}. It waits unread on the server (30 days) until the client
 	-- marks it read (RPCs notifications_pending and notifications_read).
