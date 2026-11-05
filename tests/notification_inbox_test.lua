@@ -8,6 +8,9 @@ local function check(condition, message)
 	assert(condition, message)
 end
 
+local clock = 100
+love = { timer = { getTime = function() return clock end } }
+local deferred = nil
 local chat, rpcs, handlers, loaded = {}, {}, {}, {}
 local pending_reply = { notifications = {} }
 MPAPI = {
@@ -33,7 +36,11 @@ MPAPI = {
 		nakama_lobby = {
 			rpc = function(id, body, cb)
 				rpcs[#rpcs + 1] = { id = id, body = body }
-				if id == 'notifications_pending' then
+				if id == 'notifications_pending' and deferred then
+					deferred = function()
+						cb(nil, pending_reply)
+					end
+				elseif id == 'notifications_pending' then
 					cb(nil, pending_reply)
 				else
 					cb(nil, {})
@@ -108,6 +115,36 @@ check(not Queue.has_pending(inbox.queue), 'a live Notification is not queued for
 inbox.receive_live({ id = 'f', kind = 'future_kind', params = {} })
 check(#chat == 1 and #rpcs == 1, 'an unknown kind is neither printed nor marked read')
 check(handlers[112] == inbox.receive_live, 'the live push is wired to code 112')
+
+-- Login gate: the first overlay waits for every list, so N is final.
+inbox.on_state_change(MPAPI.ConnectionState.DISCONNECTED, {})
+pending_reply = { notifications = { { id = 'p1', kind = 'test_kind', params = { n = 1 } } } }
+deferred = true
+inbox.on_state_change(MPAPI.ConnectionState.CONNECTED, { old_state = MPAPI.ConnectionState.DISCONNECTED })
+Queue.hold(inbox.queue, 'warnings', clock + inbox.login_wait)
+Queue.hold(inbox.queue, 'avatars', clock + inbox.login_wait)
+check(not Queue.ready(inbox.queue, clock), 'nothing shows while the lists are out')
+Queue.release(inbox.queue, 'warnings')
+inbox.receive_waiting({ id = 'w1', kind = 'test_kind', params = { n = 2 } })
+check(not Queue.ready(inbox.queue, clock), 'one answered list does not open the gate')
+deferred()
+check(not Queue.ready(inbox.queue, clock), 'the stored list answered, the avatar list has not')
+Queue.release(inbox.queue, 'avatars')
+inbox.receive_waiting({ id = 'a1', kind = 'test_kind', params = { n = 3 } })
+check(Queue.ready(inbox.queue, clock), 'every list answered: the first overlay may show')
+local _, first, count = Queue.next(inbox.queue)
+check(first == 1 and count == 3, 'the first overlay says 1 of 3')
+Queue.close(inbox.queue)
+Queue.forget(inbox.queue)
+deferred = nil
+
+-- A list that never answers (or fails) holds the queue only until the timeout.
+Queue.hold(inbox.queue, 'avatars', clock + inbox.login_wait)
+inbox.receive_waiting({ id = 't1', kind = 'test_kind', params = { n = 4 } })
+check(not Queue.ready(inbox.queue, clock + inbox.login_wait - 1), 'held before the timeout')
+check(Queue.ready(inbox.queue, clock + inbox.login_wait), 'shown after the timeout')
+Queue.forget(inbox.queue)
+check(Queue.ready(inbox.queue, clock) == false and not Queue.is_held(inbox.queue, clock), 'forget drops the holds')
 
 -- Disconnect drops the unshown queue; the server still holds those.
 inbox.receive_waiting({ id = 'g', kind = 'test_kind', params = { n = 7 } })

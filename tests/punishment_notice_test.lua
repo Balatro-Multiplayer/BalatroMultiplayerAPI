@@ -49,7 +49,7 @@ check(text('punishment_ended', { ban = 'chat' }) == 'Your chat ban has ended. Yo
 check(text('punishment_ended', { ban = 'account' }) == 'Your account ban has ended. You can play again.', 'account ended')
 check(text('punishment_ended', { ban = 'warning' }) == nil, 'unknown ban')
 check(
-	text('punishment_ended', { ban = 'username' }) == 'Your username ban has ended. Other players see your name again.',
+	text('punishment_ended', { ban = 'username' }) == 'Your username ban has ended.',
 	'username ended'
 )
 check(
