@@ -2,7 +2,8 @@
 -- until read). Online, one arrives as a push: it is printed as a chat line, in
 -- the menu too, and marked read. A Notification that waited while the player
 -- was offline is listed at login and queued for the overlay
--- (ui/notification_overlay.lua), which marks each read as it shows it.
+-- (ui/notification_overlay.lua), which marks each read as it shows it. The
+-- overlay waits until every login list has answered, so its count is final.
 local notify = MPAPI.networking.nakama_notify
 MPAPI._internal.conn = MPAPI._internal.conn or {}
 local C = MPAPI._internal.conn
@@ -57,8 +58,17 @@ local function receive_waiting(notification)
 	})
 end
 
+-- How long the login lists may hold the first overlay, in seconds.
+local LOGIN_WAIT = 5
+
+local function now()
+	return love.timer.getTime()
+end
+
 local function fetch_waiting()
+	Queue.hold(queue, 'notifications', now() + LOGIN_WAIT)
 	MPAPI.networking.nakama_lobby.rpc('notifications_pending', {}, function(err, data)
+		Queue.release(queue, 'notifications')
 		if err then
 			MPAPI.sendDebugMessage('[notification] could not list waiting: ' .. tostring(err))
 			return
@@ -88,5 +98,7 @@ MPAPI._internal.notification_inbox = {
 	queue = queue,
 	receive_live = receive_live,
 	receive_waiting = receive_waiting,
+	login_wait = LOGIN_WAIT,
+	now = now,
 	on_state_change = on_state_change,
 }

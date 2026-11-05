@@ -133,7 +133,7 @@ MPAPI.update = function(...)
 	if can_show_now() then
 		-- The last overlay is gone; the next one may open.
 		Queue.close(inbox.queue)
-		if Queue.has_pending(inbox.queue) then
+		if Queue.ready(inbox.queue, inbox.now()) then
 			show_next()
 		end
 	end

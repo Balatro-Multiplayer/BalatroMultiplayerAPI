@@ -252,10 +252,13 @@ end
 local function on_state_change(new_state, context)
 	local old_state = context and context.old_state
 	if new_state == MPAPI.ConnectionState.CONNECTED and old_state ~= nil and old_state ~= new_state then
+		local inbox = MPAPI._internal.notification_inbox
+		Queue.hold(inbox.queue, 'warnings', inbox.now() + inbox.login_wait)
 		notify.list_persistent(nakama_client(), notify.Code.WARNED, function(stored)
 			for _, notification in ipairs(stored) do
 				enqueue_waiting(notification.content_table, notification.id)
 			end
+			Queue.release(inbox.queue, 'warnings')
 		end)
 	elseif new_state == MPAPI.ConnectionState.DISCONNECTED then
 		-- Still stored server-side: the next login lists them again.

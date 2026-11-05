@@ -274,7 +274,7 @@ return {
 			k_ban_ended_chat = 'Your chat ban has ended. You can chat again.',
 			k_ban_ended_queue = 'Your queue ban has ended. You can join Ranked again.',
 			k_ban_ended_account = 'Your account ban has ended. You can play again.',
-			k_ban_ended_username = 'Your username ban has ended. Other players see your name again.',
+			k_ban_ended_username = 'Your username ban has ended.',
 			k_username_banned = 'Your name broke the rules. Other players now see you as %s. You can appeal on the website.',
 			-- Result of a run the player left early (ui/late_result_notice.lua)
 			k_late_result_ended = '[MultiplayerAPI] The match you left has ended.',
