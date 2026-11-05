@@ -521,6 +521,21 @@ MPAPI.RLOG_CODE {
 	end,
 }
 
+-- final_vouchers: [vouchers] -- the vouchers held at the end of the run (see
+-- RLOG.voucher_tokens), recorded just before the END trailer for the web viewer.
+MPAPI.RLOG_CODE {
+	key = 'final_vouchers',
+	mods = { 'pvp', 'spdrn' },
+	write = function(self, vouchers)
+		self:record({ vouchers })
+	end,
+	replay = function(self, _args, ctx)
+		if ctx.schema_version >= 1 then
+			-- no-op
+		end
+	end,
+}
+
 -------------------------------------------------------------------------------
 -- The single, shared hook installation -- one wrap per vanilla function.
 -------------------------------------------------------------------------------

@@ -420,6 +420,20 @@ function RLOG.joker_tokens()
 	return out
 end
 
+-- voucher_tokens: the vouchers redeemed this run, as center keys ("v_overstock"),
+-- sorted so every client writes the same order (G.GAME.used_vouchers is a set).
+function RLOG.voucher_tokens()
+	local out = {}
+	local used = G and G.GAME and G.GAME.used_vouchers
+	if type(used) == "table" then
+		for key, held in pairs(used) do
+			if held and type(key) == "string" then out[#out + 1] = key end
+		end
+	end
+	table.sort(out)
+	return out
+end
+
 -- deck_tokens: one string per card in the full deck: <suit initial><rank>
 -- plus "|"-joined tags in card_ref's vocabulary, e.g. "HK", "SA|e:m_glass|ed:foil".
 local RANK_CODE = { Ace = "A", King = "K", Queen = "Q", Jack = "J", ["10"] = "T" }
@@ -596,6 +610,15 @@ function RLOG.end_run(outcome)
 		pcall(function()
 			local tokens = RLOG.joker_tokens()
 			if #tokens > 0 then final_jokers:write(tokens) end
+		end)
+	end
+
+	-- The vouchers held at the end of the run, for the web viewer.
+	local final_vouchers = MPAPI.RLOGCodes and MPAPI.RLOGCodes.final_vouchers
+	if final_vouchers then
+		pcall(function()
+			local tokens = RLOG.voucher_tokens()
+			if #tokens > 0 then final_vouchers:write(tokens) end
 		end)
 	end
 
