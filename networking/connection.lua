@@ -136,6 +136,7 @@ function connection:_apply_player(player)
 	self.discord_name = player.discordUsername or nil
 	self.display_name = player.displayName or self.steam_name
 	self.use_discord_name = player.useDiscordName or false
+	self.username_banned = player.usernameBanned or false
 	self.preferred_joker = player.preferredJoker or 'j_joker'
 	self.discord_linked = player.discordLinked or false
 	if player.privileges then

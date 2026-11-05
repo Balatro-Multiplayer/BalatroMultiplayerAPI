@@ -247,6 +247,7 @@ connection_on_state_change = function(new_state, context)
 	if new_state == MPAPI.ConnectionState.CONNECTED or context.player_update then
 		MPAPI.connection_state.player_id = C.connection.player_id or ''
 		MPAPI.connection_state.steam_name = MPAPI.truncate(C.connection.steam_name or '', 20)
+		MPAPI.connection_state.username_banned = C.connection.username_banned or false
 		MPAPI.connection_state.discord_name = MPAPI.truncate(C.connection.discord_name or '', 20)
 		MPAPI.connection_state.is_temp = C.connection.is_temp or false
 		MPAPI.connection_state.use_discord_name = C.connection.use_discord_name or false

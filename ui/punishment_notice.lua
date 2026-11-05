@@ -25,12 +25,22 @@ local function describe_ended(params)
 	return known('k_ban_ended_' .. tostring(params.ban))
 end
 
+local function describe_username_banned(params)
+	local format = known('k_username_banned')
+	if not format or not params.banName then
+		return nil
+	end
+	return string.format(format, tostring(params.banName))
+end
+
 MPAPI.punishment_notice = {
 	describe_appeal = describe_appeal,
 	describe_ended = describe_ended,
+	describe_username_banned = describe_username_banned,
 }
 
 if MPAPI.notification_kinds then
 	MPAPI.notification_kinds.register('appeal_decided', describe_appeal)
 	MPAPI.notification_kinds.register('punishment_ended', describe_ended)
+	MPAPI.notification_kinds.register('username_banned', describe_username_banned)
 end

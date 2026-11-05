@@ -230,6 +230,12 @@ end
 account_info_rows = function(steam_name, name_colour, discord_linked)
 	local discord_value = discord_linked and MPAPI.connection_state.discord_name or localize('k_not_linked')
 	local discord_colour = discord_linked and G.C.GREEN or G.C.UI.TEXT_INACTIVE
+	if MPAPI.connection_state.username_banned then
+		-- While the username ban lasts, the name everyone sees replaces both names.
+		steam_name = MPAPI.connection_state.display_name or steam_name
+		discord_value = steam_name
+		discord_colour = name_colour
+	end
 
 	return {
 		n = G.UIT.R,
