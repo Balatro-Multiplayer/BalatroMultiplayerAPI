@@ -228,29 +228,33 @@ account_info_row = function(label, value_nodes)
 end
 
 account_info_rows = function(steam_name, name_colour, discord_linked)
-	local discord_value = discord_linked and MPAPI.connection_state.discord_name or localize('k_not_linked')
-	local discord_colour = discord_linked and G.C.GREEN or G.C.UI.TEXT_INACTIVE
+	local name_row = function(label, value, colour)
+		return account_info_row(label, {
+			{ n = G.UIT.O, config = { object = DynaText({ string = { value }, colours = { colour }, shadow = true, float = true, scale = 0.45 }) } },
+		})
+	end
+	local rows = {
+		account_info_row(localize('k_id'), {
+			{ n = G.UIT.T, config = { text = MPAPI.connection_state.player_id, scale = 0.3, colour = G.C.UI.TEXT_INACTIVE } },
+		}),
+	}
 	if MPAPI.connection_state.username_banned then
-		-- While the username ban lasts, the name everyone sees replaces both names.
-		steam_name = MPAPI.connection_state.display_name or steam_name
-		discord_value = steam_name
-		discord_colour = name_colour
+		-- While the username ban lasts, one row with the name everyone sees
+		-- replaces the Steam and Discord names.
+		rows[#rows + 1] = name_row(localize('k_account_username'), MPAPI.connection_state.display_name or steam_name, name_colour)
+	else
+		rows[#rows + 1] = name_row(localize('k_steam_username'), steam_name, name_colour)
+		rows[#rows + 1] = name_row(
+			localize('k_discord_username'),
+			discord_linked and MPAPI.connection_state.discord_name or localize('k_not_linked'),
+			discord_linked and G.C.GREEN or G.C.UI.TEXT_INACTIVE
+		)
 	end
 
 	return {
 		n = G.UIT.R,
 		config = { align = 'cm', padding = 0.1 },
-		nodes = {
-			account_info_row(localize('k_id'), {
-				{ n = G.UIT.T, config = { text = MPAPI.connection_state.player_id, scale = 0.3, colour = G.C.UI.TEXT_INACTIVE } },
-			}),
-			account_info_row(localize('k_steam_username'), {
-				{ n = G.UIT.O, config = { object = DynaText({ string = { steam_name }, colours = { name_colour }, shadow = true, float = true, scale = 0.45 }) } },
-			}),
-			account_info_row(localize('k_discord_username'), {
-				{ n = G.UIT.O, config = { object = DynaText({ string = { discord_value }, colours = { discord_colour }, shadow = true, float = true, scale = 0.45 }) } },
-			}),
-		},
+		nodes = rows,
 	}
 end
 

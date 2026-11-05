@@ -27,6 +27,7 @@ return {
 			k_not_linked = 'Not Linked',
 			k_multiplayer_account = 'Multiplayer Account',
 			k_id = 'ID',
+			k_account_username = 'Username',
 			k_steam_username = 'Steam Username',
 			k_discord_username = 'Discord Username',
 			k_display_name = 'Display Name',
