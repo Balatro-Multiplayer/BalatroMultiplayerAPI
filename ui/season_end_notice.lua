@@ -12,13 +12,7 @@ local function ordinal(n)
 end
 
 local function board_name(board)
-	local mod = SMODS and SMODS.Mods and SMODS.Mods[board.modId]
-	local name = (mod and mod.name) or tostring(board.modId)
-	local mode = tostring(board.mode or '')
-	if mode ~= '' then
-		name = name .. ' ' .. mode
-	end
-	return localize('k_season_end_ranked') .. ' ' .. name
+	return localize('k_season_end_ranked') .. ' ' .. tostring(board.name)
 end
 
 local function describe(content)
@@ -30,7 +24,7 @@ local function describe(content)
 	local boards = {}
 	for _, board in ipairs(type(content.boards) == 'table' and content.boards or {}) do
 		local place, rating = tonumber(board.place), tonumber(board.rating)
-		if place and rating then
+		if place and rating and type(board.name) == 'string' and board.name ~= '' then
 			boards[#boards + 1] = board_name(board)
 				.. ': '
 				.. ordinal(math.floor(place))
