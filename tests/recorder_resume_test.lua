@@ -29,6 +29,7 @@ sendTraceMessage = function() end
 MPAPI = {
 	get_current_lobby = function() return nil end,
 	has_server_referee = function() return false end,
+	match_log = function() end,
 }
 dofile('api/replay/recorder.lua')
 local RLOG = MPAPI.replay

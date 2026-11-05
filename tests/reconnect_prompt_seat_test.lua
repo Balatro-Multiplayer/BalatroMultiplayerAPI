@@ -28,6 +28,7 @@ MPAPI = {
 	standing = { rejoin_refusal = function() return nil end },
 	account_standing = function() return nil end,
 	is_launcher_verified = function() return true end,
+	close_rejoin_overlay = function() end,
 	create_reconnected_lobby = nil,
 }
 MPAPI._internal.create_reconnected_lobby = function(lobby_data, cb) joined = lobby_data end
