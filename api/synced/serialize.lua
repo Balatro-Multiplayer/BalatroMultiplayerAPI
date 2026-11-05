@@ -34,6 +34,9 @@ local function STR_UNPACK_CHECKED(str)
 	return str_unpacked
 end
 
+-- For callers that unpack text they did not make themselves (a Run save given back by the server).
+MPAPI.str_unpack_checked = STR_UNPACK_CHECKED
+
 -- A legitimately serialized object is at most a few KB gzipped+base64. Reject anything far
 -- larger BEFORE spending CPU decoding it.
 MPAPI.MAX_ENCODED_BYTES = 32 * 1024

@@ -3,7 +3,11 @@
 --
 --   1. Join the lobby (detached, see L.nakama_rejoin_detached). The seat is safe and the grace
 --      stops. A refused seat (a forfeit, a closed lobby) is known here, before anything is rebuilt.
---   2. Skip to the last checkpoint (the start of the last ante) with a fast-forward.
+--   2. Skip to the last checkpoint (the start of the last ante) with a fast-forward. A mod that
+--      can load a Run save (hooks.supports_run_save) whose player has a good one starts from it
+--      instead: the run is loaded from the save, the playback begins after the save's event, and
+--      the fast-forward only covers what is left of the way to the checkpoint. A missing, held
+--      back, unreadable or failing save falls back to the whole log from the start.
 --   3. Play the remaining events at normal pace.
 --   4. Resume the run: attach the lobby, then reopen the player's log block.
 --
@@ -16,6 +20,10 @@
 --
 -- hooks:
 --   playback_mod_id            -- the handler namespace of the mod's register_handler calls
+--   supports_run_save          -- (optional) true when start_run starts a run that
+--                                 MPAPI.run_save.stage_load has staged (it goes through
+--                                 Game:start_run) and the mod registered its state with
+--                                 MPAPI.run_save.register_state, including load
 --   read_lobby_info(args, bootstrap)  -- copies what the mod needs from the first lobby_info
 --   read_run_info(args, bootstrap)    -- the same for the first run_info
 --   start_run(bootstrap, on_ready)    -- boots a local run from `bootstrap`; on_ready() once it can
@@ -73,17 +81,94 @@ function MPAPI.playback.read_rejoin_log(events, my_id, hooks)
 	return bootstrap, timeline
 end
 
+-- Whether a rejoin can start from the Run save the server gave. Returns the decoded save and the
+-- number of log events it covers, or nil, a MPAPI.run_save.SKIP code and a detail text for the
+-- reason the whole log is played instead.
+-- The server has already checked the save's hash against the log it holds (ActiveRun.runSave
+-- is nil when it does not match), so what is left to check here is that the log reaches the
+-- save's position and that the text reads.
+function MPAPI.playback.pick_rejoin_start(active, hooks)
+	local SKIP = MPAPI.run_save.SKIP
+	if not hooks.supports_run_save then
+		return nil, SKIP.NOT_SUPPORTED, 'the mod does not load Run saves'
+	end
+	local save = active.runSave
+	if not save then
+		local held_back = active.runSaveSkipped
+		if held_back == SKIP.HASH_MISMATCH or held_back == SKIP.BEYOND_LOG then
+			return nil, held_back, 'the server held back the Run save'
+		end
+		return nil, SKIP.NO_SAVE, 'no Run save'
+	end
+	if type(save.pos) ~= 'number' or save.pos > #(active.events or {}) then
+		return nil, SKIP.BEYOND_LOG, 'the Run save is beyond the downloaded log'
+	end
+	-- The server holds one Run save per player for the whole match. A mod whose match has more
+	-- than one run (a restart, the next run of a race) can have a save from the run before: a
+	-- run_info after the save's position means the save is not this run's.
+	for i = save.pos + 1, #(active.events or {}) do
+		if active.events[i].opcode == MPAPI.OPCODE.RUN_INFO then
+			return nil, SKIP.EARLIER_RUN, 'the Run save is from an earlier run'
+		end
+	end
+	local envelope, err = MPAPI.run_save.decode(save.data)
+	if not envelope then
+		return nil, SKIP.UNREADABLE, tostring(err)
+	end
+	return envelope, save.pos
+end
+
+-- Real seconds a run started from a Run save has to reach its Blind Select screen before the
+-- rejoin gives up on the save and plays the whole log.
+MPAPI.playback.RUN_SAVE_START_SECONDS = 30
+
 -- Restarts `session`'s run from its own bootstrap and fast-forwards a fresh driver to
 -- `target_event_index`, then calls on_ready(driver). The one restart-and-seek every caller shares
 -- (a rejoin, a replay's checkpoint seek, a perspective switch).
 -- opts: mod_id (handler namespace), start_run(bootstrap, on_ready), pause_gate(),
 -- on_run_started() (optional; right after the local run is up, before the driver exists).
+-- run_save = { envelope, pos, events_follow? } (optional): start the run from that Run save and
+-- play the timeline after its event `pos`; with events_follow the timeline already holds only
+-- the events after the save. If the run does not come up from the save, on_load_failed(code,
+-- detail) (a MPAPI.run_save.SKIP code) is called instead of on_ready.
+-- live (optional): more entries will be pushed, so the driver is not told its timeline is complete.
 function MPAPI.playback.restart_session_and_seek(session, target_event_index, on_ready, opts)
 	if session.driver then
 		-- The old driver would keep ticking against a rebuilt game state it no longer matches.
 		session.driver:stop()
 	end
+	local run_save = opts.run_save
+	local abandoned = false
+	session._run_save_started = false
+	if run_save then
+		MPAPI.run_save.stage_load(run_save.envelope)
+		-- A run that never reaches Blind Select (the load broke, the start was refused) would wait
+		-- for ever. The watch ends it and hands the rejoin back to the whole log.
+		if G and G.E_MANAGER and Event then
+			G.E_MANAGER:add_event(Event({
+				trigger = 'after',
+				delay = MPAPI.playback.RUN_SAVE_START_SECONDS,
+				timer = 'REAL',
+				blocking = false,
+				blockable = false,
+				func = function()
+					if not abandoned and not session._run_save_started then
+						abandoned = true
+						MPAPI.run_save.unstage_load()
+						if opts.on_load_failed then
+							opts.on_load_failed(MPAPI.run_save.SKIP.START_TIMEOUT, 'the run did not reach Blind Select from the Run save')
+						end
+					end
+					return true
+				end,
+			}))
+		end
+	end
 	opts.start_run(session.bootstrap, function()
+		if abandoned then
+			return
+		end
+		session._run_save_started = true
 		if opts.on_run_started then
 			opts.on_run_started()
 		end
@@ -96,8 +181,30 @@ function MPAPI.playback.restart_session_and_seek(session, target_event_index, on
 			paced = session.paced,
 			on_complete = session.on_session_complete,
 		})
-		driver:finish()
-		driver:fast_forward_to(target_event_index, {
+		local target = target_event_index
+		if run_save then
+			local resolver = MPAPI.replay.new_resolver_state()
+			driver._card_resolvers[session.my_id] = resolver
+			local ok, restored, err = pcall(MPAPI.run_save.restore, run_save.envelope, resolver)
+			if not ok then
+				restored, err = false, restored
+			end
+			if not restored then
+				driver:stop()
+				if opts.on_load_failed then
+					opts.on_load_failed(MPAPI.run_save.SKIP.LOAD_FAILED, tostring(err))
+				end
+				return
+			end
+			if not run_save.events_follow then
+				driver._cursor = run_save.pos + 1
+				target = math.max(target, driver._cursor)
+			end
+		end
+		if not opts.live then
+			driver:finish()
+		end
+		driver:fast_forward_to(target, {
 			pause_gate = opts.pause_gate,
 			on_done = function()
 				on_ready(driver)
@@ -119,7 +226,7 @@ end
 -- Reopens the player's own log block once the last replayed action's animations have drained (an
 -- event they still emit is already in the stream), then reports "caught up". Non-blocking, so it
 -- never holds up the queue it waits on.
-local function resume_when_idle(lobby, session, events, my_id, on_resumed)
+local function resume_when_idle(lobby, session, events, my_id, log_text, on_resumed)
 	G.E_MANAGER:add_event(Event({
 		blocking = false,
 		blockable = false,
@@ -133,12 +240,39 @@ local function resume_when_idle(lobby, session, events, my_id, on_resumed)
 			end
 			local driver = session.driver
 			local resolver = driver and driver._card_resolvers and driver._card_resolvers[my_id]
-			MPAPI.replay.resume_run(events, resolver and resolver.by_id)
+			MPAPI.replay.resume_run(events, resolver and resolver.by_id, log_text)
 			lobby:set_catching_up(false)
 			on_resumed()
 			return true
 		end,
 	}))
+end
+
+local function now_seconds()
+	if love and love.timer and love.timer.getTime then
+		return love.timer.getTime()
+	end
+	return os.clock()
+end
+
+-- One info line per rejoin: how the catch-up went and how long it took.
+local function log_caught_up(session, event_count)
+	local seconds = now_seconds() - (session.catch_up_started or now_seconds())
+	local line
+	if session.run_save_pos then
+		line = string.format('[rejoin] caught up from a Run save after log event %d of %d in %.1f s', session.run_save_pos, event_count, seconds)
+	else
+		line = string.format('[rejoin] caught up by replaying the whole log (%d events) in %.1f s; Run save not used: %s', event_count, seconds, tostring(session.run_save_skipped or 'unknown'))
+	end
+	local gave_up = MPAPI.playback.gave_up_waits()
+	if gave_up > 0 then
+		MPAPI.sendWarnMessage(string.format('[rejoin] DEGRADED: %d replay wait(s) gave up during the catch-up, so the state may differ', gave_up))
+	end
+	if sendInfoMessage then
+		sendInfoMessage(line, MPAPI.id or 'MPAPI')
+	else
+		MPAPI.sendDebugMessage(line)
+	end
 end
 
 -- Runs the whole flow. `active` is MPAPI.replay.get_active_run's answer ({ runId, lobbyCode,
@@ -201,7 +335,8 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 		local ctx = { events = active.events, session = session, playback_lobby = playback_lobby }
 		hooks.attach(lobby, ctx)
 		MPAPI._internal.lobby.attach_detached(lobby)
-		resume_when_idle(lobby, session, active.events, my_id, function()
+		resume_when_idle(lobby, session, active.events, my_id, active.logText, function()
+			log_caught_up(session, #active.events)
 			if hooks.resumed then
 				hooks.resumed(lobby, ctx)
 			end
@@ -242,14 +377,42 @@ function MPAPI.playback.run_rejoin(active, lobby_data, hooks)
 		end
 		local options = hooks.checkpoint_options and hooks.checkpoint_options() or {}
 		local starts = MPAPI.playback.timeline_ante_starts(timeline, options.boundary_opcodes)
-		MPAPI.playback.restart_session_and_seek(session, MPAPI.playback.rejoin_cutoff(starts), function(driver)
-			session.driver = driver
-			if aborted then
-				driver:stop()
-				return
+		local cutoff = MPAPI.playback.rejoin_cutoff(starts)
+		session.catch_up_started = now_seconds()
+		MPAPI.playback.reset_gave_up_waits()
+
+		local function seek(opts)
+			MPAPI.playback.restart_session_and_seek(session, cutoff, function(driver)
+				session.driver = driver
+				if aborted then
+					driver:stop()
+					return
+				end
+				driver:play()
+			end, opts)
+		end
+
+		local function play_whole_log(code, detail)
+			MPAPI.sendWarnMessage('[rejoin] Run save not used, playing the whole log: ' .. code .. ' (' .. tostring(detail) .. ')')
+			session.run_save_pos = nil
+			session.run_save_skipped = code
+			seek(restart_opts)
+		end
+
+		local envelope, pos_or_code, detail = MPAPI.playback.pick_rejoin_start(active, hooks)
+		if not envelope then
+			play_whole_log(pos_or_code, detail)
+			return
+		end
+		session.run_save_pos = pos_or_code
+		local from_save = MPAPI.shallow_copy(restart_opts)
+		from_save.run_save = { envelope = envelope, pos = pos_or_code }
+		from_save.on_load_failed = function(code, reason)
+			if not aborted then
+				play_whole_log(code, reason)
 			end
-			driver:play()
-		end, restart_opts)
+		end
+		seek(from_save)
 	end
 
 	lobby = MPAPI._internal.create_detached_lobby(lobby_data, function()

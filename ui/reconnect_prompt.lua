@@ -171,13 +171,26 @@ function MPAPI._internal.reconnect_to(lobby_data)
 	end)
 end
 
+-- The prompt can wait a while, and a server restart in that time brings the
+-- lobby back under a new match. Ask for the seat again so the join does not
+-- use the old match id; when the server does not answer, keep the old one.
+function MPAPI._internal.reconnect_click(lobby_data)
+	MPAPI._internal.lobby.nakama_check_current(function(fresh)
+		if fresh and fresh.matchId and fresh.matchId ~= lobby_data.matchId then
+			MPAPI.sendWarnMessage('[reconnect_prompt] the lobby moved to a new match, joining that one')
+			lobby_data = fresh
+		end
+		MPAPI._internal.reconnect_to(lobby_data)
+	end)
+end
+
 G.FUNCS.mpapi_reconnect_prompt_reconnect = function()
 	local lobby_data = _reconnected_lobby
 	close_prompt()
 	if not lobby_data then
 		return
 	end
-	MPAPI._internal.reconnect_to(lobby_data)
+	MPAPI._internal.reconnect_click(lobby_data)
 end
 
 G.FUNCS.mpapi_reconnect_prompt_leave = function()
