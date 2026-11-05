@@ -48,5 +48,20 @@ check(
 check(text('punishment_ended', { ban = 'chat' }) == 'Your chat ban has ended. You can chat again.', 'chat ended')
 check(text('punishment_ended', { ban = 'account' }) == 'Your account ban has ended. You can play again.', 'account ended')
 check(text('punishment_ended', { ban = 'warning' }) == nil, 'unknown ban')
+check(
+	text('punishment_ended', { ban = 'username' }) == 'Your username ban has ended. Other players see your name again.',
+	'username ended'
+)
+check(
+	text('appeal_decided', { accepted = true, target = 'username', result = 'lifted' })
+		== 'Your appeal was accepted: your username ban is lifted.',
+	'username appeal'
+)
+check(
+	text('username_banned', { banName = 'Nebula Greedy' })
+		== 'Your name broke the rules. Other players now see you as Nebula Greedy. You can appeal on the website.',
+	'username banned'
+)
+check(text('username_banned', {}) == nil, 'username banned without a name')
 
 print('punishment_notice_test: ' .. checks .. ' checks passed')
