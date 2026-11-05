@@ -501,12 +501,9 @@ match_history_row = function(run)
 	local can_replay = run.status ~= 'active'
 
 	G.FUNCS['mpapi_match_history_view_log_' .. run.id] = function()
-		local base_url = MPAPI.get_web_url()
-		if base_url then
-			-- The website (config web_url), like the sibling "View Report"
-			-- link (ui/player_report_overlay.lua).
-			love.system.openURL(base_url .. '/matches/' .. tostring(run.id))
-		end
+		-- Opens the match page logged in (a one-time login link), so a Device
+		-- login player lands on it signed in too.
+		MPAPI.open_web_page('/matches/' .. tostring(run.id))
 	end
 
 	G.FUNCS['mpapi_match_history_view_replay_' .. run.id] = function()

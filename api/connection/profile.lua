@@ -45,6 +45,15 @@ MPAPI._internal.get_discord_link_url = function(callback)
 	end
 end
 
+-- {url}: a one-time link that logs the player in to the website and opens
+-- `path`. Callers use MPAPI.open_web_page (api/web_page.lua).
+MPAPI._internal.get_web_login_url = function(path, callback)
+	local conn = require_connected(callback)
+	if conn then
+		nakama_rpc(conn, 'web_login_link', { path = path }, callback)
+	end
+end
+
 MPAPI._internal.set_use_discord_name = function(value, callback)
 	local conn = require_connected(callback)
 	if conn then
