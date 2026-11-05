@@ -506,6 +506,21 @@ MPAPI.RLOG_CODE {
 	end,
 }
 
+-- final_jokers: [jokers] -- the jokers owned at the end of the run (see
+-- RLOG.joker_tokens), recorded just before the END trailer for the web viewer.
+MPAPI.RLOG_CODE {
+	key = 'final_jokers',
+	mods = { 'pvp', 'spdrn' },
+	write = function(self, jokers)
+		self:record({ jokers })
+	end,
+	replay = function(self, _args, ctx)
+		if ctx.schema_version >= 1 then
+			-- no-op
+		end
+	end,
+}
+
 -------------------------------------------------------------------------------
 -- The single, shared hook installation -- one wrap per vanilla function.
 -------------------------------------------------------------------------------
