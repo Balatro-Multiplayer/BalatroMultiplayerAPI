@@ -269,6 +269,11 @@ return {
 			k_ranked_result_lost = 'You lost.',
 			k_ranked_result_drew = 'It was a draw.',
 			k_ranked_result_placement = 'Rating placement',
+			-- Season end (ui/season_end_notice.lua)
+			k_season_end_season = 'Season',
+			k_season_end_ended = 'has ended.',
+			k_season_end_ranked = 'Ranked',
+			k_season_end_rating = 'rating',
 			k_warned_title = 'Warning from a Moderator',
 			k_warned_body = 'A moderator has warned you:',
 			k_warned_body_plural = 'Moderators have warned you:',
