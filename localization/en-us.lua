@@ -278,7 +278,7 @@ return {
 			k_late_result_place = 'You finished in place',
 			k_late_result_rating = 'Rating change',
 			-- A Contest the other player withdrew (ui/contest_withdrawn_notice.lua)
-			k_contest_withdrawn = 'Your opponent withdrew their Contest.',
+			k_contest_withdrawn = 'Your opponent withdrew their contest.',
 			k_contest_withdrawn_won = 'You won.',
 			k_contest_withdrawn_drew = 'It was a draw.',
 			k_contest_withdrawn_lost = 'You lost.',
