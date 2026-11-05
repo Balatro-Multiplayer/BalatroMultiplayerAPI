@@ -1,6 +1,6 @@
 -- Contract test: the Notification queue and inbox. Waiting Notifications
 -- show one at a time as "1 of N" to "N of N", none twice; a live one is a
--- chat line and is marked read; an unknown kind is left unread. Run from the
+-- chat line with the [Server] prefix and is marked read; an unknown kind is left unread. Run from the
 -- MPAPI repository root: luajit tests/notification_inbox_test.lua
 local checks = 0
 local function check(condition, message)
@@ -9,6 +9,9 @@ local function check(condition, message)
 end
 
 local clock = 100
+localize = function(key)
+	return key == 'k_notification_chat_prefix' and '[Server]' or key
+end
 love = { timer = { getTime = function() return clock end } }
 local deferred = nil
 local chat, rpcs, handlers, loaded = {}, {}, {}, {}
@@ -109,7 +112,7 @@ check(not Queue.has_pending(inbox.queue), 'a Notification already taken this ses
 -- Live: a chat line, marked read, never queued; twice is one line.
 inbox.receive_live({ id = 'e', kind = 'test_kind', params = { n = 5 } })
 inbox.receive_live({ id = 'e', kind = 'test_kind', params = { n = 5 } })
-check(#chat == 1 and chat[1] == 'Result 5', 'a live Notification is one chat line')
+check(#chat == 1 and chat[1] == '[Server] Result 5', 'a live Notification is one chat line, with the [Server] prefix: ' .. tostring(chat[1]))
 check(#rpcs == 1 and rpcs[1].id == 'notifications_read' and rpcs[1].body.ids[1] == 'e', 'a live Notification is marked read')
 check(not Queue.has_pending(inbox.queue), 'a live Notification is not queued for the overlay')
 inbox.receive_live({ id = 'f', kind = 'future_kind', params = {} })

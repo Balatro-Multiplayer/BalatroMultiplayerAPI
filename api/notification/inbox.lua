@@ -25,7 +25,8 @@ local function mark_read(id)
 	end)
 end
 
--- A push while online: a chat line, then read.
+-- A push while online: a chat line marked as from the server, then read.
+-- The overlay shows the same text with no prefix.
 local function receive_live(content)
 	if type(content) ~= 'table' or Queue.is_seen(queue, content.id) then
 		return
@@ -35,7 +36,7 @@ local function receive_live(content)
 		return
 	end
 	Queue.mark_seen(queue, content.id)
-	MPAPI.chat.addMessage(text, COLOUR_SYSTEM)
+	MPAPI.chat.addMessage(localize('k_notification_chat_prefix') .. ' ' .. text, COLOUR_SYSTEM)
 	mark_read(content.id)
 end
 

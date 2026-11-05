@@ -277,7 +277,8 @@ return {
 			k_ban_ended_username = 'Your username ban has ended.',
 			k_username_banned = 'Your name broke the rules. Other players now see you as %s. You can appeal on the website.',
 			-- Result of a run the player left early (ui/late_result_notice.lua)
-			k_late_result_ended = '[MultiplayerAPI] The match you left has ended.',
+			k_notification_chat_prefix = '[Server]',
+			k_late_result_ended = 'The match you left has ended.',
 			k_late_result_place = 'You finished in place',
 			k_late_result_rating = 'Rating change',
 			-- A Contest the other player withdrew (ui/contest_withdrawn_notice.lua)
