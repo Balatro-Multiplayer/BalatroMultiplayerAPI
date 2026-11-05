@@ -259,6 +259,8 @@ return {
 			k_contest_decided_opponent = 'Your opponent contested a match you played. A moderator resolved it as %s for you.',
 			k_result_voided = 'A match you played was voided.',
 			k_result_changed = 'A match you played was changed to %s.',
+			-- Staff acted on a player the recipient reported (ui/report_action_notice.lua)
+			k_report_action = 'Action has been taken against a player you reported, thank you for reporting.',
 			-- Result of a run the player left early (ui/late_result_notice.lua)
 			k_late_result_ended = '[MultiplayerAPI] The match you left has ended.',
 			k_late_result_place = 'You finished in place',
