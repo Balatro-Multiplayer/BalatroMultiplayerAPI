@@ -17,12 +17,15 @@ N.Code = {
 	STANDING_CHANGED = 108,
 	-- Persistent: a moderator's warning ({message, itemType, warnedAt}).
 	WARNED = 109,
-	-- Transient: the result of a run the player left before it settled
-	-- ({runId, code, modId, status, place, rating}).
+	-- Kept for older clients: the server still sends 110 (late result) and 111
+	-- (ranked result) to online players. This client has no handler for them
+	-- and shows each result once, through the Notification (112).
 	RESULT_LATE = 110,
-	-- Transient: a ranked run settled, to every player it rated
-	-- ({runId, code, modId, status, place, tied, players, rating}).
 	RESULT_RANKED = 111,
+	-- A stored Notification, pushed live to an online player: {id, kind,
+	-- params, sentAt}. It waits unread on the server (30 days) until the client
+	-- marks it read (RPCs notifications_pending and notifications_read).
+	NOTIFICATION = 112,
 }
 
 local handlers = {} -- code -> { fn, ... }
