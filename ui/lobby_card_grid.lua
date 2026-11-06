@@ -14,9 +14,39 @@ local SLOTS_PER_PAGE = COLS * ROWS_PER_PAGE
 local _active_grids = {}
 local _next_instance_id = 0
 
+-- Vanilla Card:set_ability only skips G.GAME.used_jokers while G.OVERLAY_MENU
+-- is open, but these cards are also built before the overlay exists and
+-- re-skinned by lobby events after it closes. Either marks the avatar joker
+-- "used" and removes it from the shop pool for the rest of the run. So any
+-- grid card mutation restores the used_jokers entries it could have touched.
+local function preserving_used_jokers(keys, fn)
+	local used = G and G.GAME and G.GAME.used_jokers
+	if not used then
+		return fn()
+	end
+	local saved = {}
+	for _, key in ipairs(keys) do
+		saved[key] = used[key]
+	end
+	local result = fn()
+	for _, key in ipairs(keys) do
+		used[key] = saved[key]
+	end
+	return result
+end
+
+local function set_card_center(card, center)
+	local old = card.config and card.config.center
+	preserving_used_jokers({ center.key, old and old.key or center.key }, function()
+		card:set_ability(center)
+	end)
+end
+
 local function make_card(card_area, joker_key, face_down)
 	local center = G.P_CENTERS[joker_key] or G.P_CENTERS['j_joker']
-	local card = Card(card_area.T.x + card_area.T.w / 2, card_area.T.y, G.CARD_W, G.CARD_H, nil, center, { mpapi_lobby_card = true, bypass_back = G.P_CENTERS['b_black'].pos, bypass_discovery_center = true, bypass_lock = true })
+	local card = preserving_used_jokers({ center.key }, function()
+		return Card(card_area.T.x + card_area.T.w / 2, card_area.T.y, G.CARD_W, G.CARD_H, nil, center, { mpapi_lobby_card = true, bypass_back = G.P_CENTERS['b_black'].pos, bypass_discovery_center = true, bypass_lock = true })
+	end)
 	card.no_ui = true
 	card.states.drag.can = false
 
@@ -250,7 +280,7 @@ MPAPI._new_card_grid = function()
 			if existing_idx then
 				local card = self._cards[existing_idx]
 				if card and self:get_row_for_slot(existing_idx) then
-					card:set_ability(center)
+					set_card_center(card, center)
 					card:set_debuff(MPAPI._is_player_debuffed(lobby, player_data))
 					card:juice_up(0.3, 0.3)
 				end
@@ -273,7 +303,7 @@ MPAPI._new_card_grid = function()
 				return
 			end
 
-			card:set_ability(center)
+			set_card_center(card, center)
 			card:set_debuff(MPAPI._is_player_debuffed(lobby, player_data))
 
 			G.E_MANAGER:add_event(Event({
@@ -317,7 +347,7 @@ MPAPI._new_card_grid = function()
 				delay = 0.3,
 				func = function()
 					local joker_center = G.P_CENTERS['j_joker']
-					card:set_ability(joker_center)
+					set_card_center(card, joker_center)
 					return true
 				end,
 			}))
