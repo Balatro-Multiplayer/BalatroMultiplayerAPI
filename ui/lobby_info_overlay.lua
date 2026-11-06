@@ -2,9 +2,8 @@
 -- in style to the live lobby roster, via ui/lobby_card_grid.lua, with per-mod
 -- customizable hover info via api/card_info_providers.lua). Clicking a card
 -- opens ui/player_mute_overlay.lua's Actions/Mods tabbed overlay for that
--- player. Opened via the in-run pause menu row (api/pause_menu.lua's
--- MPAPI.pause_menu_extra_rows()) -- there is no pre-match lobby entry point,
--- Lobby Info is an in-run-only feature.
+-- player. Opened via the in-run HUD button (ui/lobby_button.lua) -- there is
+-- no pre-match lobby entry point, Lobby Info is an in-run-only feature.
 local build_lobby_info_overlay_inner
 local lobby_info_title
 local lobby_info_overlay_inner
@@ -45,6 +44,9 @@ build_lobby_info_overlay_inner = function()
 		content_nodes = { { n = G.UIT.R, config = { align = 'cm', minh = 2 }, nodes = {
 			{ n = G.UIT.T, config = { text = localize('k_lobby_info_no_lobby'), scale = 0.4, colour = G.C.UI.TEXT_LIGHT } },
 		} } }
+	elseif not G.OVERLAY_MENU then
+		-- The cards wait for the overlay (see MPAPI.show_lobby_info_overlay).
+		content_nodes = {}
 	else
 		local grid = ensure_players_grid(lobby)
 		content_nodes = { { n = G.UIT.C, config = { align = 'cm' }, nodes = { grid.el.node } } }
@@ -78,7 +80,7 @@ MPAPI._lobby_info_overlay_el = MPAPI.ui_element(create_UIBox_lobby_info_overlay)
 -- Exposed for testability (ClaudeControl suites spy on :update() call counts).
 MPAPI._lobby_info_overlay_inner_el = lobby_info_overlay_inner
 
--- Single entry point (called from the in-run pause menu row). No-ops without
+-- Single entry point (called from the in-run HUD button). No-ops without
 -- a current lobby. Destroys any grid left over from a previous open before
 -- opening -- the overlay's own grid instance would otherwise leak into
 -- MPAPI._active_card_grids indefinitely, since nothing in vanilla's overlay
@@ -93,4 +95,8 @@ function MPAPI.show_lobby_info_overlay()
 		_players_grid = nil
 	end
 	MPAPI._lobby_info_overlay_el:as_overlay()
+	-- Build the cards only now that G.OVERLAY_MENU is set, as the collection
+	-- does: a card built with no overlay open marks its joker as in play for
+	-- the run (Card:set_ability), and the shop then never offers it.
+	lobby_info_overlay_inner:update()
 end
