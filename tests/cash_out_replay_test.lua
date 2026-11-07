@@ -15,20 +15,22 @@ G = {
 }
 local shop_built = false
 MPAPI = {
-	playback = { shop_is_built = function() return shop_built end, wait_gave_up = function() end },
+	playback = { shop_is_built = function() return shop_built end, record_gave_up_wait = function() end },
 	sendWarnMessage = function() end,
 }
-dofile('api/playback/shop.lua')
+dofile('api/playback/cashout.lua')
 local P = MPAPI.playback
 
--- cashout_wait_over(button, round_eval, state, timed_out)
 local S = G.STATES
-check(P.cashout_wait_over(true, true, S.ROUND_EVAL, false), 'the button ends the wait')
-check(P.cashout_wait_over(false, false, S.HAND_PLAYED, true), 'the timeout ends the wait')
-check(not P.cashout_wait_over(false, false, S.HAND_PLAYED, false), 'the last hand is still being evaluated')
-check(not P.cashout_wait_over(false, false, S.NEW_ROUND, false), 'a new round is not evaluated yet')
-check(not P.cashout_wait_over(false, true, S.ROUND_EVAL, false), 'the round evaluation has no button yet')
-check(P.cashout_wait_over(false, false, S.SHOP, false), 'already cashed out')
+local function over(button_exists, round_eval_built, state, timed_out)
+	return P.cashout_wait_over({ button_exists = button_exists, round_eval_built = round_eval_built, state = state, timed_out = timed_out, states = S })
+end
+check(over(true, true, S.ROUND_EVAL, false), 'the button ends the wait')
+check(over(false, false, S.HAND_PLAYED, true), 'the timeout ends the wait')
+check(not over(false, false, S.HAND_PLAYED, false), 'the last hand is still being evaluated')
+check(not over(false, false, S.NEW_ROUND, false), 'a new round is not evaluated yet')
+check(not over(false, true, S.ROUND_EVAL, false), 'the round evaluation has no button yet')
+check(over(false, false, S.SHOP, false), 'already cashed out')
 
 -- cash_out_when_ready: the driver pauses, the click waits for the button, the driver resumes in the shop.
 local waiters = {}
@@ -81,7 +83,7 @@ check(log[2] == 'click', 'the timeout clicks anyway')
 
 -- Both timeouts count as a wait that gave up.
 local gave_up = 0
-P.wait_gave_up = function() gave_up = gave_up + 1 end
+P.record_gave_up_wait = function() gave_up = gave_up + 1 end
 check(gave_up == 0, 'no give-up yet')
 log = {}
 G.I.UIBOX = {}

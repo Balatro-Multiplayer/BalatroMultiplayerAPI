@@ -23,7 +23,7 @@ Driver.__index = Driver
 -- wrong state: the rejoin counts these to log a degraded catch-up.
 MPAPI.playback._gave_up_waits = 0
 
-function MPAPI.playback.wait_gave_up(message)
+function MPAPI.playback.record_gave_up_wait(message)
 	MPAPI.playback._gave_up_waits = MPAPI.playback._gave_up_waits + 1
 	MPAPI.sendWarnMessage(message)
 end
