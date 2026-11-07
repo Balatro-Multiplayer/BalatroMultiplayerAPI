@@ -152,6 +152,36 @@ reset()
 lobby = new_lobby()
 L.send_log_event(lobby, 'END', 1)
 queued[1].func()
-check(order[1] == 'event:END' and lobby.sent[1].payload.ack == nil, 'the normal flush asks for no ack')
+check(order[1] == 'event:END' and lobby.sent[1].payload.ack == true, 'the last batch of a flush asks for the ack that tells how far the server holds')
+
+-- A leave during a run ends the log with "left" before the last batch goes out.
+reset()
+lobby = new_lobby()
+local ended = {}
+MPAPI.replay = {
+	_run_active = true,
+	end_run = function(outcome)
+		ended[#ended + 1] = outcome.result
+		MPAPI.replay._run_active = false
+		L.send_log_event(lobby, 'END', 1)
+		L.send_log_event(lobby, 'CHK', 2)
+	end,
+}
+lobby:leave()
+check(#ended == 1 and ended[1] == 'left', 'a leave during a run ends the log with left')
+check(order[1] == 'batch:2', 'the end and check events go out in the last batch, got ' .. tostring(order[1]))
+check(lobby.sent[1].payload.ack == true, 'that batch asks for an ack')
+lobby:leave()
+check(#ended == 1, 'a second leave ends nothing')
+
+-- A mod that already closed the log (a forfeit, a result) is not closed twice.
+reset()
+lobby = new_lobby()
+ended = {}
+MPAPI.replay._run_active = false
+lobby:leave()
+check(#ended == 0, 'a leave outside a run ends no log')
+check(order[1] == 'leave', 'and the leave goes at once')
+MPAPI.replay = nil
 
 print(('ok   %d checks'):format(checks))
