@@ -135,6 +135,7 @@ MPAPI.ActionType({
 		{ key = 'opcode', type = 'string', required = true },
 		{ key = 'args', type = 'table' },
 		{ key = 'run', type = 'string' },
+		{ key = 'seq', type = 'number' },
 		{ key = 'ack', type = 'boolean' },
 	},
 	on_receive = function(_, _, result)
@@ -428,34 +429,162 @@ end
 -- them with the run. Only while a game is on: the server has nowhere to put
 -- them otherwise.
 --
--- An event that can't be sent because the socket is down is kept, and sent in
--- order once the seat is back (flush_log_events, after the rejoin snapshot).
--- Without that, the server's log for this player has a gap and its hash check
--- fails. Every send goes through transmit_log_events, so the way events leave
--- the client is changed in this one place.
+-- Every event gets a number (seq, 1, 2, 3, ... per run). The server keeps an
+-- event only when it holds all the ones before it, and says in the ack of a
+-- batch how far it holds (got). An event stays kept here until an ack covers
+-- it, and goes out again after a reconnect, after a refusal, and when no ack
+-- comes. The server skips an event it already holds, so sending again is safe.
+-- Without this the server's log for this player has a gap and its hash check
+-- fails.
+--
+-- A server that sends no `got` (an older one) does not skip copies: the
+-- client then treats every ack as covering its batch and never sends again.
 --
 -- Events leave in batches (mpapi_log_events): one message per
 -- LOG_BATCH_MAX events, or fewer when their JSON passes LOG_BATCH_BYTES (the
 -- server refuses a message with more than 16KB of params). A flush is also
 -- deferred to the end of the frame, so a burst made in one frame goes out as
--- a few messages, not one per event.
+-- a few messages, not one per event. The last batch of a flush asks for the ack.
+--
+-- Event lists on the lobby: _unsent_log_events (not sent yet, because the
+-- socket was down or a batch could not go) and _log_inflight (sent, not acked).
+-- Both are in seq order, inflight first.
 local LOG_BATCH_MAX = 50
 local LOG_BATCH_BYTES = 12000
+-- How long an unanswered batch waits before it goes out again.
+local LOG_RESEND_SECONDS = 4
+-- Sent events kept for a server that may never ack (an older one).
+local LOG_MAX_UNCONFIRMED = 2000
 L.LOG_BATCH_MAX = LOG_BATCH_MAX
 L.LOG_BATCH_BYTES = LOG_BATCH_BYTES
+L.LOG_RESEND_SECONDS = LOG_RESEND_SECONDS
 
 local function event_bytes(event)
 	local ok, encoded = pcall(require("json").encode, event)
 	return ok and type(encoded) == 'string' and #encoded or 200
 end
 
--- Sends one batch (a single event goes as plain mpapi_log_event); false when the socket is down.
--- With on_ack the batch asks the server for an ack, and on_ack(err) runs when the
--- server answers or refuses it (at once when the socket is down).
-local function transmit_log_events(lobby, batch, on_ack)
+local function without_acked(events, got)
+	if not events then
+		return nil
+	end
+	local rest = {}
+	for _, event in ipairs(events) do
+		if (event.seq or 0) > got then
+			rest[#rest + 1] = event
+		end
+	end
+	return #rest > 0 and rest or nil
+end
+
+-- Moves the sent, unacked events back in front of the unsent ones.
+local function requeue_inflight(lobby)
+	local inflight = lobby._log_inflight
+	lobby._log_inflight = nil
+	if not inflight then
+		return
+	end
+	local queue = {}
+	for _, event in ipairs(inflight) do
+		queue[#queue + 1] = event
+	end
+	for _, event in ipairs(lobby._unsent_log_events or {}) do
+		queue[#queue + 1] = event
+	end
+	lobby._unsent_log_events = queue
+end
+
+-- Drops what the server says it holds.
+local function forget_acked(lobby, got)
+	lobby._log_inflight = without_acked(lobby._log_inflight, got)
+	lobby._unsent_log_events = without_acked(lobby._unsent_log_events, got)
+end
+
+local arm_resend
+
+-- When an ack does not come in LOG_RESEND_SECONDS, sends the unacked events
+-- again. Only for a server known to skip copies.
+arm_resend = function(lobby)
+	if lobby._log_resend_armed or not lobby._log_counted or not (lobby._log_inflight or lobby._unsent_log_events) then
+		return
+	end
+	if not (G and G.E_MANAGER and Event) then
+		return
+	end
+	lobby._log_resend_armed = true
+	local progress = lobby._log_progress or 0
+	L.after_real_seconds(LOG_RESEND_SECONDS, function()
+		lobby._log_resend_armed = nil
+		if lobby._destroyed then
+			return
+		end
+		if (lobby._log_progress or 0) == progress then
+			requeue_inflight(lobby)
+			L.flush_log_events(lobby)
+		end
+		arm_resend(lobby)
+	end)
+end
+
+-- The server's answer to the last batch of a flush. result.got is the highest
+-- seq it holds with no gap; err is a refusal. on_ack(err) is the caller's own
+-- interest (a leave waits for it).
+local function on_log_ack(lobby, run_id, last_seq, on_ack, result, err)
+	local started = lobby._game.started
+	if lobby._destroyed or not (started and started.run_id == run_id) then
+		if on_ack then
+			on_ack(err)
+		end
+		return
+	end
+	if err then
+		arm_resend(lobby)
+		if on_ack then
+			on_ack(err)
+		end
+		return
+	end
+	local got = type(result) == 'table' and result.got or nil
+	if type(got) ~= 'number' then
+		-- The server does not count: its ack means it handled the batch.
+		lobby._log_counted = false
+		forget_acked(lobby, last_seq)
+		if on_ack then
+			on_ack(nil)
+		end
+		return
+	end
+	lobby._log_counted = true
+	local before = lobby._log_acked or 0
+	if got > before then
+		lobby._log_acked = got
+		lobby._log_progress = (lobby._log_progress or 0) + 1
+	end
+	forget_acked(lobby, got)
+	if got < last_seq and (lobby._log_inflight or lobby._unsent_log_events) then
+		-- The server lacks events this batch covers. Send them again at once
+		-- while the acks move forward, else wait for the timer.
+		requeue_inflight(lobby)
+		if got > before then
+			if not L.flush_log_events(lobby, on_ack) and on_ack then
+				on_ack(nil)
+			end
+			return
+		end
+	end
+	arm_resend(lobby)
+	if on_ack then
+		on_ack(nil)
+	end
+end
+
+-- Sends one batch (a single event goes as plain mpapi_log_event); false when the socket is down
+-- or the action was refused locally. With ack_for = { run_id, on_ack } the batch asks the server for an ack,
+-- and on_log_ack runs when the server answers or refuses it (at once when the socket is down).
+local function transmit_log_events(lobby, batch, ack_for)
 	local single = #batch == 1
 	local params = single and batch[1] or { events = batch }
-	if on_ack then
+	if ack_for then
 		local asked = {}
 		for k, v in pairs(params) do
 			asked[k] = v
@@ -464,41 +593,46 @@ local function transmit_log_events(lobby, batch, on_ack)
 		params = asked
 	end
 	local action = lobby:action(MPAPI.ActionTypes[single and 'mpapi_log_event' or 'mpapi_log_events'])
-	if on_ack then
-		action:callback(function(_, _, err)
-			on_ack(err)
+	if ack_for then
+		local last_seq = batch[#batch].seq or 0
+		action:callback(function(_, result, err)
+			on_log_ack(lobby, ack_for.run_id, last_seq, ack_for.on_ack, result, err)
 		end)
 	end
-	return action:send(nil, params) ~= false
+	-- nil means a local refusal (the params did not validate): not sent either.
+	return action:send(nil, params) == true
 end
 
 -- Drops kept events of a run that is not the current one (or when no game is on).
 local function keep_current_run(lobby)
-	local kept = lobby._unsent_log_events
-	if not kept then
-		return
-	end
 	local started = lobby._game.started
-	local current = {}
-	for _, event in ipairs(kept) do
-		if started and event.run == started.run_id then
-			current[#current + 1] = event
+	for _, field in ipairs({ '_unsent_log_events', '_log_inflight' }) do
+		local kept = lobby[field]
+		if kept then
+			local current = {}
+			for _, event in ipairs(kept) do
+				if started and event.run == started.run_id then
+					current[#current + 1] = event
+				end
+			end
+			lobby[field] = #current > 0 and current or nil
 		end
 	end
-	lobby._unsent_log_events = #current > 0 and current or nil
 end
 
 -- Sends the kept events in order, in batches; stops at the first batch that
--- can't go, and keeps it and the rest for the next flush. With on_ack, the last
--- batch asks the server for an ack and on_ack(err) runs when it comes back; the
--- result is true when that last batch went out, so on_ack is still to come.
+-- can't go, and keeps it and the rest for the next flush. The last batch asks
+-- the server for an ack. With on_ack, on_ack(err) runs when that ack comes back;
+-- the result is true when the last batch went out, so on_ack is still to come.
 L.flush_log_events = function(lobby, on_ack)
 	keep_current_run(lobby)
 	local kept = lobby._unsent_log_events
 	if not kept then
 		return false
 	end
+	local run_id = lobby._game.started.run_id
 	local sent = 0
+	local inflight = lobby._log_inflight or {}
 	while sent < #kept do
 		local batch, bytes = {}, 0
 		for i = sent + 1, math.min(#kept, sent + LOG_BATCH_MAX) do
@@ -510,13 +644,24 @@ L.flush_log_events = function(lobby, on_ack)
 			bytes = bytes + size
 		end
 		local is_last = sent + #batch == #kept
-		if not transmit_log_events(lobby, batch, is_last and on_ack or nil) then
+		if not transmit_log_events(lobby, batch, is_last and { run_id = run_id, on_ack = on_ack } or nil) then
 			break
+		end
+		for _, event in ipairs(batch) do
+			inflight[#inflight + 1] = event
 		end
 		sent = sent + #batch
 	end
+	if lobby._log_counted == nil or lobby._log_counted == false then
+		-- Not known to ack with a count: do not keep an unbounded copy.
+		while #inflight > LOG_MAX_UNCONFIRMED do
+			table.remove(inflight, 1)
+		end
+	end
+	lobby._log_inflight = #inflight > 0 and inflight or nil
 	if sent == #kept then
 		lobby._unsent_log_events = nil
+		arm_resend(lobby)
 		return on_ack ~= nil
 	end
 	local rest = {}
@@ -524,7 +669,18 @@ L.flush_log_events = function(lobby, on_ack)
 		rest[#rest + 1] = kept[i]
 	end
 	lobby._unsent_log_events = rest
+	arm_resend(lobby)
 	return false
+end
+
+-- After a reconnect: what was sent and not acked may have died with the old
+-- socket, so it goes out again (a server that counts skips what it holds).
+L.resend_log_events = function(lobby)
+	if lobby._log_counted then
+		keep_current_run(lobby)
+		requeue_inflight(lobby)
+	end
+	return L.flush_log_events(lobby)
 end
 
 -- Flushes at the end of this frame (once however many events are recorded
@@ -565,11 +721,20 @@ L.send_log_event = function(lobby, t, opcode, args)
 	end
 	-- Tagged with the run, so an event still in flight when the server
 	-- restarts the game isn't kept in the new run's log.
+	local run_id = lobby._game.started.run_id
+	if lobby._log_seq_run ~= run_id then
+		lobby._log_seq_run = run_id
+		lobby._log_seq = 0
+		lobby._log_acked = 0
+		lobby._log_inflight = nil
+	end
+	lobby._log_seq = lobby._log_seq + 1
 	local event = {
 		t = t,
 		opcode = opcode,
 		args = args,
-		run = lobby._game.started.run_id,
+		run = run_id,
+		seq = lobby._log_seq,
 	}
 	-- Behind anything already kept, so the order holds.
 	local kept = lobby._unsent_log_events or {}
