@@ -14,7 +14,7 @@ G = {
 }
 local S = G.STATES
 MPAPI = {
-	playback = { wait_gave_up = function() end },
+	playback = { record_gave_up_wait = function() end },
 	sendWarnMessage = function() end,
 }
 dofile('api/playback/hand.lua')

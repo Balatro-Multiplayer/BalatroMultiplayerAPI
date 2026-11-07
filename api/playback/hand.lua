@@ -36,7 +36,7 @@ function MPAPI.playback.with_hand_ready(ctx, fn, wait_for)
 			return true
 		end
 		if love.timer.getTime() >= deadline then
-			MPAPI.playback.wait_gave_up('[replay] hand never dealt after ' .. timeout .. 's, acting anyway')
+			MPAPI.playback.record_gave_up_wait('[replay] hand never dealt after ' .. timeout .. 's, acting anyway')
 			return true
 		end
 		return false

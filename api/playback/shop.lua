@@ -64,7 +64,7 @@ function MPAPI.playback.with_shop_ready(ctx, fn, wait_for)
 			return true
 		end
 		if love.timer.getTime() >= deadline then
-			MPAPI.playback.wait_gave_up('[replay] shop never became ready after ' .. timeout .. 's, skipping this action')
+			MPAPI.playback.record_gave_up_wait('[replay] shop never became ready after ' .. timeout .. 's, skipping this action')
 			return true
 		end
 		return false

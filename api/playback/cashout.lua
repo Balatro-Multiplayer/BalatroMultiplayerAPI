@@ -24,11 +24,12 @@ end
 -- (no round_eval and the state is past ROUND_EVAL), or time ran out. A state before ROUND_EVAL
 -- also has no round_eval, so those states keep waiting: the last hand of a round has been
 -- scored, but the game needs more frames to evaluate the round.
-function MPAPI.playback.cashout_wait_over(button_exists, round_eval_built, state, timed_out)
-	if button_exists or timed_out then return true end
-	local S = G.STATES
+-- `facts`: { button_exists, round_eval_built, state, timed_out, states } where `states` is G.STATES.
+function MPAPI.playback.cashout_wait_over(facts)
+	if facts.button_exists or facts.timed_out then return true end
+	local S, state = facts.states, facts.state
 	local before_round_eval = state == S.SELECTING_HAND or state == S.HAND_PLAYED or state == S.DRAW_TO_HAND or state == S.NEW_ROUND
-	return not round_eval_built and state ~= S.ROUND_EVAL and not before_round_eval
+	return not facts.round_eval_built and state ~= S.ROUND_EVAL and not before_round_eval
 end
 
 -- Replays a Cash Out. A fast-forward can dispatch it while the last hand is still being
@@ -42,11 +43,17 @@ function MPAPI.playback.cash_out_when_ready(ctx, wait_for, before_click)
 	local timeout = MPAPI.playback.CASHOUT_WAIT_SECONDS
 	local button_deadline = love.timer.getTime() + timeout
 	wait_for(function()
-		return MPAPI.playback.cashout_wait_over(MPAPI.playback.find_cash_out_button() ~= nil, G.round_eval ~= nil, G.STATE, love.timer.getTime() >= button_deadline)
+		return MPAPI.playback.cashout_wait_over({
+			button_exists = MPAPI.playback.find_cash_out_button() ~= nil,
+			round_eval_built = G.round_eval ~= nil,
+			state = G.STATE,
+			timed_out = love.timer.getTime() >= button_deadline,
+			states = G.STATES,
+		})
 	end, function()
 		local button = MPAPI.playback.find_cash_out_button()
 		if not button then
-			MPAPI.playback.wait_gave_up('[replay] cashout: no Cash Out button after ' .. timeout .. 's, clicking anyway')
+			MPAPI.playback.record_gave_up_wait('[replay] cashout: no Cash Out button after ' .. timeout .. 's, clicking anyway')
 		end
 		if before_click then before_click() end
 		G.FUNCS.cash_out(button or { config = {} })
@@ -54,7 +61,7 @@ function MPAPI.playback.cash_out_when_ready(ctx, wait_for, before_click)
 		wait_for(function()
 			if G.STATE == G.STATES.ROUND_EVAL then
 				if love.timer.getTime() >= deadline then
-					MPAPI.playback.wait_gave_up('[replay] cashout: still in ROUND_EVAL after ' .. timeout .. 's, resuming anyway')
+					MPAPI.playback.record_gave_up_wait('[replay] cashout: still in ROUND_EVAL after ' .. timeout .. 's, resuming anyway')
 					return true
 				end
 				return false
@@ -62,7 +69,7 @@ function MPAPI.playback.cash_out_when_ready(ctx, wait_for, before_click)
 			if G.STATE == G.STATES.SHOP then
 				if MPAPI.playback.shop_is_built() then return true end
 				if love.timer.getTime() >= deadline then
-					MPAPI.playback.wait_gave_up('[replay] cashout: shop never became ready after ' .. timeout .. 's, resuming anyway')
+					MPAPI.playback.record_gave_up_wait('[replay] cashout: shop never became ready after ' .. timeout .. 's, resuming anyway')
 					return true
 				end
 				return false
