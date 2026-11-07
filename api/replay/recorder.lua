@@ -274,7 +274,7 @@ local function canonical_hash_input(count)
 	local prefix = RLOG._resumed and RLOG._prefix
 	if prefix then
 		local lead = prefix.text:sub(1, -2)
-		if prefix.count > 0 and #parts > 0 then
+		if lead ~= "[" and #parts > 0 then
 			lead = lead .. ","
 		end
 		return lead .. table.concat(parts, ",") .. "]"
@@ -553,11 +553,12 @@ end
 -- this player, when its handlers resolve refs at all -- PvP's are positional) additionally
 -- gives those restored cards their recorded ids back.
 --
--- A resumed block closes with END but no CHK: the CHK hash covers the whole log the server
--- holds, and the pre-crash part only comes back parsed (run_active), so its object-valued
--- args (match_manifest, lobby_info) can't be re-encoded in their original key order -- a
--- claimed hash would read as tampering ('mismatch' -> flagged, unrated). Without one the
--- server's check is 'unavailable', as it was for a rejoined player before.
+-- A resumed block closes with END and a CHK only when `log_text` is given: the CHK hash covers
+-- the whole log the server holds, and the pre-crash part only comes back parsed (run_active), so
+-- its object-valued args (match_manifest, lobby_info) can't be re-encoded in their original key
+-- order. The server's own text of them can lead the hash input as it is. Without that text a
+-- claimed hash would read as tampering ('mismatch' -> flagged, unrated), so the block closes
+-- with no CHK and the server's check is 'unavailable'.
 -- The highest card id first seen in an event's args: a first-seen ref is the only array
 -- shaped { -id, kind, ... } (see card_ref), so it can't be confused with a plain index list.
 local function max_first_seen_id(v, best)
@@ -629,8 +630,8 @@ function RLOG.end_run(outcome)
 	local human_hash = cheap_hash(human_str)
 	local bytes = #carbon_str + #human_str
 
-	if RLOG._resumed then
-		-- See resume_run: no hash for a block resumed after a crash-rejoin.
+	if RLOG._resumed and not RLOG._prefix then
+		-- See resume_run: without the server's text of the earlier events there is no hash to claim.
 		RLOG._run_active = false
 		return nil, nil
 	end
