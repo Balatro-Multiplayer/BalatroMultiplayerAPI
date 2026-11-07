@@ -152,7 +152,7 @@ reset()
 lobby = new_lobby()
 L.send_log_event(lobby, 'END', 1)
 queued[1].func()
-check(order[1] == 'event:END' and lobby.sent[1].payload.ack == nil, 'the normal flush asks for no ack')
+check(order[1] == 'event:END' and lobby.sent[1].payload.ack == true, 'the last batch of a flush asks for the ack that tells how far the server holds')
 
 -- A leave during a run ends the log with "left" before the last batch goes out.
 reset()

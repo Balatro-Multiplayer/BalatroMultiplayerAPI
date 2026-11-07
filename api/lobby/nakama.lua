@@ -150,6 +150,8 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 		lobby._game.started = nil
 	end
 
+	L.adopt_log_seq(lobby, game.logSeq)
+
 	L.apply_setup(lobby, type(game.setup) == 'table' and game.setup or { results = {} }, not announce)
 
 	if had_group or lobby.group_queue then
@@ -217,7 +219,7 @@ local function on_data(lobby, on_ready, op, data)
 			on_ready(lobby)
 		else
 			-- The seat is back: send the replay events kept while the socket was down.
-			L.flush_log_events(lobby)
+			L.resend_log_events(lobby)
 		end
 	elseif op == ServerOp.EVENT then
 		L.apply_event(lobby, data)
@@ -292,7 +294,7 @@ local function attach(lobby, match_id, on_ready)
 			lobby._server_restarting = nil
 			-- Usually a no-op: the rejoin snapshot already flushed. It catches the
 			-- case where that snapshot came before the socket counted as up.
-			L.flush_log_events(lobby)
+			L.resend_log_events(lobby)
 			MPAPI.match_log('debug', '[nakama_lobby] rejoined ' .. tostring(lobby.code))
 			-- The new session starts as "not catching up" on the server.
 			if lobby._catching_up then
