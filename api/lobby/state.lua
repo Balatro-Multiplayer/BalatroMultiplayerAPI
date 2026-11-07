@@ -192,6 +192,13 @@ L.create_object = function(opts)
 			return
 		end
 		self._leaving = true
+		-- A player who leaves during a run closes their log first, so every leave
+		-- path sends a check code. end_run does nothing when no run is open or the
+		-- mod already closed it (a forfeit, a result), so it never ends a log twice.
+		local replay = MPAPI.replay
+		if replay and replay.end_run and replay._run_active then
+			replay.end_run({ result = 'left' })
+		end
 		-- Log events recorded this frame wait for the end-of-frame flush, which a
 		-- leave would cut off. The server runs a leave signal at once but handles
 		-- match data on its next tick, so the last batch asks for an ack and the
