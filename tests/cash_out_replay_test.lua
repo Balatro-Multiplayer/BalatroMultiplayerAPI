@@ -18,7 +18,7 @@ MPAPI = {
 	playback = { shop_is_built = function() return shop_built end, wait_gave_up = function() end },
 	sendWarnMessage = function() end,
 }
-dofile('api/playback/shop.lua')
+dofile('api/playback/cashout.lua')
 local P = MPAPI.playback
 
 -- cashout_wait_over(button, round_eval, state, timed_out)
