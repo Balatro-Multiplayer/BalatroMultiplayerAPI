@@ -64,4 +64,27 @@ check(count == 1 and input == '[[1,"buy",null]]', 'resume over an empty log: ' .
 RLOG.resume_run(old, {})
 check(RLOG.log_position() == nil, 'no text, no position')
 
+-- Resumed over a log whose earlier events were only framing: no stray comma.
+RLOG.resume_run({ { t = 1, opcode = 'match_manifest', args = {} } }, {}, '[]')
+RLOG.record('buy', nil)
+count, input = RLOG.log_position()
+check(input == '[[2,"buy",null]]', 'a resume text of no events adds no comma: ' .. tostring(input))
+
+-- A resumed log that ends sends a CHK over the whole log; one with no text does not.
+local sent = {}
+RLOG.register_broadcaster('chk_test', function() end)
+MPAPI.get_current_lobby = function() return { code = 'X', mod_id = 'chk_test' } end
+RLOG._broadcasters.chk_test = function(_, opcode, args) sent[#sent + 1] = { opcode = opcode, args = args } end
+MPAPI.OPCODE = { END = 'end', CHK = 'chk' }
+RLOG.resume_run(old, {}, '[[5,"play",[1]],[9,"buy",[]]]')
+RLOG.record('sell', { 2 })
+local carbon = RLOG.end_run({ result = 'win' })
+check(carbon == '[[5,"play",[1]],[9,"buy",[]],[10,"sell",[2]]]', 'resumed end_run hashes the whole log: ' .. tostring(carbon))
+check(sent[#sent].opcode == 'chk' and sent[#sent].args.carbon == carbon, 'and sends it as the CHK')
+sent = {}
+RLOG.resume_run(old, {})
+RLOG.record('sell', { 2 })
+check(RLOG.end_run({ result = 'win' }) == nil, 'no text, no hash')
+check(sent[#sent].opcode == 'end', 'and the log ends with END only')
+
 print(string.format('recorder_resume_test: %d checks passed', checks))
