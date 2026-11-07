@@ -177,4 +177,34 @@ record(lobby, 1)
 stale.cb({}, { ack = true, got = 0 })
 check(seqs_of(lobby.sent[2]) == '1' and lobby._log_inflight[1].run == 'r2', 'the new run starts again at 1')
 
+-- A new process rejoins the same run: the snapshot's count is where numbering goes on.
+queued = {}
+lobby = new_lobby()
+L.adopt_log_seq(lobby, 12)
+record(lobby, 2)
+check(seqs_of(lobby.sent[1]) == '13,14', 'a rejoined client numbers from N+1, got ' .. seqs_of(lobby.sent[1]))
+
+-- A snapshot of a count of 0 changes nothing, and one with no count (an older server) too.
+queued = {}
+lobby = new_lobby()
+L.adopt_log_seq(lobby, 0)
+L.adopt_log_seq(lobby, nil)
+record(lobby, 1)
+check(seqs_of(lobby.sent[1]) == '1', 'no held events: numbering starts at 1')
+
+-- The same lobby object after a dropped socket keeps its higher counter and sends what the server lacks.
+queued = {}
+lobby = new_lobby()
+record(lobby, 2)
+lobby.sent[1].cb({}, { ack = true, got = 2 })
+record(lobby, 3) -- 3,4,5 sent on a dead socket
+L.adopt_log_seq(lobby, 2) -- the server holds 2
+L.resend_log_events(lobby)
+check(seqs_of(lobby.sent[#lobby.sent]) == '3,4,5', 'the same lobby sends 3,4,5 again, got ' .. seqs_of(lobby.sent[#lobby.sent]))
+record(lobby, 1)
+check(seqs_of(lobby.sent[#lobby.sent]) == '6', 'and goes on at 6')
+-- When the server holds more than the lobby sent (events whose ack was lost), they are not sent again.
+L.adopt_log_seq(lobby, 5)
+check(lobby._log_inflight == nil or lobby._log_inflight[1].seq == 6, 'events up to 5 are forgotten')
+
 print(('ok   %d checks'):format(checks))

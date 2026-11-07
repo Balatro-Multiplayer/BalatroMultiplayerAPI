@@ -150,6 +150,8 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 		lobby._game.started = nil
 	end
 
+	L.adopt_log_seq(lobby, game.logSeq)
+
 	L.apply_setup(lobby, type(game.setup) == 'table' and game.setup or { results = {} }, not announce)
 
 	if had_group or lobby.group_queue then

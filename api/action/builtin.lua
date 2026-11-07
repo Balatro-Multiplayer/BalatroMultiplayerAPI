@@ -673,6 +673,34 @@ L.flush_log_events = function(lobby, on_ack)
 	return false
 end
 
+-- The join snapshot says how many of this player's events the server holds
+-- (game.logSeq). A client that starts again in the same run (a new process
+-- after a crash, so no counter) numbers its next event from there; the server
+-- would skip a number it already holds as a copy. A lobby that kept its
+-- counter through a dropped socket keeps the higher one: what it numbered and
+-- the server never got is sent again. Recording is off while a catch-up replays
+-- the old events (the log opens again only when the replay is idle), so those
+-- get no new numbers.
+L.adopt_log_seq = function(lobby, held)
+	local started = lobby._game.started
+	if type(held) ~= 'number' or not started then
+		return
+	end
+	if lobby._log_seq_run ~= started.run_id then
+		lobby._log_seq_run = started.run_id
+		lobby._log_seq = 0
+		lobby._log_acked = 0
+		lobby._log_inflight = nil
+	end
+	if held > lobby._log_seq then
+		lobby._log_seq = held
+	end
+	if held > (lobby._log_acked or 0) then
+		lobby._log_acked = held
+	end
+	forget_acked(lobby, held)
+end
+
 -- After a reconnect: what was sent and not acked may have died with the old
 -- socket, so it goes out again (a server that counts skips what it holds).
 L.resend_log_events = function(lobby)
