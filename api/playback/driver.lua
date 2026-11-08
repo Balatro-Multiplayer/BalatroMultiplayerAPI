@@ -378,6 +378,10 @@ end
 function Driver:_tick(dt)
 	if not self._playing or not self:has_pending() then
 		if self._playing then
+			-- A last entry whose handler paused the driver resumes it here, with nothing left
+			-- to dispatch: end its fast-forward first, as _fast_forward_tick does, or stop()
+			-- clears it and on_done never fires.
+			self:_end_fast_forward()
 			self:_check_complete()
 		end
 		return

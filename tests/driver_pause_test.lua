@@ -48,6 +48,31 @@ driver:_tick(0.016)
 check(done, 'the fast-forward ends once the driver is resumed')
 check(driver:is_playing(), 'the driver plays on')
 
+-- The checkpoint index fast-forwards to the end of the timeline. When the last entry's handler
+-- pauses the driver, the tick after it resumes has nothing left to dispatch: the fast-forward
+-- must still end (on_done) before the driver completes.
+driver = build()
+done = false
+local completed = false
+driver._on_complete = function()
+	completed = true
+end
+MPAPI.playback.dispatch = function(_, opcode)
+	if opcode == 3 then driver:pause() end
+end
+driver:fast_forward_to(4, {
+	on_done = function()
+		done = true
+	end,
+})
+driver:_tick(0.016)
+check(driver._cursor == 4, 'every entry was dispatched')
+check(not done, 'the fast-forward waits for the paused last entry')
+driver:play()
+driver:_tick(0.016)
+check(done, 'the fast-forward ends once the last entry resumes the driver')
+check(completed, 'and the driver then completes')
+
 -- Waits that gave up are counted for the rejoin's log.
 MPAPI.playback.reset_gave_up_waits()
 check(MPAPI.playback.gave_up_waits() == 0, 'the count starts at zero')
