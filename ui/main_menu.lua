@@ -46,10 +46,14 @@ local create_UIBox_account_button = function()
 			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
 		} }
 	else
-		account_button_label = { n = G.UIT.T, config = {
-			ref_table = MPAPI.connection_state, ref_value = 'display_name',
-			scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true,
-		} }
+		-- A long name goes on two lines instead of shrinking to an unreadable size.
+		local rows = {}
+		for _, line in ipairs(MPAPI.name_lines(MPAPI.connection_state.display_name)) do
+			rows[#rows + 1] = { n = G.UIT.R, config = { align = 'cm' }, nodes = {
+				{ n = G.UIT.T, config = { text = line, scale = 0.4, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+			} }
+		end
+		account_button_label = { n = G.UIT.C, config = { align = 'cm' }, nodes = rows }
 	end
 
 	local account_button_node = {

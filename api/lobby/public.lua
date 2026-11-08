@@ -31,7 +31,7 @@ MPAPI.create_local_lobby = function(mod_id, opts)
 	-- Register ourselves as the only player.
 	lobby._players[player_id] = {
 		id = player_id,
-		displayName = (conn and conn.display_name) or 'You',
+		displayName = (conn and MPAPI.plain_letters(conn.display_name)) or 'You',
 		is_away = false,
 	}
 
