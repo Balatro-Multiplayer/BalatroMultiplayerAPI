@@ -303,7 +303,7 @@ L.populate_initial_players = function(lobby, players)
 		if p.id then
 			lobby._players[p.id] = {
 				id = p.id,
-				displayName = p.displayName,
+				displayName = MPAPI.plain_letters(p.displayName),
 				preferredJoker = p.preferredJoker,
 				is_away = false,
 			}

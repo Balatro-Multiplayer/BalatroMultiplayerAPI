@@ -112,7 +112,7 @@ function MPAPI.chat.on_message(lobby, sender_id, display_name, message)
 	if type(message) ~= 'string' then
 		return
 	end
-	local name = display_name or sender_id
+	local name = MPAPI.plain_letters(display_name) or sender_id
 	local colour = (sender_id == lobby.player_id) and COLOUR_OWN or COLOUR_INCOMING
 	MPAPI.chat.addMessage(name .. ': ' .. message, colour)
 end

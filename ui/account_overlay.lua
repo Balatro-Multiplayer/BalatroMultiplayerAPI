@@ -239,10 +239,10 @@ account_info_rows = function(steam_name, name_colour, discord_linked)
 				{ n = G.UIT.T, config = { text = MPAPI.connection_state.player_id, scale = 0.3, colour = G.C.UI.TEXT_INACTIVE } },
 			}),
 			account_info_row(localize('k_steam_username'), {
-				{ n = G.UIT.O, config = { object = DynaText({ string = { steam_name }, colours = { name_colour }, shadow = true, float = true, scale = 0.45 }) } },
+				{ n = G.UIT.O, config = { object = DynaText({ string = { steam_name }, colours = { name_colour }, shadow = true, float = true, scale = 0.45, maxw = 4.3 }) } },
 			}),
 			account_info_row(localize('k_discord_username'), {
-				{ n = G.UIT.O, config = { object = DynaText({ string = { discord_value }, colours = { discord_colour }, shadow = true, float = true, scale = 0.45 }) } },
+				{ n = G.UIT.O, config = { object = DynaText({ string = { discord_value }, colours = { discord_colour }, shadow = true, float = true, scale = 0.45, maxw = 4.3 }) } },
 			}),
 		},
 	}

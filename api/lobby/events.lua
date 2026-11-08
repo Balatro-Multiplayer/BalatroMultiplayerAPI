@@ -7,7 +7,7 @@ local function on_player_joined(lobby, data)
 	if data.playerId then
 		lobby._players[data.playerId] = lobby._players[data.playerId] or {}
 		lobby._players[data.playerId].id = data.playerId
-		lobby._players[data.playerId].displayName = data.displayName
+		lobby._players[data.playerId].displayName = MPAPI.plain_letters(data.displayName)
 		lobby._players[data.playerId].is_away = false
 	end
 	lobby:_fire(MPAPI.LobbyEvent.PLAYER_JOINED, data.playerId)
@@ -175,7 +175,7 @@ L.apply_player_info = function(lobby, player_id, info)
 	local is_new = not lobby._players[player_id]
 	lobby._players[player_id] = lobby._players[player_id] or {}
 	lobby._players[player_id].id = player_id
-	lobby._players[player_id].displayName = info.displayName
+	lobby._players[player_id].displayName = MPAPI.plain_letters(info.displayName)
 	lobby._players[player_id].preferredJoker = info.preferredJoker
 	-- May be nil/absent (only present once that player's client has sent
 	-- its installed mods, Nakama's profile_set_mods) -- the Lobby Info
