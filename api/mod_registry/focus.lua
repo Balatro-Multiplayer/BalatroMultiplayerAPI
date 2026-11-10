@@ -110,9 +110,21 @@ MPAPI._internal.deactivate_mod = function()
 	MPAPI._internal.mod_registry.update_account_button()
 end
 
+-- A page of the lobby's mod to show when `lobby` closes, instead of the mod's main menu
+-- (e.g. a tournament's screen after its match lobby closes). Applies only while the player is
+-- on the lobby page or in a run: a player who has moved elsewhere in the menus stays there.
+-- If the lobby closes during a run, the page is shown when the run returns to the menu. A nil
+-- key clears it.
+MPAPI.set_lobby_exit_page = function(lobby, key, params)
+	if not lobby then return end
+	lobby._exit_page = key and { key = key, params = params or {}, mod_id = lobby.mod_id } or nil
+end
+
 -- Called by lobby.lua after a lobby fires its 'connected' event.
 MPAPI._internal.on_lobby_connected = function(lobby)
 	state.engaged_mod = lobby.mod_id
+	-- A new lobby replaces any exit page an earlier one left for after its run.
+	state.pending_exit_page = nil
 
 	-- A lobby can opt out of the lobby page (e.g. SPDRN practice drops straight into a run).
 	-- Tear the whole menu down so nothing shows behind the run. Deferred -- see the long
@@ -148,8 +160,8 @@ MPAPI._internal.on_lobby_connected = function(lobby)
 	MPAPI._internal.mod_registry.update_account_button()
 end
 
--- Called by lobby.lua after a lobby fires its 'disconnected' event.
-MPAPI._internal.on_lobby_disconnected = function()
+-- Called by lobby.lua after a lobby fires its 'disconnected' event, with that lobby.
+MPAPI._internal.on_lobby_disconnected = function(lobby)
 	-- A leave answered after the player is already in another server lobby: that
 	-- disconnect isn't theirs. (A local lobby, e.g. a rejoin's playback, doesn't count.)
 	local current_lobby = MPAPI.get_current_lobby()
@@ -158,20 +170,26 @@ MPAPI._internal.on_lobby_disconnected = function()
 	end
 	local current = MPAPI.pages.current()
 	local was_in_lobby_view = current and current.category == 'lobby_menu'
+	local exit_page = lobby and lobby._exit_page
 	state.engaged_mod = nil
 
 	-- If disconnecting while in a run (e.g. "Continue in Singleplayer"), clear focused_mod so
 	-- the game returns to the vanilla main menu when the run ends: with focused_mod nil,
 	-- rebuild_current_menu below declines to rebuild a mod page and set_main_menu_UI's rehook
-	-- falls back to the base game's own menu build. Skip update_account_button() to avoid
-	-- recreating the UIBox (which is in uibox mode from the main menu) over the game.
+	-- falls back to the base game's own menu build. A lobby with an exit page is the exception:
+	-- rebuild_current_menu shows that page instead, once the run is back on the menu. Skip
+	-- update_account_button() to avoid recreating the UIBox (which is in uibox mode from the
+	-- main menu) over the game.
 	if G.STAGE == G.STAGES.RUN then
 		state.focused_mod = nil
+		state.pending_exit_page = exit_page
 		MPAPI._internal.unlock_overlay.disable()
 		return
 	end
 
-	if was_in_lobby_view and state.focused_mod then
+	if was_in_lobby_view and exit_page and state.focused_mod == exit_page.mod_id then
+		MPAPI.pages.show(exit_page.key, exit_page.params)
+	elseif was_in_lobby_view and state.focused_mod then
 		local mod = state.registered_mods[state.focused_mod]
 		if mod and mod.main_menu_ui then
 			MPAPI.pages.show(mod.main_menu_ui, { mod = mod })
@@ -188,6 +206,18 @@ end
 -- -- correctly falls through to the base game's own menu build. Returns true if it handled the
 -- rebuild, false if the caller should fall back to the original game menu.
 MPAPI._internal.rebuild_current_menu = function()
+	-- Back from a run whose lobby closed with an exit page (on_lobby_disconnected): focus its
+	-- mod again and show that page, once. Dropped if the player is in a lobby again by now.
+	local pending = state.pending_exit_page
+	if pending then
+		state.pending_exit_page = nil
+		if not MPAPI.get_current_lobby() and state.registered_mods[pending.mod_id] then
+			state.focused_mod = pending.mod_id
+			MPAPI._internal.unlock_overlay.enable_for_mod(pending.mod_id)
+			MPAPI.pages.show(pending.key, pending.params)
+			return true
+		end
+	end
 	if not state.focused_mod then
 		return false
 	end
