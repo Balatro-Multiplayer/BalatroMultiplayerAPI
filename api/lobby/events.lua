@@ -26,7 +26,7 @@ function L.drop(lobby)
 	L.cleanup(lobby)
 	lobby:_fire(MPAPI.LobbyEvent.DISCONNECTED)
 	if MPAPI._internal.on_lobby_disconnected then
-		MPAPI._internal.on_lobby_disconnected()
+		MPAPI._internal.on_lobby_disconnected(lobby)
 	end
 end
 

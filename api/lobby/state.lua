@@ -182,7 +182,7 @@ L.create_object = function(opts)
 			L.cleanup(self)
 			self:_fire(MPAPI.LobbyEvent.DISCONNECTED)
 			if MPAPI._internal.on_lobby_disconnected then
-				MPAPI._internal.on_lobby_disconnected()
+				MPAPI._internal.on_lobby_disconnected(self)
 			end
 			return
 		end
@@ -220,7 +220,7 @@ L.create_object = function(opts)
 				L.cleanup(self)
 				self:_fire(MPAPI.LobbyEvent.DISCONNECTED)
 				if MPAPI._internal.on_lobby_disconnected then
-					MPAPI._internal.on_lobby_disconnected()
+					MPAPI._internal.on_lobby_disconnected(self)
 				end
 			end)
 		end
