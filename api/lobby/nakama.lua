@@ -290,7 +290,24 @@ local function attach(lobby, match_id, on_ready)
 		dropped = function()
 			MPAPI.match_log('debug', '[nakama_lobby] socket dropped, rejoining ' .. tostring(lobby.code))
 		end,
+		-- A rejoin refused only because the launcher verdict lapsed while the
+		-- socket was down (it lasts 6 minutes and is renewed over the socket):
+		-- verify again and retry, once per drop, instead of losing the lobby
+		-- and replaying the run.
+		refused_wait = function(err, retry)
+			local refusal = MPAPI.standing.parse_rejoin_refusal(err)
+			if not refusal or refusal.code ~= MPAPI.RejoinRefusalCode.VERIFICATION_PENDING or lobby._reverified then
+				return false
+			end
+			lobby._reverified = true
+			MPAPI.match_log('debug', '[nakama_lobby] rejoin waits for a launcher verdict ' .. tostring(lobby.code))
+			MPAPI._internal.conn.verify_again(MPAPI.standing.VERDICT_WAIT_SECONDS, function()
+				retry()
+			end)
+			return true
+		end,
 		rejoined = function()
+			lobby._reverified = nil
 			lobby._server_restarting = nil
 			-- Usually a no-op: the rejoin snapshot already flushed. It catches the
 			-- case where that snapshot came before the socket counted as up.
