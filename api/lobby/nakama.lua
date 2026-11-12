@@ -105,6 +105,9 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	lobby.type = snapshot.type or 'private'
 	lobby.host_id = snapshot.hostId
 	lobby.is_host = snapshot.hostId == lobby.player_id
+	-- Server-advertised protocol versions, not host-editable metadata.
+	-- Missing on older servers: consumers must treat that as unsupported.
+	lobby.server_features = type(snapshot.serverFeatures) == 'table' and snapshot.serverFeatures or {}
 	lobby._metadata = type(snapshot.metadata) == 'table' and snapshot.metadata or {}
 	lobby._player_state = snapshot.ownState
 	lobby._players = roster
