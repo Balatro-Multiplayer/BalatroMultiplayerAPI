@@ -38,7 +38,7 @@ end
 -- at a lobby that never existed.
 local function show_refusal(title_key, message)
 	if MPAPI.show_notice then
-		MPAPI.show_notice(title_key, tostring(message))
+		MPAPI.show_notice(title_key, MPAPI.server_refusal_text(message))
 	end
 end
 
@@ -116,11 +116,20 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 
 	local game = type(snapshot.game) == 'table' and snapshot.game or {}
 	local was_started = lobby._game.started ~= nil
+	local ready_ids = type(game.ready) == 'table' and game.ready or {}
 	lobby._game.ready = {}
-	for id, ready in pairs(type(game.ready) == 'table' and game.ready or {}) do
-		if ready == true and roster[id] then
+	-- The snapshot is the whole truth about who is ready; a player is told only when their
+	-- value changed (a player not seen before has no value yet, so they are told too).
+	for id in pairs(roster) do
+		local ready = ready_ids[id] == true
+		if ready then
 			lobby._game.ready[id] = true
-			MPAPI.set_player_ready(lobby, id, true)
+		end
+		local was = before[id]
+		if was and was.ready == ready then
+			roster[id].ready = ready
+		else
+			MPAPI.set_player_ready(lobby, id, ready)
 		end
 	end
 	lobby._game.result_pending = game.resultPending == true
@@ -143,11 +152,18 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 		if lobby._game.started then
 			lobby._game.started.race_started_local = race_started_local(game.started, snapshot.serverNow)
 		end
-	elseif was_started and announce then
-		-- It ended while we were away; the result went out without us.
-		L.apply_game_ended(lobby, { status = 'unknown', placements = {} })
 	else
 		lobby._game.started = nil
+	end
+	-- How the last game ended, as the server says it (nil: it says nothing, and nothing is made up).
+	-- It stays in the snapshot until the next game starts, so each run is raised once. The first
+	-- snapshot of a join (a leaver coming back, a relaunched game) lands before the mod listens, so
+	-- its end waits in lobby._pending_ended until the lobby is connected (L.raise_pending_ended).
+	local ended = L.ended_to_raise(game.lastEnded, L.ended_seen)
+	if ended and announce then
+		L.apply_game_ended(lobby, { runId = ended.runId, status = ended.status, placements = {}, while_away = true })
+	elseif ended then
+		lobby._pending_ended = ended
 	end
 
 	L.adopt_log_seq(lobby, game.logSeq)
@@ -214,12 +230,30 @@ local function on_data(lobby, on_ready, op, data)
 	if op == ServerOp.SNAPSHOT then
 		local first = not lobby._nakama_ready
 		L.apply_snapshot(lobby, data, not first)
+		-- The request layer takes rev, connectionId and the shared match state, then resends
+		-- what was pending across the drop (api/net/request_shell.lua).
+		if MPAPI._internal.net then
+			MPAPI._internal.net.on_snapshot(data)
+		end
 		if first then
 			lobby._nakama_ready = true
 			on_ready(lobby)
 		else
 			-- The seat is back: send the replay events kept while the socket was down.
 			L.resend_log_events(lobby)
+			-- The new session starts as "not catching up" on the server. Sent here, not on
+			-- the join answer: before this snapshot the server may not hold the session yet.
+			if lobby._catching_up then
+				lobby:set_catching_up(true)
+			end
+		end
+	elseif op == ServerOp.ANSWER then
+		if MPAPI._internal.net then
+			MPAPI._internal.net.on_answer(data)
+		end
+	elseif op == ServerOp.STATE then
+		if MPAPI._internal.net then
+			MPAPI._internal.net.on_state_push(data)
 		end
 	elseif op == ServerOp.EVENT then
 		L.apply_event(lobby, data)
@@ -270,12 +304,28 @@ local function on_data(lobby, on_ready, op, data)
 	end
 end
 
-local function connected(lobby)
+-- Raises the end the first snapshot carried, now that the mod listens. Once: the run was marked
+-- seen when the snapshot was read.
+L.raise_pending_ended = function(lobby)
+	local ended = lobby._pending_ended
+	lobby._pending_ended = nil
+	if ended and not lobby._destroyed and not L.ended_seen[ended.runId] then
+		L.apply_game_ended(lobby, { runId = ended.runId, status = ended.status, placements = {}, while_away = true })
+	end
+end
+
+-- on_ready(lobby), when given, runs before the held end is raised: a rejoin's mod only subscribes
+-- to GAME_ENDED there (the Reconnect prompt builds its lobby mirror in on_ready).
+local function connected(lobby, on_ready)
 	lobby:_fire(MPAPI.LobbyEvent.CONNECTED)
 	MPAPI.chat.init(lobby)
 	if MPAPI._internal.on_lobby_connected then
 		MPAPI._internal.on_lobby_connected(lobby)
 	end
+	if on_ready then
+		on_ready(lobby)
+	end
+	L.raise_pending_ended(lobby)
 end
 
 -- Joins the lobby's match; on_ready(lobby) runs on the first snapshot.
@@ -296,10 +346,6 @@ local function attach(lobby, match_id, on_ready)
 			-- case where that snapshot came before the socket counted as up.
 			L.resend_log_events(lobby)
 			MPAPI.match_log('debug', '[nakama_lobby] rejoined ' .. tostring(lobby.code))
-			-- The new session starts as "not catching up" on the server.
-			if lobby._catching_up then
-				lobby:set_catching_up(true)
-			end
 		end,
 		lost = function(reason, gave_up)
 			MPAPI.sendWarnMessage('[nakama_lobby] lost lobby ' .. tostring(lobby.code) .. ': ' .. tostring(reason))
@@ -443,10 +489,7 @@ L.nakama_rejoin_lobby = function(lobby_data, on_ready)
 	local lobby = new_lobby(conn, lobby_data.modId, { type = lobby_data.type })
 	lobby.code = lobby_data.code
 	attach(lobby, lobby_data.matchId, function(l)
-		connected(l)
-		if on_ready then
-			on_ready(l)
-		end
+		connected(l, on_ready)
 	end)
 end
 

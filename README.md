@@ -222,6 +222,7 @@ To queue for ranked, pass `ranked = true` explicitly. MPAPI does not work out ra
 | `MPAPI.Setup`, `MPAPI.BanPick` | Server-run Setup (Draft and votes) before a run, and the deck Draft screen |
 | `MPAPI.ReadyTracker`, `MPAPI.VoteTracker` | Host-authoritative ready and voting helpers |
 | `MPAPI.replay` | Reading stored match logs |
+| `MPAPI.request`, `MPAPI.on_state`, `MPAPI.get_state` | Requests to the match server with exactly one result each (they survive a socket drop and are never applied twice), and the shared match state it owns. See the header comment in `api/net/request_shell.lua` |
 | `MPAPI.register_card_info_provider`, `MPAPI.on_winner_declared`, `MPAPI.register_lobby_reconnect` | Extension points for lobby UI, results and rejoin |
 | `MPAPI.Result`, `MPAPI.make_error`, `MPAPI.ErrorKind` | Errors as values: callbacks receive `{ kind, message }` |
 

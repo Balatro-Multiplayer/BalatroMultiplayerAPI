@@ -1,0 +1,54 @@
+# The Run save points (api/replay/run_save.lua). Each patch calls MPAPI.run_save.at_save_point()
+# right after one of vanilla's save_run calls, in the same event or callback, so the Run save sees
+# the state vanilla saved. It is not a save_run wrapper: PvP wraps save_run to return early while
+# saving is off in a lobby, which would hide a wrapper inside it, and other code calls save_run
+# for its own ends (PvP's run snapshot). Only these four calls are save points. The pack close
+# (G.FUNCS.end_consumeable) and the shop reroll (G.FUNCS.reroll_shop) save_run calls are left
+# out on purpose: the first runs while the state is still a pack state, the second before the
+# reroll's own context has run.
+# The regexes below are checked only against a real Lovely dump (SPEC-D's in-game check): each
+# must match once. The skip_blind anchor is SMODS text, so an SMODS update can move it; the
+# unit tests drive stubs and cannot catch that.
+[manifest]
+version = "1.0.0"
+dump_lua = true
+priority = 0
+
+# The Blind Select build (Game:update_blind_select). The save_run is inside an event that
+# update_blind_select queues; the call goes into that event, not after the line that queues it.
+[[patches]]
+[patches.regex]
+target = "game.lua"
+pattern = '''(?<head>ease_background_colour_blind\(G\.STATES\.BLIND_SELECT\)\s*G\.E_MANAGER:add_event\(Event\(\{ func = function\(\) save_run\(\);) return true end'''
+position = 'at'
+payload = '''$head MPAPI.run_save.at_save_point(); return true end'''
+times = 1
+
+# The shop build (Game:update_shop), after `starting_shop`. A shop loaded from a save
+# (nosave_shop) has no save_run here, and so no Run save.
+[[patches]]
+[patches.regex]
+target = "game.lua"
+pattern = '''(?<head>if not nosave_shop then G\.E_MANAGER:add_event\(Event\(\{ func = function\(\) save_run\(\);) return true end'''
+position = 'at'
+payload = '''$head MPAPI.run_save.at_save_point(); return true end'''
+times = 1
+
+# A skipped blind (G.FUNCS.skip_blind): after the skip context, before the tags apply.
+# The bare save_run() line also appears elsewhere, so the regex is anchored on the line before.
+[[patches]]
+[patches.regex]
+target = "functions/button_callbacks.lua"
+pattern = '''(?<head>skip_blind = true[^\n]*\n[ \t]*save_run\(\))'''
+position = 'at'
+payload = '''$head; MPAPI.run_save.at_save_point()'''
+times = 1
+
+# A boss reroll (G.FUNCS.reroll_boss): anchored on the new_blind_choice tag loop that follows.
+[[patches]]
+[patches.regex]
+target = "functions/button_callbacks.lua"
+pattern = '''save_run\(\)(?<tail>\s*for i = 1, #G\.GAME\.tags do\s*if G\.GAME\.tags\[i\]:apply_to_run\(\{type = 'new_blind_choice'\}\))'''
+position = 'at'
+payload = '''save_run(); MPAPI.run_save.at_save_point()$tail'''
+times = 1

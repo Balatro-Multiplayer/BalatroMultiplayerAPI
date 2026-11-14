@@ -9,7 +9,7 @@
 local NL = {}
 
 -- Must match nakama/src/lobby/protocol.ts.
-NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6, SPECTATE_VIEW = 7 }
+NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6, SPECTATE_VIEW = 7, REQUEST = 8 }
 NL.ServerOp = {
 	SNAPSHOT = 100,
 	EVENT = 101,
@@ -27,6 +27,9 @@ NL.ServerOp = {
 	GROUP_QUEUE = 112,
 	-- A spectator's answer to SPECTATE_VIEW: the watched player's Run save and the events after it.
 	SPECTATE_RUN = 113,
+	-- The request/answer layer (api/net/): the answer to this client's REQUEST, and a shared-state push.
+	ANSWER = 114,
+	STATE = 115,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'
@@ -57,6 +60,18 @@ local last_seat = {}
 local spectating = nil -- { id, listener }
 
 local timers = {} -- { at, fn }
+
+-- The request layer (api/net/request_shell.lua) is told when the match drops, comes back or is gone.
+local function net()
+	return MPAPI._internal and MPAPI._internal.net
+end
+
+local function match_closed()
+	local n = net()
+	if n then
+		n.on_closed()
+	end
+end
 
 -- The SDK runs a callback-less call as a coroutine await; these are
 -- fire-and-forget.
@@ -219,6 +234,9 @@ local function on_socket_disconnect()
 	if match and not match.lost_since then
 		match.lost_since = love.timer.getTime()
 		match.attempt = 1
+		if net() then
+			net().on_dropped()
+		end
 		if match.listener.dropped then
 			match.listener.dropped()
 		end
@@ -332,6 +350,8 @@ local function join_metadata(mod_id)
 		displayName = c.display_name or c.steam_name or 'Player',
 		preferredJoker = c.preferred_joker or 'j_joker',
 		mods = ok and mods and MPAPI.json_encode(mods) or nil,
+		-- The request layer's wire version (api/net/protocol.lua); metadata values are strings.
+		protocol = tostring(MPAPI.load_mpapi_file('api/net/protocol.lua').PROTOCOL_VERSION),
 	}
 end
 
@@ -366,6 +386,7 @@ function NL.join(match_id, mod_id, listener, cb)
 		end
 		if err then
 			match = nil
+			match_closed()
 		end
 		cb(err)
 	end)
@@ -413,6 +434,9 @@ local function lose(reason, gave_up)
 	local lost = match
 	match = nil
 	last_seat.lost_at = lost and lost.lost_since or nil
+	if lost then
+		match_closed()
+	end
 	if lost and lost.listener.lost then
 		lost.listener.lost(reason, gave_up == true)
 	end
@@ -460,6 +484,9 @@ schedule_rejoin = function()
 				if this.listener.rejoined then
 					this.listener.rejoined()
 				end
+				if net() then
+					net().on_rejoined()
+				end
 				return
 			end
 			if love.timer.getTime() - this.lost_since > NL.give_up_seconds(this.grace_seconds) then
@@ -487,13 +514,27 @@ end
 -- server only takes ops from seated players, and the snapshot on rejoin
 -- carries the state that matters.
 function NL.send(op, tbl)
-	if not match or not socket or not socket_open or match.lost_since then
+	-- An empty table would encode as [].
+	return NL.send_raw(op, (tbl and next(tbl)) and MPAPI.json_encode(tbl) or '{}')
+end
+
+-- NL.send with the JSON already encoded.
+function NL.send_raw(op, data)
+	if not NL.is_live() then
 		return false
 	end
-	-- An empty table would encode as [].
-	local data = (tbl and next(tbl)) and MPAPI.json_encode(tbl) or '{}'
 	socket.match_data_send(match.id, op, data, nil, true, ignore)
 	return true
+end
+
+-- A lobby match is held, even while its socket is down and being rejoined.
+function NL.in_match()
+	return match ~= nil
+end
+
+-- The match is held, its socket is up and the seat rejoined: ops go out.
+function NL.is_live()
+	return match ~= nil and socket ~= nil and socket_open and not match.lost_since
 end
 
 -- Leaves on purpose; cb(err) once the server has let the seat go. Goes
@@ -508,6 +549,7 @@ function NL.leave(cb)
 		cb(nil)
 		return
 	end
+	match_closed()
 	NL.leave_current(function(err)
 		if err and socket and socket_open then
 			socket.match_data_send(left.id, NL.ClientOp.LEAVE, '{}', nil, true, ignore)
@@ -526,6 +568,7 @@ function NL.step_out()
 	if not left then
 		return nil
 	end
+	match_closed()
 	if socket and socket_open then
 		socket.match_leave(left.id, ignore)
 	end
@@ -553,7 +596,11 @@ function NL.spectate(match_id, mod_id, listener, cb)
 			cb(err or 'Could not open the Nakama socket')
 			return
 		end
-		socket.match_join(match_id, nil, { role = 'spectator', modId = mod_id }, function(result)
+		socket.match_join(match_id, nil, {
+			role = 'spectator',
+			modId = mod_id,
+			protocol = tostring(MPAPI.load_mpapi_file('api/net/protocol.lua').PROTOCOL_VERSION),
+		}, function(result)
 			if spectating ~= this then
 				return
 			end
@@ -834,14 +881,22 @@ end
 -- (lobby closed, kicked) or has been told (leave). The socket stays up for
 -- the next lobby.
 function NL.forget()
+	local held = match
 	match = nil
+	if held then
+		match_closed()
+	end
 end
 
 -- Forgets the match and closes the socket without telling the server
 -- (connection teardown; the server treats it as a disconnect).
 function NL.reset()
 	keep_open = false
+	local held = match
 	match = nil
+	if held then
+		match_closed()
+	end
 	spectating = nil
 	tickets = {}
 	party_tickets = {}

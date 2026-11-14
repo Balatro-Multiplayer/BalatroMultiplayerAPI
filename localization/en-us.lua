@@ -402,6 +402,14 @@ return {
 			k_banpick_random = 'Random',
 			k_banpick_time_left = 'Time left:',
 			k_mpapi_server_too_old = 'The server is too old for this match. Ask the server owner to update it.',
+			k_mpapi_start_player_away = 'A player is disconnected. Wait for them to rejoin.',
+			k_mpapi_start_not_all_ready = 'Not everyone is ready.',
+			k_mpapi_start_too_few_players = 'Not enough players to start.',
+			k_mpapi_start_not_host = 'Only the host can start the game.',
+			k_mpapi_start_in_game = 'The game has already started.',
+			k_mpapi_start_group_queue = 'The lobby is queueing as a group.',
+			k_mpapi_start_bad_rules = 'This lobby is missing a rule setting. Create a new lobby.',
+			k_mpapi_start_mode_disabled = 'This game mode is turned off for now. Pick another mode.',
 			-- End-screen Ko-fi plug (MPAPI.end_screen_uibox, api/end_screen.lua) -- shared by
 			-- every gamemode's win/lose screen, not just PvP's (where these two keys used to
 			-- live exclusively). Without PvP loaded, end_screen_uibox's localize('ml_mp_kofi_message')[3]

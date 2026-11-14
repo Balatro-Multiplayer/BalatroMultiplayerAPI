@@ -25,6 +25,7 @@ MPAPI = {
 			if decode_result then return decode_result end
 			return nil, 'unreadable ' .. tostring(text)
 		end,
+		screen_of = function() return 'BLIND_SELECT' end,
 		stage_load = function(e) staged = e end,
 		unstage_load = function() staged = nil end,
 		restore = function(e, resolver)
@@ -34,6 +35,8 @@ MPAPI = {
 	},
 	sendWarnMessage = function() end,
 }
+-- The run is on Blind Select at once, so the readiness wait passes without an event.
+G = { STATES = { BLIND_SELECT = 7, SHOP = 5 }, STATE = 7 }
 dofile('api/playback/rejoin.lua')
 local P = MPAPI.playback
 
