@@ -49,7 +49,15 @@ MPAPI._new_card_grid = function()
 			return nil
 		end
 		local row_idx = math.ceil(local_slot / COLS)
-		return self._card_rows[row_idx]
+		local row = self._card_rows[row_idx]
+		-- A removed row (the Lobby Info overlay closed, or the lobby view left
+		-- for a run) shows no slot. Its card must not be touched: re-skinning
+		-- one with no overlay open marks or clears its joker as in play for the
+		-- run (Card:set_ability).
+		if row and row.REMOVED then
+			return nil
+		end
+		return row
 	end
 
 	function grid:find_empty_slot()
@@ -316,6 +324,9 @@ MPAPI._new_card_grid = function()
 				trigger = 'after',
 				delay = 0.3,
 				func = function()
+					if not self:get_row_for_slot(idx) then
+						return true
+					end
 					local joker_center = G.P_CENTERS['j_joker']
 					card:set_ability(joker_center)
 					return true
@@ -349,8 +360,8 @@ MPAPI._new_card_grid = function()
 
 	-- Unregisters this grid so Card:click/Card:hover stop routing to it, and
 	-- frees its page-cycle G.FUNCS entry. Does not remove already-placed Card
-	-- objects from the screen -- callers (e.g. the overlay closing) are
-	-- responsible for that via clear_page_cards() first if needed.
+	-- objects from the screen -- callers are responsible for that via
+	-- clear_page_cards() first if needed.
 	function grid:destroy()
 		for i, g in ipairs(_active_grids) do
 			if g == self then
