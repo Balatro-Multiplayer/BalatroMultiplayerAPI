@@ -1,4 +1,4 @@
--- Contract test: a Run save is taken at Blind Select, carries the vanilla save table, each
+-- Contract test: a Run save carries the vanilla save table, each
 -- registered mod's state, the recorder's card ids and the log position, and leaves as parts
 -- of at most PART_BYTES that join back into the saved text. Run from the MPAPI repository
 -- root: luajit tests/run_save_test.lua
@@ -47,6 +47,7 @@ MPAPI = {
 local save_runs = 0
 local nothing_saved_flag
 G = {
+	STATES = { SELECTING_HAND = 1, SHOP = 5, BLIND_SELECT = 7 },
 	F_NO_SAVING = true,
 	ARGS = {},
 	FILE_HANDLER = { run = false, update_queued = false },
@@ -200,6 +201,15 @@ bad, why = RS.decode({ v = RS.FORMAT_VERSION })
 check(bad == nil and why:find('save'), 'an envelope with no save table is refused')
 bad, why = RS.decode({ v = RS.FORMAT_VERSION, save = { STATE = 7 } })
 check(bad == nil and why:find('GAME'), 'a save with no GAME is refused')
+bad, why = RS.decode({ v = 1, save = { STATE = 7, GAME = {} } })
+check(bad == nil and why:find('version'), 'a version 1 save is refused')
+bad, why = RS.decode({ v = RS.FORMAT_VERSION, save = { STATE = G.STATES.SELECTING_HAND, GAME = {} } })
+check(bad == nil and why:find('screen'), 'a save taken while a hand is played is refused')
+bad, why = RS.decode({ v = RS.FORMAT_VERSION, save = { GAME = {} } })
+check(bad == nil and why:find('screen'), 'a save with no STATE is refused')
+local shop_env = { v = RS.FORMAT_VERSION, save = { STATE = G.STATES.SHOP, GAME = {} } }
+check(RS.decode(shop_env) == shop_env and RS.screen_of(shop_env) == 'SHOP', 'a shop save decodes, screen SHOP')
+check(RS.screen_of(good_env) == 'BLIND_SELECT', 'a Blind Select save has screen BLIND_SELECT')
 
 -- restore: mod state goes back through load, the card id map goes into the resolver.
 local loaded
@@ -210,12 +220,22 @@ RS.register_state('demo', {
 RS.register_state('noload', { save = function() return {} end })
 local live_hand = { {}, {}, {} }
 G.hand = { cards = live_hand }
+-- The loaded cards carry the sort_ids they were saved with; the counter is below them, as it is
+-- after a fresh start, so the next new card would reuse one.
+live_hand[1].sort_id, live_hand[2].sort_id, live_hand[3].sort_id = 12, 274, 40
+G.jokers = { cards = { { sort_id = 90 } } }
+G.I = { CARDAREA = { G.hand, G.jokers, { cards = {} } } }
+G.sort_id = 66
 local resolver = { by_id = {}, assigned = {} }
 local restored, err = RS.restore(good_env, resolver)
 check(restored, 'restore succeeds: ' .. tostring(err))
 check(loaded and loaded.lives == 2, 'the mod got its state back')
 check(resolver.by_id[5] == live_hand[1] and resolver.by_id[7] == live_hand[3] and resolver.by_id[0] == nil, 'ids map to cards by place')
 check(resolver.assigned[live_hand[1]] and resolver.assigned[live_hand[3]] and not resolver.assigned[live_hand[2]], 'mapped cards are marked taken')
+check(G.sort_id >= 274, 'the sort_id counter is raised to the highest loaded card id: ' .. tostring(G.sort_id))
+G.sort_id = 500
+RS.restore(good_env, { by_id = {}, assigned = {} })
+check(G.sort_id == 500, 'the sort_id counter is never lowered')
 RS.register_state('failing', { save = function() return {} end, load = function() error('nope') end })
 good_env.mods.failing = {}
 restored, err = RS.restore(good_env, { by_id = {}, assigned = {} })
