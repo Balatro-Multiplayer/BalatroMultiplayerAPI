@@ -390,7 +390,7 @@ while running do
 			-- post-handshake, though launcher_channel.lua's own pending-
 			-- challenge queue means this shouldn't actually trigger.
 			if authenticated then
-				local sent = send_frame({
+				local send_attempted = send_frame({
 					type = 'challenge_request',
 					challenge_id = cmd.challenge_id,
 					kind = cmd.kind,
@@ -401,7 +401,7 @@ while running do
 					type = 'log',
 					message = '[integrity] challenge '
 						.. tostring(cmd.challenge_id)
-						.. (sent and ' forwarded to launcher' or ' NOT forwarded: encrypt failed'),
+						.. (send_attempted and ' send attempted to launcher' or ' NOT forwarded: encrypt failed'),
 				})
 			else
 				push_event({
