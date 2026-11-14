@@ -426,8 +426,9 @@ end
 -- learn it would then fail to resolve a later already-seen reference to that
 -- card. Plain strings carry no ids, so recording them cannot desync a replay.
 --
--- joker_tokens: one string per owned joker, left to right: "j_key" or
--- "j_key|edition" (e.g. "j_blueprint|foil").
+-- joker_tokens: one string per owned joker, left to right: "j_key", then
+-- "|"-joined modifiers: the edition, then any stickers (eternal, perishable,
+-- rental, pinned), e.g. "j_blueprint|foil" or "j_joker|eternal|rental".
 function RLOG.joker_tokens()
 	local out = {}
 	local cards = G and G.jokers and G.jokers.cards
@@ -437,9 +438,28 @@ function RLOG.joker_tokens()
 		if key then
 			local token = key
 			if card.edition and card.edition.type then token = token .. "|" .. card.edition.type end
+			local ability = card.ability or {}
+			if ability.eternal then token = token .. "|eternal" end
+			if ability.perishable then token = token .. "|perishable" end
+			if ability.rental then token = token .. "|rental" end
+			if card.pinned then token = token .. "|pinned" end
 			out[#out + 1] = token
 		end
 	end
+	return out
+end
+
+-- voucher_tokens: the vouchers redeemed this run, as center keys ("v_overstock"),
+-- sorted so every client writes the same order (G.GAME.used_vouchers is a set).
+function RLOG.voucher_tokens()
+	local out = {}
+	local used = G and G.GAME and G.GAME.used_vouchers
+	if type(used) == "table" then
+		for key, held in pairs(used) do
+			if held and type(key) == "string" then out[#out + 1] = key end
+		end
+	end
+	table.sort(out)
 	return out
 end
 
@@ -619,6 +639,25 @@ function RLOG.end_run(outcome)
 	local snapshot = MPAPI.RLOGCodes and MPAPI.RLOGCodes.deck_snapshot
 	if snapshot then
 		pcall(function() snapshot:write(RLOG.deck_tokens()) end)
+	end
+	-- The jokers owned at the end of the run, for the web viewer's lineup. Left
+	-- out when none are left in the area, so the viewer keeps its last-play
+	-- snapshot rather than read an empty lineup.
+	local final_jokers = MPAPI.RLOGCodes and MPAPI.RLOGCodes.final_jokers
+	if final_jokers then
+		pcall(function()
+			local tokens = RLOG.joker_tokens()
+			if #tokens > 0 then final_jokers:write(tokens) end
+		end)
+	end
+
+	-- The vouchers held at the end of the run, for the web viewer.
+	local final_vouchers = MPAPI.RLOGCodes and MPAPI.RLOGCodes.final_vouchers
+	if final_vouchers then
+		pcall(function()
+			local tokens = RLOG.voucher_tokens()
+			if #tokens > 0 then final_vouchers:write(tokens) end
+		end)
 	end
 
 	local t_end = elapsed_ms()
