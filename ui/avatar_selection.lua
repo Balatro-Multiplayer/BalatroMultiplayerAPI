@@ -8,7 +8,7 @@ local avatar_preview_card_hover_override
 local avatar_selectable_card_click_override
 local avatar_selectable_card_hover_override
 local calculate_avatar_entries
-local locked_avatar_popup
+local avatar_goal_popup
 local refresh_open_picker
 
 -----------------------------
@@ -202,7 +202,7 @@ avatar_selectable_card_click_override = function(self)
 end
 
 -- The hover box for a locked avatar: its name, the goal and how far along.
-locked_avatar_popup = function(card)
+avatar_goal_popup = function(card)
 	local Goals = MPAPI.avatars.goals
 	local goal = card.params.mpapi_avatar_goal
 	local rows = {
@@ -225,8 +225,8 @@ end
 avatar_selectable_card_hover_override = function(self)
 	if self.params.mpapi_avatar_selectable then
 		self:juice_up(0.05, 0.03)
-		if self.params.mpapi_avatar_locked then
-			self.config.h_popup = locked_avatar_popup(self)
+		if self.params.mpapi_avatar_locked or self.params.mpapi_avatar_goal then
+			self.config.h_popup = avatar_goal_popup(self)
 			self.config.h_popup_config = self:align_h_popup()
 			Node.hover(self)
 		else
