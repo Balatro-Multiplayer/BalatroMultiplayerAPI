@@ -1,17 +1,13 @@
--- Contract test: the lobby card grids never mark an avatar's joker as in play
--- for the run. The game marks a joker in play when a card is built or
--- re-skinned with no overlay open (Card:set_ability), and the shop then never
--- offers it. Lobby Info must build its cards under its overlay, and a grid
--- whose cards are gone must not re-skin them. Run from the MPAPI repository
--- root: luajit tests/lobby_info_in_play_test.lua
+-- Avatar display cards must not change the run's used_jokers.
+-- Run from the repo root: luajit tests/lobby_info_in_play_test.lua
 local checks = 0
 local function check(condition, message)
 	checks = checks + 1
 	assert(condition, message)
 end
 
--- The game's rule, from card.lua: no overlay open -> a new center is marked
--- in play, the old one is cleared, and so is a removed card's.
+-- Model card.lua's ownership updates outside overlays; duplicate handling
+-- is omitted because these cases use distinct centers.
 local CardMeta = {}
 CardMeta.__index = CardMeta
 function CardMeta:set_ability(center)
@@ -82,8 +78,7 @@ create_UIBox_generic_options = function(args) return args end
 MPAPI = {
 	C = {},
 	_is_player_debuffed = function() return false end,
-	-- as_overlay builds its definition first and only then opens the overlay,
-	-- as G.FUNCS.overlay_menu does.
+	-- Match ui_element:as_overlay: build before setting G.OVERLAY_MENU.
 	ui_element = function(build_fn)
 		local el = {}
 		function el:update() return build_fn() end
@@ -119,7 +114,7 @@ end
 MPAPI.LobbyEvent = { PLAYER_INFO = 'PLAYER_INFO', PLAYER_LEFT = 'PLAYER_LEFT' }
 dofile('ui/lobby_card_grid.lua')
 
--- A grid whose overlay has closed leaves its cards alone.
+-- Late roster events must not re-skin removed cards.
 G.OVERLAY_MENU = {}
 local lobby = new_lobby()
 local grid = MPAPI._new_card_grid()
@@ -133,7 +128,7 @@ check(not G.GAME.used_jokers.j_zany, 'an avatar change after the overlay closed 
 lobby:fire('PLAYER_LEFT', 'p1')
 check(not G.GAME.used_jokers.j_joker, 'a player leaving after the overlay closed marks nothing in play')
 
--- Lobby Info builds its cards under its own overlay.
+-- Open the overlay before constructing avatars.
 G.GAME.used_jokers = {}
 G.OVERLAY_MENU = nil
 lobby = new_lobby()
@@ -145,7 +140,7 @@ check(not G.GAME.used_jokers.j_jolly, 'opening Lobby Info marks no avatar in pla
 local shown = MPAPI._active_card_grids[#MPAPI._active_card_grids]._cards[1]
 check(shown and shown.config.center.key == 'j_jolly', 'Lobby Info shows the avatar card')
 
--- While it is open, a change re-skins the card and still marks nothing.
+-- Live avatar updates must leave used_jokers unchanged too.
 lobby:fire('PLAYER_INFO', 'p1', { preferredJoker = 'j_zany' })
 check(shown.config.center.key == 'j_zany', 'the open card is re-skinned')
 check(not G.GAME.used_jokers.j_zany, 'an avatar change while Lobby Info is open marks nothing in play')

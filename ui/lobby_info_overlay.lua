@@ -1,9 +1,5 @@
--- Default MPAPI-provided "Lobby Info" overlay: just the card grid (identical
--- in style to the live lobby roster, via ui/lobby_card_grid.lua, with per-mod
--- customizable hover info via api/card_info_providers.lua). Clicking a card
--- opens ui/player_mute_overlay.lua's Actions/Mods tabbed overlay for that
--- player. Opened via the in-run HUD button (ui/lobby_button.lua) -- there is
--- no pre-match lobby entry point, Lobby Info is an in-run-only feature.
+-- In-run roster, opened from ui/lobby_button.lua. Uses lobby_card_grid.lua
+-- and card_info_providers.lua; clicking a card opens player_mute_overlay.lua.
 local build_lobby_info_overlay_inner
 local lobby_info_title
 local lobby_info_overlay_inner
@@ -12,10 +8,7 @@ local lobby_info_overlay_inner
 -- STATE
 -----------------------------
 
--- The overlay's own card grid instance, per-overlay-session (created the
--- first time the overlay is opened, torn down on the next open). Kept
--- independent of the live lobby's own grid instance (ui/lobby.lua) per D3 --
--- closing this overlay must never disturb the live lobby's card state.
+-- Separate from the pre-match lobby grid; replaced on each open.
 local _players_grid = nil
 
 local function ensure_players_grid(lobby)
@@ -45,7 +38,7 @@ build_lobby_info_overlay_inner = function()
 			{ n = G.UIT.T, config = { text = localize('k_lobby_info_no_lobby'), scale = 0.4, colour = G.C.UI.TEXT_LIGHT } },
 		} } }
 	elseif not G.OVERLAY_MENU then
-		-- The cards wait for the overlay (see MPAPI.show_lobby_info_overlay).
+		-- show_lobby_info_overlay populates this after opening.
 		content_nodes = {}
 	else
 		local grid = ensure_players_grid(lobby)
@@ -77,14 +70,10 @@ end
 
 lobby_info_overlay_inner = MPAPI.ui_element(build_lobby_info_overlay_inner)
 MPAPI._lobby_info_overlay_el = MPAPI.ui_element(create_UIBox_lobby_info_overlay)
--- Exposed for testability (ClaudeControl suites spy on :update() call counts).
+-- Test hook for refresh counts.
 MPAPI._lobby_info_overlay_inner_el = lobby_info_overlay_inner
 
--- Single entry point (called from the in-run HUD button). No-ops without
--- a current lobby. Destroys any grid left over from a previous open before
--- opening -- the overlay's own grid instance would otherwise leak into
--- MPAPI._active_card_grids indefinitely, since nothing in vanilla's overlay
--- teardown knows to call grid:destroy() for us.
+-- Overlay teardown removes cards but doesn't unregister the grid.
 function MPAPI.show_lobby_info_overlay()
 	local lobby = MPAPI.get_current_lobby()
 	if not lobby then
@@ -95,8 +84,7 @@ function MPAPI.show_lobby_info_overlay()
 		_players_grid = nil
 	end
 	MPAPI._lobby_info_overlay_el:as_overlay()
-	-- Build the cards only now that G.OVERLAY_MENU is set, as the collection
-	-- does: a card built with no overlay open marks its joker as in play for
-	-- the run (Card:set_ability), and the shop then never offers it.
+	-- Without an overlay, Card:set_ability marks avatars in used_jokers,
+	-- excluding them from normal shop rolls.
 	lobby_info_overlay_inner:update()
 end

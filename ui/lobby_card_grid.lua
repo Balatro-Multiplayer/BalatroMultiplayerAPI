@@ -1,16 +1,10 @@
--- Instanced lobby player-card grid: pagination, roster sync, and the card
--- pool itself. Factored out of a former module-level singleton (see git
--- history of ui/lobby.lua) so the live lobby view and the Lobby Info
--- overlay's Players tab (ui/lobby_info_overlay.lua) can each run their own
--- independent grid against the same lobby without clobbering each other's
--- card/page state -- closing the overlay must hand control back to the live
--- view's own untouched cards, not whatever the overlay last built.
+-- Paginated player cards, synced to a lobby. Each view owns its grid so
+-- Lobby Info and the pre-match lobby keep separate cards and page state.
 local COLS = 4
 local ROWS_PER_PAGE = 4
 local SLOTS_PER_PAGE = COLS * ROWS_PER_PAGE
 
--- Every live grid instance, so Card:click/Card:hover overrides (ui/lobby.lua)
--- can find which grid owns a given card regardless of how many are open.
+-- Routes Card:click/Card:hover in ui/lobby.lua to the owning grid.
 local _active_grids = {}
 local _next_instance_id = 0
 
@@ -50,10 +44,8 @@ MPAPI._new_card_grid = function()
 		end
 		local row_idx = math.ceil(local_slot / COLS)
 		local row = self._card_rows[row_idx]
-		-- A removed row (the Lobby Info overlay closed, or the lobby view left
-		-- for a run) shows no slot. Its card must not be touched: re-skinning
-		-- one with no overlay open marks or clears its joker as in play for the
-		-- run (Card:set_ability).
+		-- Listeners outlive the view. Re-skinning stale cards without an
+		-- overlay would change G.GAME.used_jokers via Card:set_ability.
 		if row and row.REMOVED then
 			return nil
 		end
@@ -86,16 +78,8 @@ MPAPI._new_card_grid = function()
 			if cols_in_row < 1 then
 				break
 			end
-			-- card_limit must match cols_in_row (not the constant COLS), since
-			-- CardArea's 'title' layout centers cards using
-			-- max(#self.cards, self.config.temp_limit) as the slot count it
-			-- divides the area's width by (cardarea.lua's align_cards) --
-			-- temp_limit defaults to card_limit at construction and this area
-			-- never grows past its row's real card count. A row with fewer
-			-- than COLS cards (any row but a completely full one) but a
-			-- hardcoded card_limit=COLS had its cards positioned as if
-			-- centered in a COLS-wide area while actually occupying a
-			-- cols_in_row-wide one, visibly off-center.
+			-- Title layout uses card_limit for spacing; match the row's
+			-- width or partial rows render off-center.
 			self._card_rows[j] = CardArea(G.ROOM.T.x + 0.2 * G.ROOM.T.w / 2, G.ROOM.T.h, cols_in_row * G.CARD_W, 0.95 * G.CARD_H, { card_limit = cols_in_row, type = 'title', highlight_limit = 0, collection = true })
 			self._row_nodes[#self._row_nodes + 1] = {
 				n = G.UIT.R,
@@ -222,10 +206,7 @@ MPAPI._new_card_grid = function()
 		}
 	end
 
-	-- Builds the reactive element for this grid against `lobby`. Each instance
-	-- gets its own page-cycle G.FUNCS callback name (rather than one shared
-	-- global) so two concurrently-open grids never fight over whose page is
-	-- "current".
+	-- Each grid needs its own page callback in the global G.FUNCS table.
 	function grid:build_element(lobby)
 		self._page_cycle_func_name = 'mpapi_lobby_page_' .. self._instance_id
 		G.FUNCS[self._page_cycle_func_name] = function(args)
@@ -358,10 +339,8 @@ MPAPI._new_card_grid = function()
 		return nil
 	end
 
-	-- Unregisters this grid so Card:click/Card:hover stop routing to it, and
-	-- frees its page-cycle G.FUNCS entry. Does not remove already-placed Card
-	-- objects from the screen -- callers are responsible for that via
-	-- clear_page_cards() first if needed.
+	-- Unregisters the grid, not its displayed cards. Call clear_page_cards()
+	-- first if the view hasn't already removed them.
 	function grid:destroy()
 		for i, g in ipairs(_active_grids) do
 			if g == self then
@@ -373,11 +352,10 @@ MPAPI._new_card_grid = function()
 			G.FUNCS[self._page_cycle_func_name] = nil
 			self._page_cycle_func_name = nil
 		end
-		-- Release card/player references too (not just deregister) so a stray
-		-- direct reference to a destroyed grid can't report stale ownership.
+		-- Clear ownership even if a caller still holds this grid.
 		self._cards = {}
 		self._player_card_map = {}
-		-- Its lobby listeners stay registered: with no rows they return at once.
+		-- Remaining lobby listeners become no-ops.
 		self._card_rows = {}
 		self.lobby = nil
 	end
