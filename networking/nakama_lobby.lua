@@ -262,8 +262,9 @@ local function with_socket(cb)
 		s.on_error(function(message)
 			MPAPI.sendWarnMessage('[nakama_lobby] socket error: ' .. error_message(message, '?'))
 		end)
-		s.on_disconnect(function()
+		s.on_disconnect(function(reason)
 			if socket == s then
+				MPAPI.sendWarnMessage('[nakama_lobby] socket lost: ' .. tostring(reason or '?'))
 				on_socket_disconnect()
 			end
 		end)
@@ -275,6 +276,7 @@ local function with_socket(cb)
 			socket_open = ok and true or false
 			if not ok then
 				socket = nil
+				MPAPI.sendWarnMessage('[nakama_lobby] socket connect failed: ' .. tostring(message or '?'))
 			end
 			flush_waiters(socket_open, message)
 			if socket_open and #lost_tickets > 0 then
@@ -343,7 +345,8 @@ local function send_join(cb)
 		end
 		socket.match_join(match.id, nil, match.metadata, function(result)
 			if result and result.error then
-				cb(error_message(result, 'Could not join the lobby'), false)
+				-- A socket lost before the reply is a transport failure, not a refusal.
+				cb(error_message(result, 'Could not join the lobby'), result.socket_closed == true)
 				return
 			end
 			cb(nil)

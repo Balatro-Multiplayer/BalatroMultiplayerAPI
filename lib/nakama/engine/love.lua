@@ -334,6 +334,29 @@ local function update_timers()
 	end
 end
 
+-- The worker is gone. Before 'connected' this is a failed connect, so the
+-- connect callback must hear it: a caller waiting on the connect would
+-- otherwise wait for good. After it, the socket is lost, and the requests
+-- still waiting for a reply get an error, since the reply can never come.
+local function lose_worker(socket, worker, message)
+	if socket.connection ~= worker then
+		return
+	end
+	socket.connection = nil
+	if not worker.connected then
+		socket.connect_callback(false, message)
+		return
+	end
+	if socket.on_disconnect then
+		socket.on_disconnect(message)
+	end
+	local requests = socket.requests or {}
+	socket.requests = {}
+	for _, callback in pairs(requests) do
+		callback({ error = { message = 'Socket closed: ' .. tostring(message) }, socket_closed = true })
+	end
+end
+
 -- Delivers one socket's thread events. Returns false once the thread is
 -- finished with.
 local function update_socket(socket, worker)
@@ -346,6 +369,7 @@ local function update_socket(socket, worker)
 		-- worker (same as Defold's connection = nil).
 		local attached = socket.connection == worker
 		if event.type == 'connected' then
+			worker.connected = true
 			if attached then
 				socket.connect_callback(true)
 			end
@@ -358,30 +382,14 @@ local function update_socket(socket, worker)
 					log('Unable to decode socket message: ' .. tostring(event.data))
 				end
 			end
-		elseif event.type == 'error' then
-			if attached then
-				socket.connection = nil
-				socket.connect_callback(false, event.message)
-			end
-			return false
-		elseif event.type == 'disconnected' then
-			if attached then
-				socket.connection = nil
-				if socket.on_disconnect then
-					socket.on_disconnect()
-				end
-			end
+		elseif event.type == 'error' or event.type == 'disconnected' then
+			lose_worker(socket, worker, event.message)
 			return false
 		end
 	end
 	local err = worker.thread:getError()
 	if err then
-		if socket.connection == worker then
-			socket.connection = nil
-			if socket.on_disconnect then
-				socket.on_disconnect()
-			end
-		end
+		lose_worker(socket, worker, 'socket thread error: ' .. tostring(err))
 		return false
 	end
 	return true

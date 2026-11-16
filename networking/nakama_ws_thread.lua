@@ -49,39 +49,51 @@ if type(connect) ~= 'table' or connect.type ~= 'connect' then
 	return
 end
 
-local conn, connect_err = websocket.connect(connect.url, connect.timeout)
-if not conn then
-	rx_channel:push({ type = 'error', message = tostring(connect_err) })
+local connect_ok, conn, connect_err = pcall(websocket.connect, connect.url, connect.timeout)
+if not connect_ok or not conn then
+	rx_channel:push({ type = 'error', message = tostring(connect_ok and connect_err or conn) })
 	return
 end
 rx_channel:push({ type = 'connected' })
 
-while true do
-	local command = tx_channel:pop()
-	while command do
-		if command.type == 'send' then
-			local ok, send_err = conn:send_text(command.data)
-			if not ok then
+-- Returns once the connection is closed and the main thread is told.
+local function run()
+	while true do
+		local command = tx_channel:pop()
+		while command do
+			if command.type == 'send' then
+				local ok, send_err = conn:send_text(command.data)
+				if not ok then
+					conn:close()
+					rx_channel:push({ type = 'disconnected', message = 'send failed: ' .. tostring(send_err) })
+					return
+				end
+			elseif command.type == 'close' then
 				conn:close()
-				rx_channel:push({ type = 'disconnected', message = 'send failed: ' .. tostring(send_err) })
+				rx_channel:push({ type = 'disconnected', message = 'closed by client' })
 				return
 			end
-		elseif command.type == 'close' then
-			conn:close()
-			rx_channel:push({ type = 'disconnected', message = 'closed by client' })
-			return
+			command = tx_channel:pop()
 		end
-		command = tx_channel:pop()
-	end
 
-	for _, event in ipairs(conn:poll(POLL_SECONDS)) do
-		if event.type == 'message' then
-			rx_channel:push({ type = 'message', data = event.data })
-		elseif event.type == 'closed' then
-			conn:close()
-			local reason = event.code and (tostring(event.code) .. ' ' .. event.reason) or event.reason
-			rx_channel:push({ type = 'disconnected', message = reason })
-			return
+		for _, event in ipairs(conn:poll(POLL_SECONDS)) do
+			if event.type == 'message' then
+				rx_channel:push({ type = 'message', data = event.data })
+			elseif event.type == 'closed' then
+				conn:close()
+				local reason = event.code and (tostring(event.code) .. ' ' .. event.reason) or event.reason
+				rx_channel:push({ type = 'disconnected', message = reason })
+				return
+			end
 		end
 	end
+end
+
+-- A Lua error must still close the TCP connection and tell the main thread
+-- why: a thread that just dies leaves the server holding a live socket and
+-- the client with no reason in its log.
+local ok, err = pcall(run)
+if not ok then
+	pcall(conn.close, conn)
+	rx_channel:push({ type = 'disconnected', message = 'socket thread error: ' .. tostring(err) })
 end
