@@ -92,6 +92,7 @@ Options passed to `MPAPI.connect{ host, port, secure, server_key, web_url }` tak
 A mod can give MPAPI the player's Steam login in place of the Steam client. It registers once with `MPAPI.networking.steam.register_provider{ ... }`. The fields are documented in `networking/steam.lua`: `mod`, `ready`, `not_ready_message`, `get_steam_id`, `get_persona_name`, `get_auth_ticket`, `cancel_auth_ticket` and the optional `settled`. The four get/cancel functions return what the Steam client versions return.
 
 - A registered provider wins over the Steam client, even while the Steam client runs.
+- A provider that lacks any required function is refused: `register_provider` returns `false` and logs a warning that names the mod and the missing field.
 - Only one provider is allowed. The first registration holds. A second returns `false` and logs a warning that names both mods.
 - While `ready()` is false, the connect fails with the offline reason `steam_provider_not_ready`. The menu shows the text from `not_ready_message()`, so the provider localizes it.
 - The provider calls `MPAPI.networking.steam.provider_changed()` whenever its state may have moved. When it becomes ready and the client is disconnected, MPAPI connects, with no button press. This holds after a logout too. A live connection is never touched.

@@ -101,6 +101,18 @@ local function make_provider(mod, ready)
 	return p
 end
 
+-- A provider that lacks a required function is refused, naming mod and field.
+for _, field in ipairs({ 'ready', 'not_ready_message', 'get_steam_id', 'get_persona_name', 'get_auth_ticket', 'cancel_auth_ticket' }) do
+	local incomplete = make_provider('PartialMod', true)
+	incomplete[field] = nil
+	local before = #warnings
+	check(steam.register_provider(incomplete) == false, 'missing ' .. field .. ': registration refused')
+	check(#warnings == before + 1, 'missing ' .. field .. ': warns once')
+	check(warnings[#warnings]:find('PartialMod', 1, true) and warnings[#warnings]:find(field, 1, true), 'missing ' .. field .. ': warning names mod and field')
+	check(steam.provider() == nil, 'missing ' .. field .. ': no provider is set')
+end
+warnings = {}
+
 local first = make_provider('FirstMod', true)
 check(steam.register_provider(first) == true, 'first registration is accepted')
 check(steam.available(), 'ready provider: available')
@@ -220,7 +232,7 @@ steam.provider_changed()
 first.settled = function()
 	return false
 end
-check(steam.defer_startup_connect() == true, 'settling provider: startup defers the first connect')
+check(steam.begin_startup_wait() == true, 'settling provider: startup defers the first connect')
 calls = {}
 steam.provider_changed()
 check(count('connect') == 0, 'still settling: no connect')
@@ -235,17 +247,17 @@ check(count('connect') == 1, 'the deferred connect runs once')
 
 -- Settled with no login: startup is not deferred for a provider with no settled().
 first.settled = nil
-check(steam.defer_startup_connect() == false, 'no settled(): startup does not defer')
+check(steam.begin_startup_wait() == false, 'no settled(): startup does not defer')
 first.settled = function()
 	return true
 end
-check(steam.defer_startup_connect() == false, 'settled provider: startup does not defer')
+check(steam.begin_startup_wait() == false, 'settled provider: startup does not defer')
 
 -- A provider that is ready at startup connects there, so its ready edge is spent.
 first.is_ready = false
 steam.provider_changed()
 first.is_ready = true
-steam.defer_startup_connect()
+steam.begin_startup_wait()
 calls = {}
 steam.provider_changed()
 check(count('connect') == 0, 'startup connect covers a provider that is already ready')

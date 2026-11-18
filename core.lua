@@ -189,7 +189,7 @@ G.E_MANAGER:add_event(Event({
 			return false
 		end
 		MPAPI._internal.set_ready(true)
-		if not (steam and steam.defer_startup_connect()) then
+		if not (steam and steam.begin_startup_wait()) then
 			MPAPI.connect()
 		end
 		MPAPI._internal.run_ready_callbacks()
