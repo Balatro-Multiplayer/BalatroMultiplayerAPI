@@ -26,6 +26,9 @@ N.Code = {
 	-- params, sentAt}. It waits unread on the server (30 days) until the client
 	-- marks it read (RPCs notifications_pending and notifications_read).
 	NOTIFICATION = 112,
+	-- An Announcement, pushed live to every online player and never stored:
+	-- {text}. An older client has no handler and ignores it.
+	ANNOUNCEMENT = 113,
 }
 
 local handlers = {} -- code -> { fn, ... }
