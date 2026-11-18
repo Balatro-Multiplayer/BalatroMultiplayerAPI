@@ -20,6 +20,27 @@ MPAPI = {
 		return { text }
 	end,
 }
+-- The connect hooks the lifecycle test below watches (api/connection/lifecycle.lua).
+local calls = {}
+local mpapi_ready = true
+MPAPI.connection_state = { state = 'disconnected' }
+MPAPI.connect = function()
+	calls[#calls + 1] = 'connect'
+end
+MPAPI.disconnect = function()
+	calls[#calls + 1] = 'disconnect'
+end
+MPAPI.get_last_opts = function()
+	return nil
+end
+MPAPI.is_ready = function()
+	return mpapi_ready
+end
+MPAPI.account_button = {
+	update = function()
+		calls[#calls + 1] = 'menu'
+	end,
+}
 localize = function(key)
 	return key
 end
@@ -134,5 +155,99 @@ end
 -- Ready again: the provider is used.
 first.is_ready = true
 check(steam.available(), 'ready again: available')
+
+-----------------------------
+-- Login after startup connects by itself
+-----------------------------
+
+local function count(name)
+	local n = 0
+	for _, c in ipairs(calls) do
+		if c == name then
+			n = n + 1
+		end
+	end
+	return n
+end
+
+check(steam.provider() == first, 'provider() returns the registered provider')
+
+-- Becoming ready while disconnected connects once, not on every later call.
+first.is_ready = false
+steam.provider_changed()
+calls = {}
+first.is_ready = true
+steam.provider_changed()
+check(count('connect') == 1, 'becoming ready while disconnected connects')
+steam.provider_changed()
+steam.provider_changed()
+check(count('connect') == 1, 'later calls do not connect again')
+
+-- A connected client is left alone, and a live connection is never touched.
+first.is_ready = false
+steam.provider_changed()
+calls = {}
+MPAPI.connection_state.state = MPAPI.ConnectionState.CONNECTED
+first.is_ready = true
+steam.provider_changed()
+check(#calls == 0, 'a connected client is left alone')
+-- The ready edge was spent while connected: no connect once it drops.
+MPAPI.connection_state.state = MPAPI.ConnectionState.DISCONNECTED
+steam.provider_changed()
+check(count('connect') == 0, 'an edge seen while connected does not connect later')
+
+-- Becoming ready again after a logout connects again.
+first.is_ready = false
+steam.provider_changed()
+calls = {}
+first.is_ready = true
+steam.provider_changed()
+check(count('connect') == 1, 'ready again after a logout connects again')
+
+-- Before MPAPI's own startup has run, the startup does the first connect.
+first.is_ready = false
+steam.provider_changed()
+mpapi_ready = false
+calls = {}
+first.is_ready = true
+steam.provider_changed()
+check(count('connect') == 0, 'before startup: no connect from provider_changed')
+mpapi_ready = true
+
+-- Startup waits for a settling provider, then connects when it settles.
+first.is_ready = false
+steam.provider_changed()
+first.settled = function()
+	return false
+end
+check(steam.defer_startup_connect() == true, 'settling provider: startup defers the first connect')
+calls = {}
+steam.provider_changed()
+check(count('connect') == 0, 'still settling: no connect')
+first.settled = function()
+	return true
+end
+first.is_ready = true
+steam.provider_changed()
+check(count('connect') == 1, 'settled: the deferred first connect runs')
+steam.provider_changed()
+check(count('connect') == 1, 'the deferred connect runs once')
+
+-- Settled with no login: startup is not deferred for a provider with no settled().
+first.settled = nil
+check(steam.defer_startup_connect() == false, 'no settled(): startup does not defer')
+first.settled = function()
+	return true
+end
+check(steam.defer_startup_connect() == false, 'settled provider: startup does not defer')
+
+-- A provider that is ready at startup connects there, so its ready edge is spent.
+first.is_ready = false
+steam.provider_changed()
+first.is_ready = true
+steam.defer_startup_connect()
+calls = {}
+steam.provider_changed()
+check(count('connect') == 0, 'startup connect covers a provider that is already ready')
 
 print('steam_provider_test: ' .. checks .. ' checks passed')

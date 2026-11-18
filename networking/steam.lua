@@ -34,9 +34,22 @@ end
 --   get_persona_name = function() -> name | nil, err
 --   get_auth_ticket = function() -> { ticket = hex, handle = n } | nil, err
 --   cancel_auth_ticket = function(handle)
+--   settled = function() -> bool,
+--                               -- optional: false while the provider is still starting up
+--                               -- (for example, logging in from a stored login). The first
+--                               -- connect at startup waits until it is true.
 -- }
--- The last four return what the Steam client versions below return.
+-- The four get/cancel functions return what the Steam client versions below return.
+--
+-- The provider calls steam.provider_changed() whenever ready() or settled() may
+-- have changed. MPAPI then connects a disconnected client: once when the
+-- provider becomes ready (again after a logout too), and the deferred first
+-- connect when the provider settles. A live connection is never touched.
 local provider = nil
+-- The first connect at startup is waiting for the provider to settle.
+local startup_waiting = false
+-- ready() when provider_changed last looked, so only a change to ready connects.
+local was_ready = false
 
 local function mod_name(p)
 	return tostring(p.mod or 'unknown mod')
@@ -51,6 +64,47 @@ function steam.register_provider(p)
 	provider = p
 	log('Steam provider registered by ' .. mod_name(p))
 	return true
+end
+
+-- The registered provider, or nil.
+function steam.provider()
+	return provider
+end
+
+-- Startup (core.lua): true when the first connect must wait for a provider
+-- that is still settling; provider_changed() runs it later.
+function steam.defer_startup_connect()
+	if not provider then
+		return false
+	end
+	was_ready = provider.ready() and true or false
+	startup_waiting = provider.settled ~= nil and not provider.settled()
+	return startup_waiting
+end
+
+function steam.provider_changed()
+	if not provider then
+		return
+	end
+	local ready = provider.ready() and true or false
+	local became_ready = ready and not was_ready
+	was_ready = ready
+	if MPAPI.connection_state.state ~= MPAPI.ConnectionState.DISCONNECTED then
+		return
+	end
+	if MPAPI.account_button then
+		MPAPI.account_button:update()
+	end
+	if startup_waiting then
+		if provider.settled and not provider.settled() then
+			return
+		end
+		startup_waiting = false
+		MPAPI.connect()
+	elseif became_ready and MPAPI.is_ready() then
+		MPAPI.disconnect()
+		MPAPI.connect(MPAPI.get_last_opts() or {})
+	end
 end
 
 function steam.available()
