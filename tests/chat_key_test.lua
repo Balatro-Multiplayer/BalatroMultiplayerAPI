@@ -71,4 +71,22 @@ arm(without_button)
 check(chat.capture_key('h') == false and saved == nil and chat.rebinding == false, 'another overlay: not captured, flag cleared')
 check(refreshed == 0, 'no refresh when nothing was captured')
 
+-- opens_on: the chat key opens the chat unless a text field has focus
+G.CONTROLLER = {}
+MPAPI.text_input_active = nil
+MPAPI.config.chat_key = nil
+check(chat.opens_on('t') == true, 'the default chat key opens the chat')
+check(chat.opens_on('g') == false, 'another key does not open the chat')
+MPAPI.config.chat_key = 'g'
+check(chat.opens_on('g') == true, 'a changed chat key opens the chat')
+check(chat.opens_on('t') == false, 'the old key no longer opens the chat')
+MPAPI.text_input_active = true
+check(chat.opens_on('g') == false, 'a mod text field blocks a changed chat key')
+MPAPI.config.chat_key = nil
+check(chat.opens_on('t') == false, 'a mod text field blocks the default chat key')
+MPAPI.text_input_active = false
+check(chat.opens_on('t') == true, 'a cleared flag opens the chat again')
+G.CONTROLLER.text_input_hook = {}
+check(chat.opens_on('t') == false, 'a game text box still blocks the chat key')
+
 print(('ok   %d checks'):format(checks))

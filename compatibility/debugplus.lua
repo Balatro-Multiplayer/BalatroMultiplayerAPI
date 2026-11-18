@@ -77,8 +77,7 @@ local function patch(dp_console, orig_render)
 		if MPAPI.chat.capture_key(key) then return end
 
 		-- The chat key (T by default) opens the DP console (alias for /)
-		local typing = G and G.CONTROLLER and G.CONTROLLER.text_input_hook
-		if key == MPAPI.chat.get_key() and not typing and not dp_console.isConsoleFocused() then
+		if MPAPI.chat.opens_on(key) and not dp_console.isConsoleFocused() then
 			dp_keypressed('/', '/', false)
 			return
 		end
