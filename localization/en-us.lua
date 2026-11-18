@@ -13,6 +13,7 @@ return {
 			k_offline_openssl_not_found = 'OpenSSL not found',
 			k_offline_steam_not_running = 'Steam not running',
 			k_offline_steam_ticket_failed = 'Steam ticket failed',
+			k_offline_steam_provider_not_ready = 'Steam login not ready',
 			k_offline_server_unreachable = 'Server unreachable',
 			k_offline_other = 'Connection failed',
 			k_status_queueing = 'Queueing',

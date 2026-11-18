@@ -7,6 +7,7 @@ MPAPI.OfflineReason = {
 	OPENSSL_NOT_FOUND = 'openssl_not_found',
 	STEAM_NOT_RUNNING = 'steam_not_running',
 	STEAM_TICKET_FAILED = 'steam_ticket_failed',
+	STEAM_PROVIDER_NOT_READY = 'steam_provider_not_ready',
 	SERVER_UNREACHABLE = 'server_unreachable',
 	OTHER = 'other',
 }
@@ -43,10 +44,12 @@ local MESSAGE_WIDTH = 26
 local MESSAGE_LINES = 3
 
 -- The menu lines for a failed connection: the server's own message when it
--- refused for a reason with no text of its own (`other`), else the reason's
--- one line. Never the raw transport error.
+-- refused for a reason with no text of its own (`other`), the Steam provider's
+-- own message when it is not ready (the provider localizes it), else the
+-- reason's one line. Never the raw transport error.
 function MPAPI.offline_reason_lines(reason, server_message)
-	if reason == MPAPI.OfflineReason.OTHER and type(server_message) == 'string' and server_message:find('%S') then
+	local R = MPAPI.OfflineReason
+	if (reason == R.OTHER or reason == R.STEAM_PROVIDER_NOT_READY) and type(server_message) == 'string' and server_message:find('%S') then
 		return MPAPI.wrap_words(server_message, MESSAGE_WIDTH, MESSAGE_LINES)
 	end
 	return { localize(MPAPI.offline_reason_key(reason)) }

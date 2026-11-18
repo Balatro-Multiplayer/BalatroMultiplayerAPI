@@ -87,6 +87,16 @@ To run a Community server yourself, see "Run a Community server" in the [Balatro
 
 Options passed to `MPAPI.connect{ host, port, secure, server_key, web_url }` take precedence over the config.
 
+### Steam provider
+
+A mod can give MPAPI the player's Steam login in place of the Steam client. It registers once with `MPAPI.networking.steam.register_provider{ ... }`. The fields are documented in `networking/steam.lua`: `mod`, `ready`, `not_ready_message`, `get_steam_id`, `get_persona_name`, `get_auth_ticket` and `cancel_auth_ticket`. The last four return what the Steam client versions return.
+
+- A registered provider wins over the Steam client, even while the Steam client runs.
+- Only one provider is allowed. The first registration holds. A second returns `false` and logs a warning that names both mods.
+- While `ready()` is false, the connect fails with the offline reason `steam_provider_not_ready`. The menu shows the text from `not_ready_message()`, so the provider localizes it.
+- MPAPI adds no login screen or button for a provider. The provider mod makes its own.
+- The server is not told that a login came from a provider. It checks the provider's tickets like any Steam ticket.
+
 ## Using MPAPI from a mod
 
 Declare the dependency in your mod's JSON:
