@@ -16,8 +16,6 @@ local function new_gate()
 		window = 5,
 		now = function() return clock end,
 		hooks = {
-			on_verifying = function(n) log[#log + 1] = 'verifying:' .. n end,
-			on_prompt = function() log[#log + 1] = 'prompt' end,
 			on_attempt = function(n) log[#log + 1] = 'attempt:' .. n end,
 			on_done = function(s) log[#log + 1] = 'done:' .. s end,
 			on_bypass = function() log[#log + 1] = 'bypass' end,
@@ -34,7 +32,7 @@ clock = 4.9
 g:tick()
 check(g.state == S.VERIFYING, 'still inside the window')
 check(g:verified() == true, 'verdict counts')
-check(trace() == 'verifying:1,done:verified', 'verified inside window: ' .. trace())
+check(trace() == 'done:verified', 'verified inside window: ' .. trace())
 check(not g:is_blocking(), 'verified unblocks')
 clock = 99
 g:tick()
@@ -47,13 +45,13 @@ clock = 5
 g:tick()
 g:tick()
 check(g.state == S.PROMPTING and g:is_blocking(), 'prompt blocks')
-check(trace() == 'verifying:1,prompt', 'prompt fires once: ' .. trace())
+check(trace() == '', 'the window running out fires no hook: ' .. trace())
 
 -- Keep waiting: fresh attempt, fresh window measured from now.
 clock = 8
 g:keep_waiting()
 check(g.state == S.VERIFYING and g.attempts == 2, 'fresh attempt')
-check(trace() == 'verifying:1,prompt,attempt:2,verifying:2', 'keep waiting: ' .. trace())
+check(trace() == 'attempt:2', 'keep waiting: ' .. trace())
 clock = 12.9
 g:tick()
 check(g.state == S.VERIFYING, 'new window starts at the retry, not at launch')
@@ -72,7 +70,7 @@ clock = 6
 g:tick()
 g:bypass()
 check(g.state == S.BYPASSED and g:is_bypassed(), 'bypassed')
-check(trace() == 'verifying:1,prompt,bypass,done:bypassed', 'bypass: ' .. trace())
+check(trace() == 'bypass,done:bypassed', 'bypass: ' .. trace())
 check(g:verified() == false, 'late verdict rejected after bypass')
 check(g.state == S.BYPASSED, 'stays bypassed')
 g:keep_waiting()
@@ -91,6 +89,20 @@ g = new_gate()
 check(g:verified() == true, 'early verdict counts')
 g:start()
 check(g.state == S.VERIFIED and trace() == '', 'no overlay when already verified: ' .. trace())
+
+-- A definite failure goes to the prompt at once, and only from a window.
+g = new_gate()
+g:start()
+g:failed()
+check(g.state == S.PROMPTING and g:is_blocking(), 'failed verdict asks at once')
+g:keep_waiting()
+check(g.state == S.VERIFYING and g.attempts == 2, 'keep waiting after a failed verdict')
+g:bypass()
+g:failed()
+check(g.state == S.BYPASSED, 'failed does not undo a bypass')
+g = new_gate()
+g:failed()
+check(g.state == S.IDLE, 'failed before the gate opens does nothing')
 
 -- keep_waiting outside the prompt does nothing.
 g = new_gate()

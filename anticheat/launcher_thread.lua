@@ -415,7 +415,7 @@ local function try_consume_frame()
 end
 
 local running = true
-local bypass_requested = false -- player gave up: never reconnect, tell the launcher once
+local bypass_requested = false -- player gave up: reconnect only until the launcher is told, once
 local bypass_sent = false
 local next_attempt = 0
 local last_fail_log = 0
@@ -471,7 +471,7 @@ while running do
 	local now = socket.gettime()
 
 	-- 2. (Re)connect while we have no session.
-	if not sock and not bypass_requested and now >= next_attempt then
+	if not sock and (not bypass_requested or not bypass_sent) and now >= next_attempt then
 		local ok, reason = try_connect()
 		if not ok then
 			next_attempt = socket.gettime() + RETRY_DELAY
@@ -562,9 +562,9 @@ while running do
 	end
 
 	-- 6. Tell the launcher the player gave up, as soon as there's a session
-	-- to tell it over. It never reconnects after this (see above), and the
-	-- socket is deliberately left open so heartbeats keep flowing - closing it
-	-- would read as a heartbeat loss on the launcher side.
+	-- to tell it over (step 2 reconnects until it has). It never reconnects
+	-- after this, and the socket is deliberately left open so heartbeats keep
+	-- flowing - closing it would read as a heartbeat loss on the launcher side.
 	if bypass_requested and authenticated and not bypass_sent then
 		bypass_sent = send_frame({ type = 'ranked_bypassed' })
 	end

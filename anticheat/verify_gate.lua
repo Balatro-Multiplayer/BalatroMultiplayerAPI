@@ -23,8 +23,6 @@
 
     No game, UI or network code in here, so it runs under plain luajit (see
     tests/verify_gate_test.lua). `hooks` are called synchronously:
-      on_verifying(attempt)  a (re)started attempt - show the waiting overlay
-      on_prompt()            the window ran out - ask keep waiting / give up
       on_attempt(attempt)    a fresh attempt began - kick off a new challenge
       on_done(state)         terminal: 'verified' or 'bypassed' - clear the UI
       on_bypass()            the player gave up - tell the launcher
@@ -77,14 +75,20 @@ function Gate:start()
 		return
 	end
 	self:_begin_attempt()
-	fire(self, 'on_verifying', self.attempts)
 end
 
 -- Call every frame while blocking.
 function Gate:tick()
 	if self.state == S.VERIFYING and self.now() >= self.deadline then
 		self.state = S.PROMPTING
-		fire(self, 'on_prompt')
+	end
+end
+
+-- The server refused for a reason waiting cannot fix (an outdated launcher):
+-- ask the player now instead of at the end of the window.
+function Gate:failed()
+	if self.state == S.VERIFYING then
+		self.state = S.PROMPTING
 	end
 end
 
@@ -108,7 +112,6 @@ function Gate:keep_waiting()
 	end
 	self:_begin_attempt()
 	fire(self, 'on_attempt', self.attempts)
-	fire(self, 'on_verifying', self.attempts)
 end
 
 -- "Give up": Ranked is off for the rest of this Run.

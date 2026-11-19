@@ -52,6 +52,8 @@ local function on_integrity(msg)
 		A.server_verified = false
 		if MPAPI.IntegrityFailureReason.DEFINITE_FAILURES[msg.reason] then
 			warn_if_game_needs_launcher()
+			-- Waiting out the window cannot help: ask the player now.
+			if A.gate then A.gate:failed() end
 		end
 	end
 	-- A verdict makes the account verified for queues and rejoins
