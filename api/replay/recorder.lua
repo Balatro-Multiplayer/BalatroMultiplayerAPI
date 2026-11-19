@@ -428,17 +428,19 @@ end
 --
 -- joker_tokens: one string per owned joker, left to right: "j_key" or
 -- "j_key|edition" (e.g. "j_blueprint|foil").
+function RLOG.joker_token(card)
+	local key = card and card.config and card.config.center and card.config.center.key
+	if not key then return nil end
+	if card.edition and card.edition.type then return key .. "|" .. card.edition.type end
+	return key
+end
+
 function RLOG.joker_tokens()
 	local out = {}
 	local cards = G and G.jokers and G.jokers.cards
 	for i = 1, cards and #cards or 0 do
-		local card = cards[i]
-		local key = card and card.config and card.config.center and card.config.center.key
-		if key then
-			local token = key
-			if card.edition and card.edition.type then token = token .. "|" .. card.edition.type end
-			out[#out + 1] = token
-		end
+		local token = RLOG.joker_token(cards[i])
+		if token then out[#out + 1] = token end
 	end
 	return out
 end
