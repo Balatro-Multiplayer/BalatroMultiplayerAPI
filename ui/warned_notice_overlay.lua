@@ -49,45 +49,6 @@ local function warning_of(content)
 	return { message = message, warned_at = tonumber(content.warnedAt) }
 end
 
--- Splits text into lines of at most `width` characters at spaces (a longer
--- word is cut), keeping at most `max_lines` (the last ends in '...').
-local function wrap(text, width, max_lines)
-	local lines, line = {}, ''
-	local function push(l)
-		lines[#lines + 1] = l
-	end
-	for word in text:gmatch('%S+') do
-		while #word > width do
-			if line ~= '' then
-				push(line)
-				line = ''
-			end
-			push(word:sub(1, width))
-			word = word:sub(width + 1)
-		end
-		if line == '' then
-			line = word
-		elseif #line + 1 + #word <= width then
-			line = line .. ' ' .. word
-		else
-			push(line)
-			line = word
-		end
-	end
-	if line ~= '' then
-		push(line)
-	end
-	if max_lines and #lines > max_lines then
-		local kept = {}
-		for i = 1, max_lines do
-			kept[i] = lines[i]
-		end
-		kept[max_lines] = kept[max_lines]:sub(1, width - 3) .. '...'
-		return kept
-	end
-	return lines
-end
-
 -- "2026-10-21 14:05 UTC" from epoch ms, or nil.
 local function date_text(warned_at)
 	if not warned_at then
@@ -110,7 +71,7 @@ end
 
 local function warning_block(warning)
 	local rows = {}
-	for _, line in ipairs(wrap(warning.message, LINE_WIDTH, MAX_LINES_PER_WARNING)) do
+	for _, line in ipairs(MPAPI.wrap_words(warning.message, LINE_WIDTH, MAX_LINES_PER_WARNING)) do
 		rows[#rows + 1] = text_row(line, 0.34)
 	end
 	local date = date_text(warning.warned_at)
@@ -285,7 +246,6 @@ MPAPI.warned_notice_overlay = MPAPI.ui_element(create_UIBox_warned_notice_overla
 -- For tests: the pure helpers, the queue as it stands, and a way to feed it.
 MPAPI._internal.warned_notice = {
 	warning_of = warning_of,
-	wrap = wrap,
 	date_text = date_text,
 	queued = function()
 		return _state.queued
