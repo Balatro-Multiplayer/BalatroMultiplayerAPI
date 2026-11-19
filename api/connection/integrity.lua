@@ -42,7 +42,8 @@ local function on_integrity(msg)
 	MPAPI.sendDebugMessage(
 		'[integrity] server verdict: verified=' .. tostring(msg.verified == true) .. ' reason=' .. tostring(msg.reason)
 	)
-	if not A then
+	if not A or A.bypassed then
+		-- After the player gave up on Ranked no verdict may re-enable it.
 		return
 	end
 	if msg.verified then

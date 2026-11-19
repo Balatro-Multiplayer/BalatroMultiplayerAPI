@@ -306,6 +306,14 @@ return {
 			-- Ranked queue cancelled overlay (post-queue-join ranked_readiness
 			-- challenge refused/failed - see api/matchmaking/dispatch.lua)
 			k_ranked_queue_cancelled_title = 'Ranked Queue Cancelled',
+			-- Startup Ranked verification gate (ui/ranked_verify_gate.lua)
+			k_ranked_verifying_title = 'Verifying Ranked Status',
+			k_ranked_verifying_body = 'Checking with the BET launcher and the server...',
+			k_ranked_verify_failed_title = 'Could Not Verify Ranked Status',
+			k_ranked_verify_failed_body_1 = 'This can happen on a slow start or a slow connection.',
+			k_ranked_verify_failed_body_2 = 'Giving up disables Ranked until you restart the game.',
+			k_ranked_verify_keep_waiting = 'Keep Waiting',
+			k_ranked_verify_give_up = 'Give Up (No Ranked This Run)',
 			-- Account standing refusals (api/connection/standing.lua,
 			-- ui/mods_not_allowed_overlay.lua, ui/rejoin_refused_overlay.lua).
 			-- k_queue_refused_<code> / k_rejoin_refused_<code> are followed by

@@ -36,6 +36,11 @@ A.launcher_connected = false
 A.launcher_supervision_lost = false
 A.launcher_supervision_lost_at = nil
 
+-- Set when the player gives up on Ranked verification (see
+-- anticheat/verify_gate.lua). Irreversible for this process: every later
+-- challenge is refused and no verdict can flip server_verified back on.
+A.bypassed = false
+
 -- Whether the *server* has confirmed our most recent challenge response was
 -- actually correct - distinct from A.active/A.launcher_connected, which only
 -- describe the local mod<->launcher socket and say nothing about whether the
@@ -51,7 +56,13 @@ A.server_verified = false
 
 -- Called only from networking/connection.lua's challenge-topic handler.
 function A.mark_server_verified()
+	if A.bypassed then
+		return
+	end
 	A.server_verified = true
+	if A.gate then
+		A.gate:verified()
+	end
 	-- Repaint the main-menu VERIFIED text (ui/main_menu.lua) so it appears as
 	-- soon as the handshake actually completes, not just next time the
 	-- account panel happens to rebuild for some unrelated reason. Only safe
@@ -161,7 +172,7 @@ end
 -- fails fast with an explicit refusal instead of leaving the caller to wait
 -- out the server's own challenge timeout.
 function A.answer_challenge(challenge_id, kind, nonce, player_id)
-	if not A.active then
+	if not A.active or A.bypassed then
 		MPAPI.sendDebugMessage(
 			'[integrity] challenge ' .. tostring(challenge_id) .. ' refused locally: not launched through BET in Ranked'
 		)
@@ -285,6 +296,9 @@ end
 -- "run every frame" hook api/connection/lifecycle.lua already uses for the
 -- Nakama engine's update().
 function A.update()
+	if A.gate then
+		A.gate:tick()
+	end
 	if not rx_channel then
 		return
 	end
@@ -333,13 +347,19 @@ function A.update()
 			if MPAPI.account_button then
 				MPAPI.account_button:update()
 			end
+		elseif event.type == 'disconnected' then
+			-- The thread keeps retrying on its own; this only keeps
+			-- launcher_connected honest so challenges queue up meanwhile
+			-- instead of being sent into a dead socket.
+			A.launcher_connected = false
+			MPAPI.sendDebugMessage('Ranked anti-cheat channel dropped, retrying: ' .. tostring(event.message))
 		elseif event.type == 'fatal_error' then
-			-- The launcher already enforces its own handshake timeout (it
-			-- kills the game process if the mod never authenticates - see
-			-- rankedsupervisor.h) - this side doesn't need its own retry
-			-- loop or self-destructive fallback, just to stop trying and
-			-- log why. Any challenges still queued for this now-dead channel
-			-- can only ever be answered with a refusal.
+			-- Only unrecoverable setup problems end up here now (OpenSSL
+			-- missing, bad secret): connection trouble is retried inside
+			-- the thread, and the verify gate (anticheat/verify_gate.lua)
+			-- decides when the player gets asked what to do. Any
+			-- challenges still queued for this now-dead channel can only
+			-- ever be answered with a refusal.
 			MPAPI.sendWarnMessage('Ranked anti-cheat supervision channel failed: ' .. tostring(event.message))
 			A.launcher_connected = false
 			if #A._internal.pending_challenges > 0 then
@@ -406,6 +426,54 @@ MPAPI.update = function()
 	A.update()
 	MPAPI_update_ref()
 end
+
+-- Called when the player chooses "keep waiting": make the server issue a fresh
+-- login challenge. The loopback side needs nothing - its thread already
+-- retries on its own - but a thread that died outright is started again.
+local function begin_fresh_attempt()
+	if not thread and not A.bypassed then
+		start_thread()
+	end
+	local C = MPAPI._internal and MPAPI._internal.conn
+	if not C then
+		return
+	end
+	local state = MPAPI.connection_state and MPAPI.connection_state.state
+	if state == MPAPI.ConnectionState.CONNECTED then
+		-- Logged in but never verified: log in again to get a new challenge.
+		MPAPI.reconnect()
+	elseif state == MPAPI.ConnectionState.DISCONNECTED then
+		MPAPI.connect(C.last_opts or {})
+	end
+	-- Anything in between is already mid-login and will be challenged.
+end
+
+local Gate = MPAPI.load_mpapi_file('anticheat/verify_gate.lua')
+A.GateState = Gate.State
+A.gate = Gate.new({
+	now = love.timer.getTime,
+	hooks = {
+		on_attempt = begin_fresh_attempt,
+		on_bypass = function()
+			A.bypassed = true
+			A.server_verified = false
+			-- The launcher is told so it stops signing; see
+			-- RankedSupervisor::handleBypass().
+			if tx_channel then
+				tx_channel:push({ cmd = 'bypass' })
+			end
+			-- Anything already waiting on this channel can only be refused now.
+			for _, pending in ipairs(A._internal.pending_challenges) do
+				run_challenge_answered_callbacks({ challenge_id = pending.challenge_id, refused = true })
+			end
+			A._internal.pending_challenges = {}
+			MPAPI.sendWarnMessage('Ranked verification given up - Ranked is disabled for the rest of this run.')
+			if MPAPI.account_button then
+				MPAPI.account_button:update()
+			end
+		end,
+	},
+})
 
 start_thread()
 
