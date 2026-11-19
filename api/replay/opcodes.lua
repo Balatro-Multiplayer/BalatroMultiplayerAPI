@@ -30,6 +30,7 @@ MPAPI.OPCODE = {
 	LEAVE_SHOP = 'leave_shop',
 	IDOL_ROLL = 'idol_roll',
 	DECK_SNAPSHOT = 'deck_snapshot',
+	JOKER_HIT = 'joker_hit',
 	-- PvP.
 	READY_BLIND = 'ready_blind',
 	SET_ANTE_KEY = 'set_ante_key',

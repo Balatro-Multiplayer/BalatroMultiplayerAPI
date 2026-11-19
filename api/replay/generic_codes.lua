@@ -514,7 +514,7 @@ MPAPI.RLOG_CODE {
 -- Invisible's duplicate) and, for Ankh, the jokers it destroyed. No-op on
 -- replay.
 MPAPI.RLOG_CODE {
-	key = 'joker_hit',
+	key = MPAPI.OPCODE.JOKER_HIT,
 	mods = { 'pvp', 'spdrn' },
 	write = function(self, source, created, destroyed)
 		self:record({ source, created, destroyed })
@@ -568,28 +568,21 @@ local function record_joker_hit(source, before_cards)
 		before[card] = true
 	end
 	local created = {}
-	local created_keys = {}
 	for _, card in ipairs(joker_cards()) do
 		if not before[card] and not joker_hit_claimed[card] then
 			local token = RLOG.joker_token(card)
 			if token then
 				joker_hit_claimed[card] = true
 				created[#created + 1] = token
-				created_keys[#created_keys + 1] = card.config.center.key
 			end
 		end
 	end
 	local destroyed = {}
 	if source == 'ankh' and #created > 0 then
-		-- Ankh keeps one joker (the one it copied) plus any eternal ones and
-		-- dissolves the rest. The dissolves finish after this runs, so work
-		-- it out from the lineup before the effect.
-		local kept_copied = false
+		-- Ankh marks every joker it dissolves before it adds the copy, so by
+		-- now the marks say which real cards went, whatever their keys.
 		for _, card in ipairs(before_cards) do
-			local key = card.config and card.config.center and card.config.center.key
-			if not kept_copied and key == created_keys[1] then
-				kept_copied = true
-			elseif not (card.ability and card.ability.eternal) then
+			if card.getting_sliced or card.dissolve then
 				local token = RLOG.joker_token(card)
 				if token then destroyed[#destroyed + 1] = token end
 			end
