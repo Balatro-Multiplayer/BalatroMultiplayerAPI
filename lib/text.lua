@@ -138,7 +138,7 @@ MPAPI.wrap_words = function(s, width, max_lines)
 	if line ~= '' then
 		lines[#lines + 1] = line
 	end
-	if #lines > max_lines then
+	if max_lines and #lines > max_lines then
 		local last = lines[max_lines]
 		for i = #lines, max_lines, -1 do
 			lines[i] = nil
