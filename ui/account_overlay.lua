@@ -235,7 +235,7 @@ end
 account_info_rows = function(steam_name, name_colour, discord_linked)
 	local name_row = function(label, value, colour)
 		return account_info_row(label, {
-			{ n = G.UIT.O, config = { object = DynaText({ string = { value }, colours = { colour }, shadow = true, float = true, scale = 0.45 }) } },
+			{ n = G.UIT.O, config = { object = DynaText({ string = { value }, colours = { colour }, shadow = true, float = true, scale = 0.45, maxw = 4.3 }) } },
 		})
 	end
 	local rows = {

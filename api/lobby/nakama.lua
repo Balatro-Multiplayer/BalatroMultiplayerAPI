@@ -64,7 +64,7 @@ local function roster_from(players)
 		if p.id then
 			roster[p.id] = {
 				id = p.id,
-				displayName = p.displayName,
+				displayName = MPAPI.plain_letters(p.displayName),
 				preferredJoker = p.preferredJoker,
 				mods = p.mods,
 				-- MPAPI.Standing, worked out by the server; nil for a seat
