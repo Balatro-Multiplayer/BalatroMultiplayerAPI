@@ -1,6 +1,6 @@
--- Snapshot application also updates transport grace and setup on the release base.
+-- A snapshot carries the server capabilities onto the lobby, and a malformed value becomes an empty table.
 MPAPI = {
-	_internal = { lobby = { apply_setup = function() end } },
+	_internal = { lobby = { apply_setup = function() end, adopt_log_seq = function() end } },
 	networking = { nakama_lobby = { set_grace_seconds = function() end } },
 }
 dofile('api/lobby/nakama.lua')
