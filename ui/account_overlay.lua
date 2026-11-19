@@ -20,7 +20,7 @@ local fetch_history_page
 -- Rows per Match History page: what fits the overlay (a server page is 20).
 local HISTORY_ROWS_PER_PAGE = 10
 
--- Match History contrast (issue #67): G.C.UI.TEXT_INACTIVE is grey at 60%
+-- Match History contrast: G.C.UI.TEXT_INACTIVE is grey at 60%
 -- alpha (#88888899) and all but vanishes on the dark row panel, so headers and
 -- quiet statuses use an opaque light grey (~#dedede, about 5:1 on G.C.L_BLACK).
 local QUIET_TEXT = { 0.87, 0.87, 0.87, 1 }
