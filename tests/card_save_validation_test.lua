@@ -43,6 +43,12 @@ check("unknown center", v(save("j_nope", {}), G.jokers), false)
 check("consumable into jokers", v(save("c_fool", {}), G.jokers), false)
 check("joker into consumables", v(save("j_joker", { mult = 4 }), G.consumeables), false)
 check("function value", v(save("j_joker", { mult = 4, f = print }), G.jokers), false)
+local big = function() return { array = { 1.5, 12 }, sign = 1 } end
+check("big number x_mult", v(save("j_joker", { mult = 4, x_mult = big() }), G.jokers), true)
+check("big number matching a config number", v(save("j_joker", { mult = big() }), G.jokers), true)
+check("big number nested in extra", v(save("j_x", { extra = { rounds = big(), name = "b" } }), G.jokers), true)
+check("big number with a bad entry", v(save("j_joker", { mult = { array = { "x" }, sign = 1 } }), G.jokers), false)
+check("empty big number", v(save("j_joker", { mult = { array = {}, sign = 1 } }), G.jokers), false)
 check("not a table", v("x", G.jokers), false)
 
 if fails > 0 then os.exit(1) end

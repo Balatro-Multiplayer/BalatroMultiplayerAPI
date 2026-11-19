@@ -88,6 +88,23 @@ local function finite_number(v)
 	return type(v) == 'number' and v == v and v ~= math.huge and v ~= -math.huge
 end
 
+-- A Talisman or Amulet big number as it arrives in a save: a table with an array of finite numbers
+-- (and a sign). Those mods turn large ability values into these in place of Lua numbers.
+local function big_number(v)
+	if type(v) ~= 'table' or type(v.array) ~= 'table' then return false end
+	if v.sign ~= nil and not finite_number(v.sign) then return false end
+	local n = 0
+	for _, entry in pairs(v.array) do
+		n = n + 1
+		if n > MAX_ENTRIES or not finite_number(entry) then return false end
+	end
+	return n > 0
+end
+
+local function number_like(v)
+	return finite_number(v) or big_number(v)
+end
+
 -- Plain data only: primitives and tables of primitives, bounded in depth and size.
 local function plain_data(v, depth, budget)
 	local t = type(v)
@@ -111,8 +128,10 @@ local function matches_config(config, ability, depth)
 	if depth > MAX_DEPTH then return false end
 	for k, default in pairs(config) do
 		local v = ability[k]
+		if type(default) == 'number' and big_number(v) then goto continue end
 		if type(v) ~= type(default) then return false end
 		if type(default) == 'table' and not matches_config(default, v, depth + 1) then return false end
+		::continue::
 	end
 	return true
 end
@@ -131,7 +150,7 @@ function MPAPI.validate_card_save(save, area)
 	if not plain_data(ability, 1, { n = 0 }) then return false, 'ability is not plain data' end
 	for _, key in ipairs(NUMERIC_ABILITY_KEYS) do
 		local v = ability[key]
-		if v ~= nil and not finite_number(v) then return false, 'ability.' .. key .. ' is not a number' end
+		if v ~= nil and not number_like(v) then return false, 'ability.' .. key .. ' is not a number' end
 	end
 	if type(center.config) == 'table' and not matches_config(center.config, ability, 1) then
 		return false, "ability does not match the center's config"
@@ -140,8 +159,8 @@ function MPAPI.validate_card_save(save, area)
 end
 
 -- Rebuild a serialized card into an area (default G.jokers) and add it to the deck.
--- Returns the new Card, or nil on failure (including a payload that fails shape validation). Mirrors PvP's action_magnet_response, including
--- the base-game 1.0.1o VT.h workaround.
+-- Returns the new Card, or nil on failure (including a payload that fails shape
+-- validation). Mirrors PvP's action_magnet_response, including the base-game 1.0.1o VT.h workaround.
 function MPAPI.rebuild_card(str, area)
 	local save, err = MPAPI.decode(str)
 	if not save then
