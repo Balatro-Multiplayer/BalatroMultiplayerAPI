@@ -357,7 +357,7 @@ end
 -- Joins a lobby match. listener = { data(op, tbl), dropped(), rejoined(),
 -- lost(reason), refused_wait(err, retry) }; data is required, the rest
 -- optional. refused_wait returns true to hold a refused rejoin until it calls
--- retry(). cb(err_message).
+-- retry(), or retry(true) to take the refusal as final. cb(err_message).
 function NL.join(match_id, mod_id, listener, cb)
 	if match then
 		cb('Already in a Nakama lobby')
@@ -476,26 +476,35 @@ schedule_rejoin = function()
 				schedule_rejoin()
 				return
 			end
+			local function refused()
+				follow_seat(this, function(outcome)
+					if not outcome then
+						lose(err)
+						return
+					end
+					this.attempt = outcome == 'moved' and 1 or this.attempt + 1
+					schedule_rejoin()
+				end)
+			end
 			-- The listener may know this refusal clears by itself (a launcher
 			-- verdict that lapsed while the socket was down); it calls retry
-			-- once asking again is worth it.
+			-- once asking again is worth it, or retry(true) when the wait
+			-- ended in a refusal that will not clear.
 			local wait = this.listener.refused_wait
-			if wait and wait(err, function()
-				if match == this then
-					this.attempt = this.attempt + 1
-					schedule_rejoin()
+			if wait and wait(err, function(final)
+				if match ~= this then
+					return
 				end
+				if final then
+					refused()
+					return
+				end
+				this.attempt = this.attempt + 1
+				schedule_rejoin()
 			end) then
 				return
 			end
-			follow_seat(this, function(outcome)
-				if not outcome then
-					lose(err)
-					return
-				end
-				this.attempt = outcome == 'moved' and 1 or this.attempt + 1
-				schedule_rejoin()
-			end)
+			refused()
 		end)
 	end)
 end

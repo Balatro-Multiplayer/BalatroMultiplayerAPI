@@ -304,8 +304,9 @@ local function attach(lobby, match_id, on_ready)
 			end
 			lobby._reverified = true
 			MPAPI.match_log('debug', '[nakama_lobby] rejoin waits for a launcher verdict ' .. tostring(lobby.code))
-			MPAPI._internal.conn.verify_again(MPAPI.standing.VERDICT_WAIT_SECONDS, function()
-				retry()
+			MPAPI.rejoin_recheck.run(function(outcome)
+				-- A failed verdict is final: asking again gets the same refusal.
+				retry(outcome == MPAPI.VerdictOutcome.FAILED)
 			end)
 			return true
 		end,
