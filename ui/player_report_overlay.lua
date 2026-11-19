@@ -136,18 +136,10 @@ G.FUNCS.mpapi_report_player_reason = function(e)
 
 		_result_report_id = data and data.reportId
 
-		-- §15.5: hand the submitting player a link to their scoped status page.
+		-- The report is already sent. Its page opens once, logged in, to add detail
+		-- or withdraw; the link is never printed or copied.
 		if _result_report_id then
-			local base_url = MPAPI.get_web_url()
-			if base_url then
-				local link = base_url .. '/reports/' .. tostring(_result_report_id)
-				pcall(function()
-					if love.system and love.system.setClipboardText then
-						love.system.setClipboardText(link)
-					end
-				end)
-				MPAPI.chat.addMessage('[report] ' .. link .. ' (copied to clipboard)', { 1, 0.65, 0 })
-			end
+			MPAPI.open_web_page('/reports/' .. tostring(_result_report_id))
 		end
 
 		if MPAPI.player_report_overlay then MPAPI.player_report_overlay:update() end

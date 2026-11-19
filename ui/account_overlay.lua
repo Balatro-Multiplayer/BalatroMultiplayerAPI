@@ -20,6 +20,11 @@ local fetch_history_page
 -- Rows per Match History page: what fits the overlay (a server page is 20).
 local HISTORY_ROWS_PER_PAGE = 10
 
+-- Match History contrast (issue #67): G.C.UI.TEXT_INACTIVE is grey at 60%
+-- alpha (#88888899) and all but vanishes on the dark row panel, so headers and
+-- quiet statuses use an opaque light grey (~#dedede, about 5:1 on G.C.L_BLACK).
+local QUIET_TEXT = { 0.87, 0.87, 0.87, 1 }
+
 local build_account_overlay_inner
 local account_overlay_inner
 
@@ -211,7 +216,7 @@ account_info_row = function(label, value_nodes)
 	local label_w, value_w = 3.5, 4.5
 	return {
 		n = G.UIT.R,
-		config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05 },
+		config = { align = 'cm', padding = 0.05, r = 0.1, colour = G.C.L_BLACK, emboss = 0.05 },
 		nodes = {
 			{ n = G.UIT.C, config = { align = 'cm', padding = 0.05, minw = label_w, maxw = label_w }, nodes = {
 				{ n = G.UIT.T, config = { text = label, scale = 0.45, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
@@ -228,23 +233,33 @@ account_info_row = function(label, value_nodes)
 end
 
 account_info_rows = function(steam_name, name_colour, discord_linked)
-	local discord_value = discord_linked and MPAPI.connection_state.discord_name or localize('k_not_linked')
-	local discord_colour = discord_linked and G.C.GREEN or G.C.UI.TEXT_INACTIVE
+	local name_row = function(label, value, colour)
+		return account_info_row(label, {
+			{ n = G.UIT.O, config = { object = DynaText({ string = { value }, colours = { colour }, shadow = true, float = true, scale = 0.45, maxw = 4.3 }) } },
+		})
+	end
+	local rows = {
+		account_info_row(localize('k_id'), {
+			{ n = G.UIT.T, config = { text = MPAPI.connection_state.player_id, scale = 0.3, colour = G.C.UI.TEXT_INACTIVE } },
+		}),
+	}
+	if MPAPI.connection_state.username_banned then
+		-- While the username ban lasts, one row with the name everyone sees
+		-- replaces the Steam and Discord names.
+		rows[#rows + 1] = name_row(localize('k_account_username'), MPAPI.connection_state.display_name or steam_name, name_colour)
+	else
+		rows[#rows + 1] = name_row(localize('k_steam_username'), steam_name, name_colour)
+		rows[#rows + 1] = name_row(
+			localize('k_discord_username'),
+			discord_linked and MPAPI.connection_state.discord_name or localize('k_not_linked'),
+			discord_linked and G.C.GREEN or G.C.UI.TEXT_INACTIVE
+		)
+	end
 
 	return {
 		n = G.UIT.R,
 		config = { align = 'cm', padding = 0.1 },
-		nodes = {
-			account_info_row(localize('k_id'), {
-				{ n = G.UIT.T, config = { text = MPAPI.connection_state.player_id, scale = 0.3, colour = G.C.UI.TEXT_INACTIVE } },
-			}),
-			account_info_row(localize('k_steam_username'), {
-				{ n = G.UIT.O, config = { object = DynaText({ string = { steam_name }, colours = { name_colour }, shadow = true, float = true, scale = 0.45, maxw = 4.3 }) } },
-			}),
-			account_info_row(localize('k_discord_username'), {
-				{ n = G.UIT.O, config = { object = DynaText({ string = { discord_value }, colours = { discord_colour }, shadow = true, float = true, scale = 0.45, maxw = 4.3 }) } },
-			}),
-		},
+		nodes = rows,
 	}
 end
 
@@ -409,7 +424,7 @@ chat_section = function()
 		nodes = {
 			{
 				n = G.UIT.C,
-				config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05 },
+				config = { align = 'cm', padding = 0.05, r = 0.1, colour = G.C.L_BLACK, emboss = 0.05 },
 				nodes = nodes,
 			},
 		},
@@ -423,7 +438,7 @@ respectful_use_block = function()
 		nodes = {
 			{
 				n = G.UIT.C,
-				config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05 },
+				config = { align = 'cm', padding = 0.05, r = 0.1, colour = G.C.L_BLACK, emboss = 0.05 },
 				nodes = {
 					{ n = G.UIT.R, config = { align = 'cm', padding = 0.06 }, nodes = {
 						{ n = G.UIT.T, config = { text = localize('k_chat_respectful_use_title'), scale = 0.38, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
@@ -462,11 +477,11 @@ match_status_label_and_colour = function(status)
 		return localize('k_match_status_completed'), G.C.GREEN
 	end
 	if status == 'disputed' then return localize('k_match_status_disputed'), G.C.ORANGE end
-	if status == 'restarted' then return localize('k_match_status_restarted'), G.C.UI.TEXT_INACTIVE end
+	if status == 'restarted' then return localize('k_match_status_restarted'), QUIET_TEXT end
 	if status == 'active' then return localize('k_match_status_active'), G.C.GOLD end
-	if status == 'abandoned' then return localize('k_match_status_abandoned'), G.C.UI.TEXT_INACTIVE end
-	if status == 'terminated' then return localize('k_match_status_terminated'), G.C.UI.TEXT_INACTIVE end
-	return tostring(status), G.C.UI.TEXT_INACTIVE
+	if status == 'abandoned' then return localize('k_match_status_abandoned'), QUIET_TEXT end
+	if status == 'terminated' then return localize('k_match_status_terminated'), QUIET_TEXT end
+	return tostring(status), QUIET_TEXT
 end
 
 -- A rated run's rating change and the rating it left ('+12 (1512)'), green,
@@ -483,7 +498,7 @@ rating_change_label_and_colour = function(run)
 	if tonumber(rating.newRating) then
 		label = label .. string.format(' (%d)', rating.newRating)
 	end
-	local colour = delta > 0 and G.C.GREEN or delta < 0 and G.C.RED or G.C.UI.TEXT_INACTIVE
+	local colour = delta > 0 and G.C.GREEN or delta < 0 and G.C.RED or QUIET_TEXT
 	return label, colour
 end
 
@@ -501,12 +516,9 @@ match_history_row = function(run)
 	local can_replay = run.status ~= 'active'
 
 	G.FUNCS['mpapi_match_history_view_log_' .. run.id] = function()
-		local base_url = MPAPI.get_web_url()
-		if base_url then
-			-- The website (config web_url), like the sibling "View Report"
-			-- link (ui/player_report_overlay.lua).
-			love.system.openURL(base_url .. '/matches/' .. tostring(run.id))
-		end
+		-- Opens the match page logged in (a one-time login link), so a Device
+		-- login player lands on it signed in too.
+		MPAPI.open_web_page('/matches/' .. tostring(run.id))
 	end
 
 	G.FUNCS['mpapi_match_history_view_replay_' .. run.id] = function()
@@ -516,7 +528,7 @@ match_history_row = function(run)
 
 	return {
 		n = G.UIT.R,
-		config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05 },
+		config = { align = 'cm', padding = 0.05, r = 0.1, colour = G.C.L_BLACK, emboss = 0.05 },
 		nodes = {
 			{ n = G.UIT.C, config = { align = 'cl', minw = 2.2, padding = 0.05 }, nodes = {
 				{ n = G.UIT.T, config = { text = format_run_date(run), scale = 0.32, colour = G.C.UI.TEXT_LIGHT } },
@@ -578,7 +590,7 @@ build_history_tab_content = function()
 	-- Same column widths and padding as match_history_row, so the labels sit over their cells.
 	local function header_cell(minw, key)
 		return { n = G.UIT.C, config = { align = 'cl', minw = minw, padding = 0.05 }, nodes = {
-			{ n = G.UIT.T, config = { text = localize(key), scale = 0.28, colour = G.C.UI.TEXT_INACTIVE } },
+			{ n = G.UIT.T, config = { text = localize(key), scale = 0.3, colour = QUIET_TEXT } },
 		} }
 	end
 	local rows = { {

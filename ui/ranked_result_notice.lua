@@ -1,10 +1,6 @@
--- Chat line for RESULT_RANKED (111): a ranked match has settled. Every player it
--- rated gets one, including a player who left early. The match history shows the
--- same result, so an offline player misses nothing.
-local notify = MPAPI.networking.nakama_notify
-
-local COLOUR_SYSTEM = { 1, 1, 0 }
-
+-- Wording for the Notification kind result_ranked: a ranked match has settled.
+-- Every player it rated gets one, including a player who left early. Shown as a
+-- chat line when online, as a login overlay otherwise.
 local function describe(content)
 	local lines = { localize('k_ranked_result_ended') }
 	local place = tonumber(content.place)
@@ -29,8 +25,6 @@ end
 
 MPAPI.ranked_result_notice = { describe = describe }
 
-if notify then
-	notify.on(notify.Code.RESULT_RANKED, function(content)
-		MPAPI.chat.addMessage(describe(content), COLOUR_SYSTEM)
-	end)
+if MPAPI.notification_kinds then
+	MPAPI.notification_kinds.register('result_ranked', describe)
 end

@@ -54,6 +54,10 @@ function M.ban_body(ban)
 end
 
 local function on_banned(ban)
+	-- A username ban reaches the player as a Notification, not as a ban push.
+	if ban.banType == 'username' then
+		return
+	end
 	local kind = TITLES[ban.banType] and ban.banType or 'account'
 	MPAPI.sendWarnMessage('[moderation] ' .. kind .. ' ban: ' .. tostring(ban.reason))
 	if kind == 'queue' and MPAPI.matchmaking and MPAPI.matchmaking.leave_all then

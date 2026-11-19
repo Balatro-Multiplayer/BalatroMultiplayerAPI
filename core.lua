@@ -182,11 +182,16 @@ G.E_MANAGER:add_event(Event({
 	blockable = false,
 	blocking = false,
 	func = function()
-		if not G.STEAM then
+		-- Waits for luasteam, unless a Steam provider stands in for it. A
+		-- provider still settling defers the first connect to provider_changed().
+		local steam = MPAPI.networking.steam
+		if not G.STEAM and not (steam and steam.provider()) then
 			return false
 		end
 		MPAPI._internal.set_ready(true)
-		MPAPI.connect()
+		if not (steam and steam.begin_startup_wait()) then
+			MPAPI.connect()
+		end
 		MPAPI._internal.run_ready_callbacks()
 		return true
 	end,

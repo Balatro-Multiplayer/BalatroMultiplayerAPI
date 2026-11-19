@@ -264,12 +264,41 @@ end
 -- reproducible server-side (Node's JSON.stringify over the same tuple shape)
 -- without needing to match Lua's dict key-iteration order, since the whole
 -- input is array-shaped end to end.
-local function canonical_hash_input()
+local function canonical_hash_input(count)
 	local parts = {}
-	for _, ev in ipairs(RLOG._structured_events) do
-		parts[#parts + 1] = encode_event_tuple(ev)
+	for i = 1, count or #RLOG._structured_events do
+		parts[#parts + 1] = encode_event_tuple(RLOG._structured_events[i])
+	end
+	-- A log resumed after a crash holds only the events since the resume. The ones before
+	-- come as the text the server hashes (RLOG.resume_run), which leads the input as it is.
+	local prefix = RLOG._resumed and RLOG._prefix
+	if prefix then
+		local lead = prefix.text:sub(1, -2)
+		if lead ~= "[" and #parts > 0 then
+			lead = lead .. ","
+		end
+		return lead .. table.concat(parts, ",") .. "]"
 	end
 	return "[" .. table.concat(parts, ",") .. "]"
+end
+
+-- How many events this run has recorded so far, and the SHA-256 of their canonical
+-- encoding: the CHK hash the log would carry if the run ended now. A Run save keeps both so
+-- a later reader can tell whether the log it downloaded is the one the save was taken from.
+-- nil when the log cannot be hashed: no run is being recorded, or the run was resumed after
+-- a crash without the server's text of the events before it (RLOG.resume_run's third
+-- argument), so the hash would cover a partial log.
+function RLOG.log_position()
+	if not RLOG._run_active then
+		return nil
+	end
+	local prefix = RLOG._resumed and RLOG._prefix
+	if RLOG._resumed and not prefix then
+		return nil
+	end
+	local count = #RLOG._structured_events
+	local hash = love.data.encode("string", "hex", love.data.hash("sha256", canonical_hash_input(count)))
+	return count + (prefix and prefix.count or 0), hash
 end
 
 -- Cheap Adler-style checksum for the human stream (never server-verified,
@@ -399,17 +428,19 @@ end
 --
 -- joker_tokens: one string per owned joker, left to right: "j_key" or
 -- "j_key|edition" (e.g. "j_blueprint|foil").
+function RLOG.joker_token(card)
+	local key = card and card.config and card.config.center and card.config.center.key
+	if not key then return nil end
+	if card.edition and card.edition.type then return key .. "|" .. card.edition.type end
+	return key
+end
+
 function RLOG.joker_tokens()
 	local out = {}
 	local cards = G and G.jokers and G.jokers.cards
 	for i = 1, cards and #cards or 0 do
-		local card = cards[i]
-		local key = card and card.config and card.config.center and card.config.center.key
-		if key then
-			local token = key
-			if card.edition and card.edition.type then token = token .. "|" .. card.edition.type end
-			out[#out + 1] = token
-		end
+		local token = RLOG.joker_token(cards[i])
+		if token then out[#out + 1] = token end
 	end
 	return out
 end
@@ -509,6 +540,7 @@ function RLOG.begin_run()
 	RLOG._card_ids = {}
 	RLOG._next_card_id = 0
 	RLOG._resumed = false
+	RLOG._prefix = nil
 end
 
 -- Resume recording a match this client was already recording, after a crash-relaunch
@@ -523,11 +555,12 @@ end
 -- this player, when its handlers resolve refs at all -- PvP's are positional) additionally
 -- gives those restored cards their recorded ids back.
 --
--- A resumed block closes with END but no CHK: the CHK hash covers the whole log the server
--- holds, and the pre-crash part only comes back parsed (run_active), so its object-valued
--- args (match_manifest, lobby_info) can't be re-encoded in their original key order -- a
--- claimed hash would read as tampering ('mismatch' -> flagged, unrated). Without one the
--- server's check is 'unavailable', as it was for a rejoined player before.
+-- A resumed block closes with END and a CHK only when `log_text` is given: the CHK hash covers
+-- the whole log the server holds, and the pre-crash part only comes back parsed (run_active), so
+-- its object-valued args (match_manifest, lobby_info) can't be re-encoded in their original key
+-- order. The server's own text of them can lead the hash input as it is. Without that text a
+-- claimed hash would read as tampering ('mismatch' -> flagged, unrated), so the block closes
+-- with no CHK and the server's check is 'unavailable'.
 -- The highest card id first seen in an event's args: a first-seen ref is the only array
 -- shaped { -id, kind, ... } (see card_ref), so it can't be confused with a plain index list.
 local function max_first_seen_id(v, best)
@@ -541,9 +574,16 @@ local function max_first_seen_id(v, best)
 	return best
 end
 
-function RLOG.resume_run(events, cards_by_id)
+--
+-- `log_text` (optional) is the text the server hashes the events over: the same events as one
+-- JSON array, in the form they arrived in (ActiveRun.logText). With it the resumed log can
+-- still give a log position and hash (RLOG.log_position) over the whole log.
+function RLOG.resume_run(events, cards_by_id, log_text)
 	RLOG.begin_run()
 	RLOG._resumed = true
+	if type(log_text) == "string" and log_text:sub(-1) == "]" then
+		RLOG._prefix = { text = log_text, count = #(events or {}) }
+	end
 	local last_t = 0
 	for _, ev in ipairs(events or {}) do
 		if type(ev.t) == "number" and ev.t > last_t then last_t = ev.t end
@@ -592,8 +632,8 @@ function RLOG.end_run(outcome)
 	local human_hash = cheap_hash(human_str)
 	local bytes = #carbon_str + #human_str
 
-	if RLOG._resumed then
-		-- See resume_run: no hash for a block resumed after a crash-rejoin.
+	if RLOG._resumed and not RLOG._prefix then
+		-- See resume_run: without the server's text of the earlier events there is no hash to claim.
 		RLOG._run_active = false
 		return nil, nil
 	end

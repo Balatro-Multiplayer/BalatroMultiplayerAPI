@@ -1,5 +1,9 @@
 MPAPI.chat = {}
 
+-- A mod sets this to true while its own text field has focus, so the chat key
+-- types a character instead of opening the chat.
+MPAPI.text_input_active = false
+
 local COLOUR_INCOMING = { 0, 1, 1 } -- cyan  — other players
 local COLOUR_OWN = { 0.65, 0.36, 1 } -- BMP purple — own messages
 local COLOUR_SYSTEM = { 1, 1, 0 } -- yellow — system notices
@@ -21,6 +25,14 @@ local _lobby_chat_active = false
 function MPAPI.chat.get_key()
 	local key = MPAPI.config.chat_key
 	return (type(key) == 'string' and key ~= '') and key:lower() or 't'
+end
+
+-- True when `key` should open the chat: it is the chat key and no text field
+-- has focus (a game text box, or a mod's own field that sets
+-- MPAPI.text_input_active), where the key would otherwise swallow typing.
+function MPAPI.chat.opens_on(key)
+	local typing = (G and G.CONTROLLER and G.CONTROLLER.text_input_hook) or MPAPI.text_input_active
+	return key == MPAPI.chat.get_key() and not typing
 end
 
 -- Set by the account overlay's "Chat Key" button; the next key press is then

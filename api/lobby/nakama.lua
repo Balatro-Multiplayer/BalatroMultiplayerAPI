@@ -105,6 +105,9 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	lobby.type = snapshot.type or 'private'
 	lobby.host_id = snapshot.hostId
 	lobby.is_host = snapshot.hostId == lobby.player_id
+	-- Server-advertised protocol versions, not host-editable metadata.
+	-- Missing on older servers: consumers must treat that as unsupported.
+	lobby.server_features = type(snapshot.serverFeatures) == 'table' and snapshot.serverFeatures or {}
 	lobby._metadata = type(snapshot.metadata) == 'table' and snapshot.metadata or {}
 	lobby._player_state = snapshot.ownState
 	lobby._players = roster
@@ -149,6 +152,8 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	else
 		lobby._game.started = nil
 	end
+
+	L.adopt_log_seq(lobby, game.logSeq)
 
 	L.apply_setup(lobby, type(game.setup) == 'table' and game.setup or { results = {} }, not announce)
 
@@ -217,7 +222,7 @@ local function on_data(lobby, on_ready, op, data)
 			on_ready(lobby)
 		else
 			-- The seat is back: send the replay events kept while the socket was down.
-			L.flush_log_events(lobby)
+			L.resend_log_events(lobby)
 		end
 	elseif op == ServerOp.EVENT then
 		L.apply_event(lobby, data)
@@ -288,11 +293,28 @@ local function attach(lobby, match_id, on_ready)
 		dropped = function()
 			MPAPI.match_log('debug', '[nakama_lobby] socket dropped, rejoining ' .. tostring(lobby.code))
 		end,
+		-- A rejoin refused only because the launcher verdict lapsed while the
+		-- socket was down (it lasts 6 minutes and is renewed over the socket):
+		-- verify again and retry, once per drop, instead of losing the lobby
+		-- and replaying the run.
+		refused_wait = function(err, retry)
+			local refusal = MPAPI.standing.parse_rejoin_refusal(err)
+			if not refusal or refusal.code ~= MPAPI.RejoinRefusalCode.VERIFICATION_PENDING or lobby._reverified then
+				return false
+			end
+			lobby._reverified = true
+			MPAPI.match_log('debug', '[nakama_lobby] rejoin waits for a launcher verdict ' .. tostring(lobby.code))
+			MPAPI._internal.conn.verify_again(MPAPI.standing.VERDICT_WAIT_SECONDS, function()
+				retry()
+			end)
+			return true
+		end,
 		rejoined = function()
+			lobby._reverified = nil
 			lobby._server_restarting = nil
 			-- Usually a no-op: the rejoin snapshot already flushed. It catches the
 			-- case where that snapshot came before the socket counted as up.
-			L.flush_log_events(lobby)
+			L.resend_log_events(lobby)
 			MPAPI.match_log('debug', '[nakama_lobby] rejoined ' .. tostring(lobby.code))
 			-- The new session starts as "not catching up" on the server.
 			if lobby._catching_up then

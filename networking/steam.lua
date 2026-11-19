@@ -16,8 +16,123 @@ local function get_luasteam()
 	return G and G.STEAM
 end
 
+-----------------------------
+-- STEAM PROVIDER
+-----------------------------
+
+-- One mod can register as the Steam provider: it gives the Steam id, Steam
+-- name and Steam tickets in place of the Steam client, and wins even while the
+-- Steam client runs. The provider's tickets are checked by the server like any
+-- other Steam ticket.
+--
+-- provider = {
+--   mod = 'ModName',            -- named in the refusal warning of a second registration
+--   ready = function() -> bool, -- can give a ticket now
+--   not_ready_message = function() -> string,
+--                               -- why it is not ready, already localized; the menu shows it
+--   get_steam_id = function() -> id | nil, err
+--   get_persona_name = function() -> name | nil, err
+--   get_auth_ticket = function() -> { ticket = hex, handle = n } | nil, err
+--   cancel_auth_ticket = function(handle)
+--   settled = function() -> bool,
+--                               -- optional: false while the provider is still starting up
+--                               -- (for example, logging in from a stored login). The first
+--                               -- connect at startup waits until it is true.
+-- }
+-- The four get/cancel functions return what the Steam client versions below return.
+--
+-- The provider calls steam.provider_changed() whenever ready() or settled() may
+-- have changed. MPAPI then connects a disconnected client: once when the
+-- provider becomes ready (again after a logout too), and the deferred first
+-- connect when the provider settles. A live connection is never touched.
+local provider = nil
+-- The first connect at startup is waiting for the provider to settle.
+local startup_waiting = false
+-- ready() when provider_changed last looked, so only a change to ready connects.
+local was_ready = false
+
+local function mod_name(p)
+	return tostring(p.mod or 'unknown mod')
+end
+
+local function provider_ready()
+	return provider.ready() and true or false
+end
+
+local REQUIRED_FUNCTIONS = { 'ready', 'not_ready_message', 'get_steam_id', 'get_persona_name', 'get_auth_ticket', 'cancel_auth_ticket' }
+
+-- Returns true when `p` is now the provider, false when another mod holds it.
+function steam.register_provider(p)
+	if provider then
+		warn('Steam provider from ' .. mod_name(p) .. ' refused: ' .. mod_name(provider) .. ' is already the provider')
+		return false
+	end
+	for _, field in ipairs(REQUIRED_FUNCTIONS) do
+		if type(p[field]) ~= 'function' then
+			warn('Steam provider from ' .. mod_name(p) .. ' refused: missing function ' .. field)
+			return false
+		end
+	end
+	provider = p
+	log('Steam provider registered by ' .. mod_name(p))
+	return true
+end
+
+-- The registered provider, or nil.
+function steam.provider()
+	return provider
+end
+
+-- Startup (core.lua): starts the wait for a provider that is still settling.
+-- Returns true when the first connect must wait; provider_changed() runs it later.
+function steam.begin_startup_wait()
+	if not provider then
+		return false
+	end
+	was_ready = provider_ready()
+	startup_waiting = provider.settled ~= nil and not provider.settled()
+	return startup_waiting
+end
+
+function steam.provider_changed()
+	if not provider then
+		return
+	end
+	local ready = provider_ready()
+	local became_ready = ready and not was_ready
+	was_ready = ready
+	if MPAPI.connection_state.state ~= MPAPI.ConnectionState.DISCONNECTED then
+		return
+	end
+	if MPAPI.account_button then
+		MPAPI.account_button:update()
+	end
+	if startup_waiting then
+		if provider.settled and not provider.settled() then
+			return
+		end
+		startup_waiting = false
+		MPAPI.connect()
+	elseif became_ready and MPAPI.is_ready() then
+		MPAPI.disconnect()
+		MPAPI.connect(MPAPI.get_last_opts() or {})
+	end
+end
+
 function steam.available()
+	if provider then
+		return provider_ready()
+	end
 	return get_luasteam() ~= nil
+end
+
+-- Why available() is false: an MPAPI.OfflineReason and, for a provider, its
+-- own message text.
+function steam.unavailable_reason()
+	if provider then
+		return MPAPI.OfflineReason.STEAM_PROVIDER_NOT_READY, provider.not_ready_message()
+	end
+	return MPAPI.OfflineReason.STEAM_NOT_RUNNING
 end
 
 function steam.get_steam_id()
@@ -264,6 +379,18 @@ else
 		return nil, 'FFI not available for auth tickets'
 	end
 	function steam.cancel_auth_ticket() end
+end
+
+-- With a provider registered it answers instead of the Steam client. Same
+-- return shapes, so the connection code does not change.
+for _, name in ipairs({ 'get_steam_id', 'get_persona_name', 'get_auth_ticket', 'cancel_auth_ticket' }) do
+	local client_version = steam[name]
+	steam[name] = function(...)
+		if provider then
+			return provider[name](...)
+		end
+		return client_version(...)
+	end
 end
 
 MPAPI.networking.steam = steam

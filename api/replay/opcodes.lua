@@ -28,6 +28,8 @@ MPAPI.OPCODE = {
 	SELECT_BLIND = 'select_blind',
 	SKIP_BLIND = 'skip_blind',
 	LEAVE_SHOP = 'leave_shop',
+	IDOL_ROLL = 'idol_roll',
+	DECK_SNAPSHOT = 'deck_snapshot',
 	-- PvP.
 	READY_BLIND = 'ready_blind',
 	SET_ANTE_KEY = 'set_ante_key',

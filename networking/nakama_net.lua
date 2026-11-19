@@ -173,10 +173,23 @@ local function wrap_tls(sock, host, timeout)
 	return stream
 end
 
+-- The host itself when it is a dotted IPv4 address, else nil. Some luasocket
+-- resolvers reject IP literals, so those never go through DNS.
+function M.ipv4_literal(host)
+	local a, b, c, d = tostring(host):match('^(%d+)%.(%d+)%.(%d+)%.(%d+)$')
+	if a and tonumber(a) <= 255 and tonumber(b) <= 255 and tonumber(c) <= 255 and tonumber(d) <= 255 then
+		return host
+	end
+	return nil
+end
+
 -- Opens a stream to host:port, TLS when use_tls. timeout (seconds) bounds
 -- the connect and every later blocking send.
 function M.open(host, port, use_tls, timeout)
-	local ip, dns_err = socket.dns.toip(host)
+	local ip, dns_err = M.ipv4_literal(host), nil
+	if not ip then
+		ip, dns_err = socket.dns.toip(host)
+	end
 	if not ip then
 		return nil, 'DNS: ' .. tostring(dns_err)
 	end

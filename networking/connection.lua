@@ -86,6 +86,10 @@ function connection.new(opts)
 		MPAPI.on_launcher_challenge_answered(function(result)
 			if current_instance then
 				current_instance:_publish_challenge_response(result)
+			else
+				MPAPI.sendWarnMessage(
+					'[integrity] challenge ' .. tostring(result.challenge_id) .. ' answer dropped: no active connection'
+				)
 			end
 		end)
 	end
@@ -136,6 +140,7 @@ function connection:_apply_player(player)
 	self.discord_name = player.discordUsername or nil
 	self.display_name = player.displayName or self.steam_name
 	self.use_discord_name = player.useDiscordName or false
+	self.username_banned = player.usernameBanned or false
 	self.preferred_joker = player.preferredJoker or 'j_joker'
 	self.discord_linked = player.discordLinked or false
 	if player.privileges then
@@ -364,13 +369,24 @@ function connection:_login_refused(prefix, message, offline_reason, answered)
 	})
 end
 
+-- Fails the connect because Steam gives no login: the Steam client is not
+-- running, or the Steam provider is not ready (with its own message).
+function connection:_fail_steam_unavailable(message)
+	if not self.steam then
+		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, message)
+		return
+	end
+	local reason, provider_message = self.steam.unavailable_reason()
+	fail(self, reason, message, provider_message)
+end
+
 -- The Steam ticket goes to Nakama as a custom login: Nakama's built-in Steam
 -- check needs Balatro's publisher key, so the server's runtime hook checks
 -- the ticket in vars.steam_ticket and replaces the placeholder id with
 -- "steamhash:<64 hex>" (a hash of the SteamID, never the SteamID itself).
 function connection:_try_steam_auth()
 	if not self.steam or not self.steam.available() then
-		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam is not available')
+		self:_fail_steam_unavailable('Steam is not available')
 		return
 	end
 
@@ -415,7 +431,7 @@ end
 function connection:_try_device_auth()
 	local steam_id, err = self.steam.get_steam_id()
 	if not steam_id then
-		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam id unavailable: ' .. tostring(err))
+		self:_fail_steam_unavailable('Steam id unavailable: ' .. tostring(err))
 		return
 	end
 	self.nakama_client.authenticate_device(steam_id, nil, true, nil, function(session)
@@ -490,7 +506,7 @@ function connection:connect()
 	end
 
 	if not self.steam or not self.steam.available() then
-		fail(self, MPAPI.OfflineReason.STEAM_NOT_RUNNING, 'Steam is not available')
+		self:_fail_steam_unavailable('Steam is not available')
 		return
 	end
 
@@ -570,6 +586,9 @@ end
 -- on_launcher_challenge_answered callback, not a return value from here.
 function connection:_answer_launcher_challenge(challenge_id, kind, nonce)
 	if not MPAPI.anticheat or not MPAPI.anticheat.answer_challenge then
+		MPAPI.sendWarnMessage(
+			'[integrity] challenge ' .. tostring(challenge_id) .. ' not relayed: anticheat module unavailable'
+		)
 		return
 	end
 	MPAPI.anticheat.answer_challenge(challenge_id, kind, nonce, self.player_id)
@@ -587,6 +606,9 @@ end
 -- RANKED_READINESS_SPEC.md in the server repo for the exact wire contract.
 function connection:_publish_challenge_response(result)
 	if not self.player_id then
+		MPAPI.sendWarnMessage(
+			'[integrity] challenge ' .. tostring(result.challenge_id) .. ' answer dropped: no player id on this connection'
+		)
 		return
 	end
 
@@ -604,9 +626,14 @@ function connection:_publish_challenge_response(result)
 		body.response = result.signature
 	end
 
+	local shape = result.refused and 'refused' or (result.launcher_current ~= nil and 'readiness' or 'signature')
+	local challenge_id = tostring(result.challenge_id)
+	MPAPI.sendDebugMessage('[integrity] challenge ' .. challenge_id .. ' sending answer to server (' .. shape .. ')')
 	self:_nakama_rpc('launcher_challenge_answer', body, function(err)
 		if err then
 			MPAPI.sendWarnMessage('launcher_challenge_answer failed: ' .. tostring(err))
+		else
+			MPAPI.sendDebugMessage('[integrity] challenge ' .. challenge_id .. ' answer accepted by server RPC')
 		end
 	end)
 end

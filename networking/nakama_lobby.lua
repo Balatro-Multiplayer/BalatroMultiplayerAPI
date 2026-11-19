@@ -9,7 +9,7 @@
 local NL = {}
 
 -- Must match nakama/src/lobby/protocol.ts.
-NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6 }
+NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6, SPECTATE_VIEW = 7 }
 NL.ServerOp = {
 	SNAPSHOT = 100,
 	EVENT = 101,
@@ -25,6 +25,8 @@ NL.ServerOp = {
 	REPLAY_TAIL = 111,
 	-- The lobby's group queue changed (nakama/src/lobby/group_queue.ts).
 	GROUP_QUEUE = 112,
+	-- A spectator's answer to SPECTATE_VIEW: the watched player's Run save and the events after it.
+	SPECTATE_RUN = 113,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'
@@ -260,8 +262,9 @@ local function with_socket(cb)
 		s.on_error(function(message)
 			MPAPI.sendWarnMessage('[nakama_lobby] socket error: ' .. error_message(message, '?'))
 		end)
-		s.on_disconnect(function()
+		s.on_disconnect(function(reason)
 			if socket == s then
+				MPAPI.sendWarnMessage('[nakama_lobby] socket lost: ' .. tostring(reason or '?'))
 				on_socket_disconnect()
 			end
 		end)
@@ -273,6 +276,7 @@ local function with_socket(cb)
 			socket_open = ok and true or false
 			if not ok then
 				socket = nil
+				MPAPI.sendWarnMessage('[nakama_lobby] socket connect failed: ' .. tostring(message or '?'))
 			end
 			flush_waiters(socket_open, message)
 			if socket_open and #lost_tickets > 0 then
@@ -341,7 +345,8 @@ local function send_join(cb)
 		end
 		socket.match_join(match.id, nil, match.metadata, function(result)
 			if result and result.error then
-				cb(error_message(result, 'Could not join the lobby'), false)
+				-- A socket lost before the reply is a transport failure, not a refusal.
+				cb(error_message(result, 'Could not join the lobby'), result.socket_closed == true)
 				return
 			end
 			cb(nil)
@@ -350,7 +355,9 @@ local function send_join(cb)
 end
 
 -- Joins a lobby match. listener = { data(op, tbl), dropped(), rejoined(),
--- lost(reason) }; data is required, the rest optional. cb(err_message).
+-- lost(reason), refused_wait(err, retry) }; data is required, the rest
+-- optional. refused_wait returns true to hold a refused rejoin until it calls
+-- retry(). cb(err_message).
 function NL.join(match_id, mod_id, listener, cb)
 	if match then
 		cb('Already in a Nakama lobby')
@@ -469,6 +476,18 @@ schedule_rejoin = function()
 				schedule_rejoin()
 				return
 			end
+			-- The listener may know this refusal clears by itself (a launcher
+			-- verdict that lapsed while the socket was down); it calls retry
+			-- once asking again is worth it.
+			local wait = this.listener.refused_wait
+			if wait and wait(err, function()
+				if match == this then
+					this.attempt = this.attempt + 1
+					schedule_rejoin()
+				end
+			end) then
+				return
+			end
 			follow_seat(this, function(outcome)
 				if not outcome then
 					lose(err)
@@ -573,6 +592,17 @@ function NL.unspectate()
 	if watched and socket and socket_open then
 		socket.match_data_send(watched.id, NL.ClientOp.LEAVE, '{}', nil, true, ignore)
 	end
+end
+
+-- Asks for the run of the player being watched (SPECTATE_RUN answers). from_start asks for the
+-- whole log and no Run save. False when not spectating.
+function NL.spectate_view(player_id, from_start)
+	local watched = spectating
+	if not (watched and socket and socket_open) then
+		return false
+	end
+	socket.match_data_send(watched.id, NL.ClientOp.SPECTATE_VIEW, MPAPI.json_encode({ playerId = player_id, fromStart = from_start and true or nil }), nil, true, ignore)
+	return true
 end
 
 function NL.is_spectating()

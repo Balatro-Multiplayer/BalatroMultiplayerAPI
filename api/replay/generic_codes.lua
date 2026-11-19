@@ -506,6 +506,26 @@ MPAPI.RLOG_CODE {
 	end,
 }
 
+-- joker_hit: [source, created, destroyed] -- the result of an RNG joker effect
+-- the game itself never logs. source is "wraith", "judgement", "soul",
+-- "riffraff", "ankh" or "invisible"; created and destroyed are joker tokens
+-- (see RLOG.joker_tokens): what the effect added to the lineup (the joker
+-- Wraith, Judgement or The Soul makes, Riff-Raff's Commons, Ankh's copy,
+-- Invisible's duplicate) and, for Ankh, the jokers it destroyed. No-op on
+-- replay.
+MPAPI.RLOG_CODE {
+	key = 'joker_hit',
+	mods = { 'pvp', 'spdrn' },
+	write = function(self, source, created, destroyed)
+		self:record({ source, created, destroyed })
+	end,
+	replay = function(self, _args, ctx)
+		if ctx.schema_version >= 1 then
+			-- no-op
+		end
+	end,
+}
+
 -------------------------------------------------------------------------------
 -- The single, shared hook installation -- one wrap per vanilla function.
 -------------------------------------------------------------------------------
@@ -516,8 +536,128 @@ function ease_dollars(mod, instant)
 	return ease_dollars_ref(mod, instant)
 end
 
+-- Joker-hit recording (Wraith, Ankh, a sold Invisible Joker). The game rolls
+-- these with its own seeds and logs nothing, so compare the joker lineup
+-- before and after the effect and record what appeared. Everything here runs
+-- under pcall: a recording problem must never affect play.
+local JOKER_HIT_CONSUMABLES = {
+	c_wraith = 'wraith',
+	c_mp_wraith = 'wraith',
+	c_judgement = 'judgement',
+	c_soul = 'soul',
+	c_ankh = 'ankh',
+}
+
+-- Cards a hit has already been recorded for. Two Riff-Raffs (or a Blueprint
+-- copy) trigger back to back from the same lineup, so without this each would
+-- claim the other's new jokers too.
+local joker_hit_claimed = setmetatable({}, { __mode = 'k' })
+
+local function joker_cards()
+	local out = {}
+	local cards = G and G.jokers and G.jokers.cards
+	for i = 1, cards and #cards or 0 do
+		out[#out + 1] = cards[i]
+	end
+	return out
+end
+
+local function record_joker_hit(source, before_cards)
+	local before = {}
+	for _, card in ipairs(before_cards) do
+		before[card] = true
+	end
+	local created = {}
+	local created_keys = {}
+	for _, card in ipairs(joker_cards()) do
+		if not before[card] and not joker_hit_claimed[card] then
+			local token = RLOG.joker_token(card)
+			if token then
+				joker_hit_claimed[card] = true
+				created[#created + 1] = token
+				created_keys[#created_keys + 1] = card.config.center.key
+			end
+		end
+	end
+	local destroyed = {}
+	if source == 'ankh' and #created > 0 then
+		-- Ankh keeps one joker (the one it copied) plus any eternal ones and
+		-- dissolves the rest. The dissolves finish after this runs, so work
+		-- it out from the lineup before the effect.
+		local kept_copied = false
+		for _, card in ipairs(before_cards) do
+			local key = card.config and card.config.center and card.config.center.key
+			if not kept_copied and key == created_keys[1] then
+				kept_copied = true
+			elseif not (card.ability and card.ability.eternal) then
+				local token = RLOG.joker_token(card)
+				if token then destroyed[#destroyed + 1] = token end
+			end
+		end
+	end
+	if #created > 0 then MPAPI.RLOGCodes.joker_hit:write(source, created, destroyed) end
+end
+
+local use_consumeable_ref = Card.use_consumeable
+function Card:use_consumeable(...)
+	local key = self.config and self.config.center and self.config.center.key
+	local source = key and JOKER_HIT_CONSUMABLES[key]
+	if source and RLOG.is_active() then
+		local ok, before = pcall(joker_cards)
+		local result = use_consumeable_ref(self, ...)
+		if ok then
+			-- Queued after the card's own events, so the new joker is in
+			-- the lineup by the time this runs.
+			pcall(function()
+				G.E_MANAGER:add_event(Event({
+					trigger = 'after',
+					delay = 0.1,
+					func = function()
+						pcall(record_joker_hit, source, before)
+						return true
+					end,
+				}))
+			end)
+		end
+		return result
+	end
+	return use_consumeable_ref(self, ...)
+end
+
+-- Riff-Raff creates two Common jokers when a blind is selected (also when a
+-- Blueprint/Brainstorm copies it). calculate_joker runs very often, so bail
+-- out on the context check before doing anything else.
+local calculate_joker_ref = Card.calculate_joker
+function Card:calculate_joker(context, ...)
+	if
+		context
+		and context.setting_blind
+		and self.ability
+		and self.ability.name == 'Riff-raff'
+		and RLOG.is_active()
+	then
+		local ok, before = pcall(joker_cards)
+		local results = { calculate_joker_ref(self, context, ...) }
+		if ok then
+			pcall(function()
+				G.E_MANAGER:add_event(Event({
+					trigger = 'after',
+					delay = 0.1,
+					func = function()
+						pcall(record_joker_hit, 'riffraff', before)
+						return true
+					end,
+				}))
+			end)
+		end
+		return unpack(results)
+	end
+	return calculate_joker_ref(self, context, ...)
+end
+
 local sell_card_ref = Card.sell_card
 function Card:sell_card()
+	local invisible_before = nil
 	if self.ability and self.ability.name and RLOG.is_active() then
 		local human = string.format("action:soldCard,card:%s", self.ability.name)
 		local area = RLOG.area_enum(self.area)
@@ -525,7 +665,18 @@ function Card:sell_card()
 		local ref = RLOG.card_ref(self)
 		if area and idx then MPAPI.RLOGCodes.sell:write(area, idx, ref, human) end
 	end
-	return sell_card_ref(self)
+	if RLOG.is_active() and self.config and self.config.center and self.config.center.key == 'j_invisible' then
+		local ok, cards = pcall(joker_cards)
+		if ok then invisible_before = cards end
+	end
+	local result = sell_card_ref(self)
+	if invisible_before then
+		-- A mature Invisible Joker duplicates a joker as it is sold, inside
+		-- sell_card_ref, so the copy is already in the lineup here. An
+		-- immature one adds nothing and records nothing.
+		pcall(record_joker_hit, 'invisible', invisible_before)
+	end
+	return result
 end
 
 local cash_out_ref = G.FUNCS.cash_out

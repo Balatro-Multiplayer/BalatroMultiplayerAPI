@@ -240,30 +240,42 @@ local PROTOCOL_VERSION = 1
 local INFO_MOD_TO_LAUNCHER = 'BET-RankedSupervisor-v1-mod2launcher'
 local INFO_LAUNCHER_TO_MOD = 'BET-RankedSupervisor-v1-launcher2mod'
 
-local sock = socket.tcp()
-sock:settimeout(5)
-local connect_ok, connect_err = sock:connect('127.0.0.1', tonumber(setup.port))
-if not connect_ok then
-	push_event({ type = 'fatal_error', message = 'connect failed: ' .. tostring(connect_err) })
-	return
-end
-sock:settimeout(0.05) -- short timeout for the poll loop below
+-- No attempt below is ever fatal: the launcher keeps listening for the life
+-- of the game process and the main thread (anticheat/launcher_channel.lua)
+-- decides when to stop waiting, so this thread just keeps retrying until
+-- it's told to stop trying (bypass) or to shut down. Slow machines routinely
+-- reach this point long before the launcher is ready to talk, or the other
+-- way round; neither is an error.
+local CONNECT_TIMEOUT = 1.0
+local HANDSHAKE_TIMEOUT = 2.0
+local RETRY_DELAY = 0.25
+local LOG_THROTTLE = 5.0
 
-local mod_nonce = ossl.random_bytes(NONCE_LEN)
-if not mod_nonce then
-	push_event({ type = 'fatal_error', message = 'failed to generate nonce' })
-	return
-end
-local send_ok = sock:send(mod_nonce)
-if not send_ok then
-	push_event({ type = 'fatal_error', message = 'failed to send nonce' })
-	return
-end
-
--- Blocking (within the 5s connect-phase timeout) read of exactly n bytes -
--- only used for the one-time nonce exchange below, before the main loop's
--- non-blocking pump_socket() takes over for everything after.
+local sock = nil
 local recv_buffer = ''
+local key_mod_to_launcher, key_launcher_to_mod
+local send_counter, recv_counter = 0, 0
+local authenticated = false
+local supervision_lost = false
+local last_received = 0
+local last_heartbeat_sent = 0
+local handshake_deadline = 0
+
+local function close_session()
+	if sock then
+		pcall(function()
+			sock:close()
+		end)
+	end
+	sock = nil
+	recv_buffer = ''
+	authenticated = false
+	supervision_lost = false
+end
+
+-- Blocking (bounded by `deadline`) read of exactly n bytes - only used for
+-- the nonce exchange, before the main loop's non-blocking pump_socket()
+-- takes over for everything after.
 local function read_exact(n, deadline)
 	while #recv_buffer < n do
 		if socket.gettime() > deadline then
@@ -285,23 +297,6 @@ local function read_exact(n, deadline)
 	return result
 end
 
-local launcher_nonce, nonce_err = read_exact(NONCE_LEN, socket.gettime() + 5)
-if not launcher_nonce then
-	push_event({ type = 'fatal_error', message = 'failed reading launcher nonce: ' .. tostring(nonce_err) })
-	return
-end
-
-local salt = mod_nonce .. launcher_nonce
-local key_mod_to_launcher, key_err1 = crypto.hkdf_sha256(secret, salt, INFO_MOD_TO_LAUNCHER)
-local key_launcher_to_mod, key_err2 = crypto.hkdf_sha256(secret, salt, INFO_LAUNCHER_TO_MOD)
-if not key_mod_to_launcher or not key_launcher_to_mod then
-	push_event({ type = 'fatal_error', message = 'key derivation failed: ' .. tostring(key_err1 or key_err2) })
-	return
-end
-
-local send_counter = 0
-local recv_counter = 0
-
 -- 12-byte GCM nonce: 4 zero bytes + 8-byte big-endian counter - same
 -- convention as the launcher's C++ side (see rankedsupervisor.cpp's
 -- counterToNonce()).
@@ -314,6 +309,9 @@ local function counter_to_nonce(counter)
 end
 
 local function send_frame(payload)
+	if not sock then
+		return false
+	end
 	local plaintext = encode_json(payload)
 	local nonce = counter_to_nonce(send_counter)
 	local ciphertext = ossl.aes256gcm_encrypt(key_mod_to_launcher, nonce, plaintext)
@@ -330,6 +328,60 @@ local function send_frame(payload)
 		len % 256
 	)
 	sock:send(prefix .. ciphertext)
+	return true
+end
+
+-- One full connect + nonce exchange + key derivation + hello. Returns true
+-- once our hello is sent (authentication completes later, in the main loop,
+-- when the launcher's own hello decrypts), or false + a reason.
+local function try_connect()
+	local s = socket.tcp()
+	s:settimeout(CONNECT_TIMEOUT)
+	local connect_ok, connect_err = s:connect('127.0.0.1', tonumber(setup.port))
+	if not connect_ok then
+		s:close()
+		return false, 'connect failed: ' .. tostring(connect_err)
+	end
+	s:settimeout(0.05) -- short timeout for the poll loop below
+	sock = s
+	recv_buffer = ''
+
+	local mod_nonce = ossl.random_bytes(NONCE_LEN)
+	if not mod_nonce then
+		close_session()
+		return false, 'failed to generate nonce'
+	end
+	if not sock:send(mod_nonce) then
+		close_session()
+		return false, 'failed to send nonce'
+	end
+
+	local launcher_nonce, nonce_err = read_exact(NONCE_LEN, socket.gettime() + CONNECT_TIMEOUT)
+	if not launcher_nonce then
+		close_session()
+		return false, 'failed reading launcher nonce: ' .. tostring(nonce_err)
+	end
+
+	local salt = mod_nonce .. launcher_nonce
+	local k1, key_err1 = crypto.hkdf_sha256(secret, salt, INFO_MOD_TO_LAUNCHER)
+	local k2, key_err2 = crypto.hkdf_sha256(secret, salt, INFO_LAUNCHER_TO_MOD)
+	if not k1 or not k2 then
+		close_session()
+		return false, 'key derivation failed: ' .. tostring(key_err1 or key_err2)
+	end
+	key_mod_to_launcher, key_launcher_to_mod = k1, k2
+
+	send_counter, recv_counter = 0, 0
+	authenticated = false
+	supervision_lost = false
+	last_received = socket.gettime()
+	last_heartbeat_sent = 0
+	handshake_deadline = socket.gettime() + HANDSHAKE_TIMEOUT
+
+	-- Fire our own hello immediately - see this file's header comment on why
+	-- mutual auth doesn't need an extra round trip beyond each side
+	-- independently decrypting the other's hello.
+	send_frame({ type = 'hello', protocol_version = PROTOCOL_VERSION })
 	return true
 end
 
@@ -362,16 +414,11 @@ local function try_consume_frame()
 	return ciphertext
 end
 
--- Fire our own hello immediately - see this file's header comment on why
--- mutual auth doesn't need an extra round trip beyond each side
--- independently decrypting the other's hello.
-send_frame({ type = 'hello', protocol_version = PROTOCOL_VERSION })
-
 local running = true
-local authenticated = false
-local supervision_lost = false
-local last_received = socket.gettime()
-local last_heartbeat_sent = 0
+local bypass_requested = false -- player gave up: never reconnect, tell the launcher once
+local bypass_sent = false
+local next_attempt = 0
+local last_fail_log = 0
 
 while running do
 	-- 1. Drain commands from the main thread (non-blocking).
@@ -382,6 +429,8 @@ while running do
 		end
 		if cmd.cmd == 'shutdown' then
 			running = false
+		elseif cmd.cmd == 'bypass' then
+			bypass_requested = true
 		elseif cmd.cmd == 'answer_challenge' then
 			-- Pure relay - this thread never computes a signature itself, it
 			-- only forwards what the server issued (via Nakama, on the main
@@ -389,14 +438,29 @@ while running do
 			-- secret needed to answer it. Defensive check: only meaningful
 			-- post-handshake, though launcher_channel.lua's own pending-
 			-- challenge queue means this shouldn't actually trigger.
-			if authenticated then
-				send_frame({
+			if authenticated and not bypass_requested then
+				local send_attempted = send_frame({
 					type = 'challenge_request',
 					challenge_id = cmd.challenge_id,
 					kind = cmd.kind,
 					nonce = cmd.nonce,
 					player_id = cmd.player_id,
 				})
+				push_event({
+					type = 'log',
+					message = '[integrity] challenge '
+						.. tostring(cmd.challenge_id)
+						.. (send_attempted and ' send attempted to launcher' or ' NOT forwarded: encrypt failed'),
+				})
+			else
+				push_event({
+					type = 'log',
+					message = '[integrity] challenge '
+						.. tostring(cmd.challenge_id)
+						.. ' dropped in launcher thread: handshake not complete',
+				})
+				-- Without this the main thread would wait for an answer that is never coming.
+				push_event({ type = 'challenge_answered', challenge_id = cmd.challenge_id, error = 'not_connected' })
 			end
 		end
 	end
@@ -404,15 +468,32 @@ while running do
 		break
 	end
 
-	-- 2. Pump the socket.
-	local pump_ok, pump_err = pump_socket()
-	if not pump_ok then
-		push_event({ type = 'fatal_error', message = 'connection lost: ' .. tostring(pump_err) })
-		break
+	local now = socket.gettime()
+
+	-- 2. (Re)connect while we have no session.
+	if not sock and not bypass_requested and now >= next_attempt then
+		local ok, reason = try_connect()
+		if not ok then
+			next_attempt = socket.gettime() + RETRY_DELAY
+			if now - last_fail_log >= LOG_THROTTLE then
+				last_fail_log = now
+				push_event({ type = 'log', message = 'launcher not reachable yet, retrying: ' .. tostring(reason) })
+			end
+		end
 	end
 
-	-- 3. Process any complete frames.
-	while true do
+	if sock then
+		-- 3. Pump the socket.
+		local pump_ok, pump_err = pump_socket()
+		if not pump_ok then
+			push_event({ type = 'disconnected', message = 'connection lost: ' .. tostring(pump_err) })
+			close_session()
+			next_attempt = now + RETRY_DELAY
+		end
+	end
+
+	-- 4. Process any complete frames.
+	while sock do
 		local ciphertext = try_consume_frame()
 		if not ciphertext then
 			break
@@ -423,12 +504,15 @@ while running do
 		if not plaintext then
 			push_event({ type = 'log', message = 'failed to decrypt a frame from the launcher (tampered/desynced)' })
 			if not authenticated then
-				push_event({ type = 'fatal_error', message = 'authentication failed' })
-				running = false
+				-- A half-finished attempt; drop it and start a fresh one.
+				push_event({ type = 'disconnected', message = 'authentication failed' })
+				close_session()
+				next_attempt = now + RETRY_DELAY
 			elseif not supervision_lost then
 				supervision_lost = true
 				push_event({ type = 'supervision_lost' })
 			end
+			break
 		else
 			recv_counter = recv_counter + 1
 			last_received = socket.gettime()
@@ -445,6 +529,9 @@ while running do
 				-- content is otherwise unused, last_received above is already
 				-- all it needed to trigger.
 				local decode_ok, frame = pcall(decode_json, plaintext)
+				if not decode_ok or type(frame) ~= 'table' then
+					push_event({ type = 'log', message = '[integrity] undecodable frame from launcher ignored' })
+				end
 				if decode_ok and type(frame) == 'table' and frame.type == 'challenge_response' then
 					push_event({
 						type = 'challenge_answered',
@@ -462,18 +549,33 @@ while running do
 			end
 		end
 	end
-	if not running then
-		break
+
+	now = socket.gettime()
+
+	-- 5. A connection that never completes its hello is abandoned and retried
+	-- from scratch (a half-open socket from an earlier attempt would
+	-- otherwise sit there for the rest of the Run).
+	if sock and not authenticated and now > handshake_deadline then
+		push_event({ type = 'disconnected', message = 'handshake did not complete in time' })
+		close_session()
+		next_attempt = now + RETRY_DELAY
 	end
 
-	-- 4. Periodic heartbeat send.
-	local now = socket.gettime()
+	-- 6. Tell the launcher the player gave up, as soon as there's a session
+	-- to tell it over. It never reconnects after this (see above), and the
+	-- socket is deliberately left open so heartbeats keep flowing - closing it
+	-- would read as a heartbeat loss on the launcher side.
+	if bypass_requested and authenticated and not bypass_sent then
+		bypass_sent = send_frame({ type = 'ranked_bypassed' })
+	end
+
+	-- 7. Periodic heartbeat send.
 	if authenticated and (now - last_heartbeat_sent) >= HEARTBEAT_INTERVAL then
 		send_frame({ type = 'heartbeat', ts = math.floor(now * 1000) })
 		last_heartbeat_sent = now
 	end
 
-	-- 5. Watchdog for the launcher going silent - the mod's half of the
+	-- 8. Watchdog for the launcher going silent - the mod's half of the
 	-- "heartbeat going both ways" requirement (the launcher's own
 	-- watchdog, symmetric to this, lives in rankedsupervisor.cpp).
 	if authenticated and not supervision_lost and (now - last_received) > LOST_THRESHOLD then
@@ -484,4 +586,4 @@ while running do
 	love.timer.sleep(0.02)
 end
 
-sock:close()
+close_session()
