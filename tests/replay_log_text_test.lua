@@ -40,6 +40,8 @@ eq('select_blind', body(line('select_blind', { 0, 'bl_small' })), 'select_blind 
 eq('select_blind nil key', body(line('select_blind', { 0, nil })), 'select_blind 0')
 eq('idol_roll', body(line('idol_roll', { '0.500000', 'QH', { 'KS4', 'QH3' } })), 'idol_roll 0.500000 QH KS4.QH3')
 eq('deck_snapshot', body(line('deck_snapshot', { { 'HK', 'SA|e:m_glass|ed:foil' } })), 'deck_snapshot HK.SA|e:m_glass|ed:foil')
+eq('final_jokers', body(line('final_jokers', { { 'j_blueprint|foil', 'j_joker|eternal' } })), 'final_jokers j_blueprint|foil.j_joker|eternal')
+eq('final_vouchers', body(line('final_vouchers', { { 'v_hone', 'v_overstock_norm' } })), 'final_vouchers v_hone.v_overstock_norm')
 eq('3-deep', body(line('o', { { { { 1, 2 }, { 3 } }, { { 4 } } } })), 'o 1.2,3;4')
 -- hash input unaffected by fmt: structured args kept as-is
 RLOG.begin_run(); RLOG.record('select_blind', { 0, 'bl_big' })
@@ -53,9 +55,17 @@ G = { jokers = { cards = { { config = { center = { key = 'j_blueprint' } }, edit
     { base = { suit = 'Spades', value = '10' }, config = { center = { key = 'm_glass' } }, edition = { type = 'foil' }, seal = 'Red' } } }
 local jt = RLOG.joker_tokens()
 eq('joker tokens', table.concat(jt, ','), 'j_blueprint|foil,j_joker')
+G.jokers.cards[2].ability = { eternal = true, perishable = true, rental = true }
+G.jokers.cards[2].pinned = true
+eq('joker tokens with stickers', table.concat(RLOG.joker_tokens(), ','), 'j_blueprint|foil,j_joker|eternal|perishable|rental|pinned')
+G.jokers.cards[2].ability = nil
+G.jokers.cards[2].pinned = nil
 eq('card ids untouched by joker_tokens', RLOG._next_card_id, 0)
 eq('deck tokens', table.concat(RLOG.deck_tokens(), ','), 'HK,ST|e:m_glass|ed:foil|s:Red')
+G = { GAME = { used_vouchers = { v_overstock_norm = true, v_hone = true, v_seed_money = false } } }
+eq('voucher tokens sorted', table.concat(RLOG.voucher_tokens(), ','), 'v_hone,v_overstock_norm')
 G = nil
+eq('voucher_tokens no G', #RLOG.voucher_tokens(), 0)
 eq('joker_tokens no G', #RLOG.joker_tokens(), 0)
 -- a small roll sent as a fixed-point string encodes the same in Lua and in JS JSON
 local json = require('json')
