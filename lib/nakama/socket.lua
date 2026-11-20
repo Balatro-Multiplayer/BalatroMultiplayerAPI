@@ -356,7 +356,10 @@ end
 function M.matchmaker_remove(socket, ticket, callback)
 	assert(socket)
 	assert(ticket == nil or _G.type(ticket) == 'string')
+	-- With a cid the callback gets the server's answer ("ticket not found" once it matched), not an instant {}.
+	socket.cid = socket.cid + 1
 	local message = {
+		cid = tostring(socket.cid),
 		matchmaker_remove = {
 			ticket = ticket,
 		}
