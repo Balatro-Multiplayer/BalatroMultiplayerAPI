@@ -297,6 +297,26 @@ L.apply_game_started = function(lobby, started)
 	lobby:_fire(MPAPI.LobbyEvent.GAME_STARTED, lobby._game.started)
 end
 
+-- The runs whose end was already raised in this client session, by run id.
+L.ended_seen = {}
+
+-- The snapshot's game.lastEnded ({ runId, status }) when it is a new end to tell the player about,
+-- else nil: absent, malformed, or a run already raised (by the live GAME_ENDED or an earlier
+-- snapshot). It does not mark the run: a run is seen when it is actually raised (apply_game_ended).
+L.ended_to_raise = function(last_ended, seen)
+	if type(last_ended) ~= 'table' then
+		return nil
+	end
+	local run_id, status = last_ended.runId, last_ended.status
+	if type(run_id) ~= 'string' or run_id == '' or type(status) ~= 'string' or status == '' then
+		return nil
+	end
+	if seen[run_id] then
+		return nil
+	end
+	return { runId = run_id, status = status }
+end
+
 -- GAME_ENDED event data: { runId, status, placements }. status is 'agreed',
 -- 'partial', 'disputed', 'contested' or 'abandoned' (see the server's results.ts).
 L.apply_game_ended = function(lobby, ended)
@@ -308,9 +328,14 @@ L.apply_game_ended = function(lobby, ended)
 	lobby._game.reported = {}
 	lobby._game.result_pending = false
 	lobby._game.setup = empty_setup()
+	if type(ended.runId) == 'string' then
+		L.ended_seen[ended.runId] = true
+	end
 	lobby:_fire(MPAPI.LobbyEvent.GAME_ENDED, {
 		run_id = ended.runId,
 		status = ended.status,
+		-- True when this client learned of the end from a snapshot after being away.
+		while_away = ended.while_away == true,
 		placements = type(ended.placements) == 'table' and ended.placements or {},
 	})
 end
@@ -361,6 +386,36 @@ local function ask_server(lobby, key, params, cb)
 		:send(nil, params or {})
 end
 
+-- The server refuses a start with a reason code. These are the ones a player can act on:
+-- the error then reads in words and keeps the code on err.reason. Any other reason is
+-- passed through untouched.
+local START_REFUSALS = {
+	player_away = 'k_mpapi_start_player_away',
+	not_all_ready = 'k_mpapi_start_not_all_ready',
+	too_few_players = 'k_mpapi_start_too_few_players',
+	not_host = 'k_mpapi_start_not_host',
+	in_game = 'k_mpapi_start_in_game',
+	group_queue = 'k_mpapi_start_group_queue',
+	bad_rules = 'k_mpapi_start_bad_rules',
+	mode_disabled = 'k_mpapi_start_mode_disabled',
+}
+
+-- A queue ticket or lobby create the server refuses comes back as its bare reason code. These
+-- read in words (api/matchmaking/api.lua, api/lobby/nakama.lua); any other text is shown as it is.
+local QUEUE_REFUSALS = {
+	mode_disabled = 'k_mpapi_start_mode_disabled',
+}
+
+-- The text for a refused queue ticket or lobby create: a mapped code reads in words, anything
+-- else is shown as the server sent it.
+function MPAPI.server_refusal_text(message)
+	local mapped = type(message) == 'string' and QUEUE_REFUSALS[message]
+	if mapped then
+		return localize(mapped)
+	end
+	return tostring(message)
+end
+
 -- Host only, once everyone else is ready. opts = { stake?, options?,
 -- min_players? }; cb(err, started) where started = { runId, seed, stake,
 -- options, players }.
@@ -370,7 +425,15 @@ L.start_game = function(lobby, opts, cb)
 		stake = opts.stake,
 		options = opts.options,
 		minPlayers = opts.min_players,
-	}, cb)
+	}, cb and function(err, started)
+		local key = err and err.kind == MPAPI.ErrorKind.ACTION_REJECTED and START_REFUSALS[err.message]
+		if key then
+			local reason = err.message
+			err = MPAPI.make_error(MPAPI.ErrorKind.ACTION_REJECTED, localize(key))
+			err.reason = reason
+		end
+		cb(err, started)
+	end)
 end
 
 -- An action that ends the game. Events recorded this frame go first: the server stores no event
@@ -685,6 +748,11 @@ L.adopt_log_seq = function(lobby, held)
 	local started = lobby._game.started
 	if type(held) ~= 'number' or not started then
 		return
+	end
+	-- A snapshot that reports the held count is from a server that counts events: a first batch that
+	-- never got an ack is then resent on a reconnect like any other (resend_log_events).
+	if lobby._log_counted == nil then
+		lobby._log_counted = true
 	end
 	if lobby._log_seq_run ~= started.run_id then
 		lobby._log_seq_run = started.run_id

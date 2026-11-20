@@ -24,11 +24,16 @@
 --                                 MPAPI.run_save.stage_load has staged (it goes through
 --                                 Game:start_run) and the mod registered its state with
 --                                 MPAPI.run_save.register_state, including load
+--   run_save_screens           -- (optional) { SHOP = true }: the mod's Run saves are also taken
+--                                 at the shop. Blind Select is always a save point. A mod declares
+--                                 SHOP only when its catch-up can start in a shop.
 --   read_lobby_info(args, bootstrap)  -- copies what the mod needs from the first lobby_info
 --   read_run_info(args, bootstrap)    -- the same for the first run_info
---   start_run(bootstrap, on_ready)    -- boots a local run from `bootstrap`; on_ready() once it can
---                                        be played (blind select). Refuses to run while a real
---                                        lobby is current, which is why the join is detached.
+--   start_run(bootstrap, on_ready)    -- boots a local run from `bootstrap`; on_ready() once the new
+--                                        run exists (G.GAME replaced), whatever screen it is on.
+--                                        The restart then waits for the screen itself
+--                                        (MPAPI.playback.when_screen_ready). Refuses to run while
+--                                        a real lobby is current, which is why the join is detached.
 --   checkpoint_options()       -- (optional) { boundary_opcodes, pause_gate }: the opcodes that
 --                                 end a run attempt (MPAPI.playback.timeline_ante_starts) and the
 --                                 fast-forward's pause gate
@@ -118,32 +123,102 @@ function MPAPI.playback.pick_rejoin_start(active, hooks)
 	return envelope, save.pos
 end
 
--- Real seconds a run started from a Run save has to reach its Blind Select screen before the
--- rejoin gives up on the save and plays the whole log.
+-- Real seconds a run started from a Run save has to reach the screen the save was taken at before
+-- the rejoin gives up on the save and plays the whole log.
 MPAPI.playback.RUN_SAVE_START_SECONDS = 30
+
+local function now_seconds()
+	if love and love.timer and love.timer.getTime then
+		return love.timer.getTime()
+	end
+	return os.clock()
+end
+
+local function screen_is_ready(screen)
+	if screen == 'BLIND_SELECT' then
+		return G.STATE == G.STATES.BLIND_SELECT
+	end
+	return G.STATE == G.STATES.SHOP and MPAPI.playback.shop_is_built()
+end
+
+-- Calls cb() once the run shows `screen`: 'BLIND_SELECT' (the Blind Select screen) or 'SHOP' (a
+-- shop with its cards, drawn or loaded: MPAPI.playback.shop_is_built). At once when it already
+-- does. still_wanted() (optional) is asked every frame; once it is false the wait ends without cb.
+-- A run start clears the event queue, so the waiting event is kept through it.
+function MPAPI.playback.when_screen_ready(screen, cb, still_wanted)
+	assert(screen == 'BLIND_SELECT' or screen == 'SHOP', 'MPAPI.playback.when_screen_ready: screen is BLIND_SELECT or SHOP, got ' .. tostring(screen))
+	if screen_is_ready(screen) then
+		cb()
+		return
+	end
+	G.E_MANAGER:add_event(Event({
+		blocking = false,
+		blockable = false,
+		no_delete = true,
+		func = function()
+			if still_wanted and not still_wanted() then
+				return true
+			end
+			if not screen_is_ready(screen) then
+				return false
+			end
+			cb()
+			return true
+		end,
+	}))
+end
 
 -- Restarts `session`'s run from its own bootstrap and fast-forwards a fresh driver to
 -- `target_event_index`, then calls on_ready(driver). The one restart-and-seek every caller shares
 -- (a rejoin, a replay's checkpoint seek, a perspective switch).
 -- opts: mod_id (handler namespace), start_run(bootstrap, on_ready), pause_gate(),
--- on_run_started() (optional; right after the local run is up, before the driver exists).
+-- on_run_started() (optional; once the run shows its screen, before the driver exists).
+-- start_run's on_ready means only that the new run exists (G.GAME replaced). The screen comes
+-- after: this waits for the Run save's screen (Blind Select when there is no save) before the
+-- save's extras are put back and the seek starts, so the card ids meet filled areas.
 -- run_save = { envelope, pos, events_follow? } (optional): start the run from that Run save and
 -- play the timeline after its event `pos`; with events_follow the timeline already holds only
 -- the events after the save. If the run does not come up from the save, on_load_failed(code,
 -- detail) (a MPAPI.run_save.SKIP code) is called instead of on_ready.
 -- live (optional): more entries will be pushed, so the driver is not told its timeline is complete.
+-- session.timing gets restarted_at, ready_at and fast_forward = { events, seconds }.
 function MPAPI.playback.restart_session_and_seek(session, target_event_index, on_ready, opts)
 	if session.driver then
 		-- The old driver would keep ticking against a rebuilt game state it no longer matches.
 		session.driver:stop()
 	end
 	local run_save = opts.run_save
-	local abandoned = false
-	session._run_save_started = false
+	-- One restart is one attempt. A later restart ends this one: its watch and its wait then do nothing.
+	local attempt = {}
+	session._attempt = attempt
+	local function current()
+		return session._attempt == attempt and not attempt.ended
+	end
+	local function fail(code, detail)
+		attempt.ended = true
+		if run_save then
+			MPAPI.run_save.unstage_load()
+		end
+		if opts.on_load_failed then
+			opts.on_load_failed(code, detail)
+		end
+	end
+	session.timing = { restarted_at = now_seconds() }
+	-- With no Run save the whole log replays from the start, at Blind Select. A save whose
+	-- screen is unknown is refused, never waited for at a guessed screen.
+	local screen = 'BLIND_SELECT'
+	if run_save then
+		screen = MPAPI.run_save.screen_of(run_save.envelope)
+		if screen == nil then
+			fail(MPAPI.run_save.SKIP.LOAD_FAILED, 'the save names no screen')
+			return
+		end
+	end
 	if run_save then
 		MPAPI.run_save.stage_load(run_save.envelope)
-		-- A run that never reaches Blind Select (the load broke, the start was refused) would wait
-		-- for ever. The watch ends it and hands the rejoin back to the whole log.
+		-- A run that never reaches its screen (the load broke, the start was refused) would wait
+		-- for ever. The watch ends it and hands the rejoin back to the whole log. It is kept
+		-- through the run start's clearing of the event queue.
 		if G and G.E_MANAGER and Event then
 			G.E_MANAGER:add_event(Event({
 				trigger = 'after',
@@ -151,13 +226,10 @@ function MPAPI.playback.restart_session_and_seek(session, target_event_index, on
 				timer = 'REAL',
 				blocking = false,
 				blockable = false,
+				no_delete = true,
 				func = function()
-					if not abandoned and not session._run_save_started then
-						abandoned = true
-						MPAPI.run_save.unstage_load()
-						if opts.on_load_failed then
-							opts.on_load_failed(MPAPI.run_save.SKIP.START_TIMEOUT, 'the run did not reach Blind Select from the Run save')
-						end
+					if current() and not attempt.ready then
+						fail(MPAPI.run_save.SKIP.START_TIMEOUT, 'the run did not reach the saved screen')
 					end
 					return true
 				end,
@@ -165,52 +237,70 @@ function MPAPI.playback.restart_session_and_seek(session, target_event_index, on
 		end
 	end
 	opts.start_run(session.bootstrap, function()
-		if abandoned then
+		if not current() then
 			return
 		end
-		session._run_save_started = true
-		if opts.on_run_started then
-			opts.on_run_started()
-		end
-		local driver = MPAPI.playback.new_driver(session.timeline, {
-			mod_id = opts.mod_id,
-			pov_player_id = session.my_id,
-			schema_version = session.bootstrap.schema_version,
-			-- A replay from the browser plays at the recorded pace with a speed control; a
-			-- rejoin leaves this unset and keeps one entry per frame.
-			paced = session.paced,
-			on_complete = session.on_session_complete,
-		})
-		local target = target_event_index
-		if run_save then
-			local resolver = MPAPI.replay.new_resolver_state()
-			driver._card_resolvers[session.my_id] = resolver
-			local ok, restored, err = pcall(MPAPI.run_save.restore, run_save.envelope, resolver)
-			if not ok then
-				restored, err = false, restored
-			end
-			if not restored then
-				driver:stop()
-				if opts.on_load_failed then
-					opts.on_load_failed(MPAPI.run_save.SKIP.LOAD_FAILED, tostring(err))
-				end
-				return
-			end
-			if not run_save.events_follow then
-				driver._cursor = run_save.pos + 1
-				target = math.max(target, driver._cursor)
-			end
-		end
-		if not opts.live then
-			driver:finish()
-		end
-		driver:fast_forward_to(target, {
-			pause_gate = opts.pause_gate,
-			on_done = function()
-				on_ready(driver)
-			end,
-		})
+		-- The wait is for this run only: one the player left (an aborted rejoin, a stopped watch)
+		-- must not restore into the next run they start.
+		local game = G.GAME
+		MPAPI.playback.when_screen_ready(screen, function()
+			attempt.ready = true
+			session.timing.ready_at = now_seconds()
+			MPAPI.playback._seek_from_ready(session, target_event_index, on_ready, opts, fail)
+		end, function()
+			return current() and G.GAME == game
+		end)
 	end)
+end
+
+-- The rest of restart_session_and_seek once the run shows its screen: the driver, the Run save's
+-- extras, the seek.
+function MPAPI.playback._seek_from_ready(session, target_event_index, on_ready, opts, fail)
+	local run_save = opts.run_save
+	if opts.on_run_started then
+		opts.on_run_started()
+	end
+	local driver = MPAPI.playback.new_driver(session.timeline, {
+		mod_id = opts.mod_id,
+		pov_player_id = session.my_id,
+		schema_version = session.bootstrap.schema_version,
+		-- A replay from the browser plays at the recorded pace with a speed control; a
+		-- rejoin leaves this unset and keeps one entry per frame.
+		paced = session.paced,
+		on_complete = session.on_session_complete,
+	})
+	local target = target_event_index
+	local first = 1
+	if run_save then
+		local resolver = MPAPI.replay.new_resolver_state()
+		driver._card_resolvers[session.my_id] = resolver
+		local ok, restored, err = pcall(MPAPI.run_save.restore, run_save.envelope, resolver)
+		if not ok then
+			restored, err = false, restored
+		end
+		if not restored then
+			driver:stop()
+			fail(MPAPI.run_save.SKIP.LOAD_FAILED, tostring(err))
+			return
+		end
+		if not run_save.events_follow then
+			driver._cursor = run_save.pos + 1
+			first = driver._cursor
+			target = math.max(target, driver._cursor)
+		end
+	end
+	if not opts.live then
+		driver:finish()
+	end
+	local started = now_seconds()
+	driver:fast_forward_to(target, {
+		pause_gate = opts.pause_gate,
+		on_done = function()
+			local ended = now_seconds()
+			session.timing.fast_forward = { events = math.max(0, target - first), seconds = ended - started, ended_at = ended, target = target }
+			on_ready(driver)
+		end,
+	})
 end
 
 -- The event index to skip to: the start of the last known ante (the last checkpoint), so the tail
@@ -248,21 +338,33 @@ local function resume_when_idle(lobby, session, events, my_id, log_text, on_resu
 	}))
 end
 
-local function now_seconds()
-	if love and love.timer and love.timer.getTime then
-		return love.timer.getTime()
+-- The three parts of a catch-up: the run load up to its screen, the fast-forward, and the tail
+-- played at normal pace up to now. A part that did not happen reads "none".
+function MPAPI.playback.catch_up_timing_text(timing, now, tail_events)
+	local load_part, ff_part, tail_part = 'none', 'none', 'none'
+	if timing and timing.restarted_at and timing.ready_at then
+		load_part = string.format('%.1f s', timing.ready_at - timing.restarted_at)
 	end
-	return os.clock()
+	local ff = timing and timing.fast_forward
+	if ff then
+		ff_part = string.format('%d events in %.1f s', ff.events, ff.seconds)
+		tail_part = string.format('%d events in %.1f s', tail_events, now - ff.ended_at)
+	end
+	return string.format('load to ready %s, fast-forward %s, tail %s', load_part, ff_part, tail_part)
 end
 
 -- One info line per rejoin: how the catch-up went and how long it took.
 local function log_caught_up(session, event_count)
-	local seconds = now_seconds() - (session.catch_up_started or now_seconds())
+	local now = now_seconds()
+	local seconds = now - (session.catch_up_started or now)
+	local ff = session.timing and session.timing.fast_forward
+	local tail_events = ff and math.max(0, #session.timeline - ff.target + 1) or 0
+	local parts = MPAPI.playback.catch_up_timing_text(session.timing, now, tail_events)
 	local line
 	if session.run_save_pos then
-		line = string.format('[rejoin] caught up from a Run save after log event %d of %d in %.1f s', session.run_save_pos, event_count, seconds)
+		line = string.format('[rejoin] caught up from a Run save after log event %d of %d in %.1f s (%s)', session.run_save_pos, event_count, seconds, parts)
 	else
-		line = string.format('[rejoin] caught up by replaying the whole log (%d events) in %.1f s; Run save not used: %s', event_count, seconds, tostring(session.run_save_skipped or 'unknown'))
+		line = string.format('[rejoin] caught up by replaying the whole log (%d events) in %.1f s (%s); Run save not used: %s', event_count, seconds, parts, tostring(session.run_save_skipped or 'unknown'))
 	end
 	local gave_up = MPAPI.playback.gave_up_waits()
 	if gave_up > 0 then

@@ -108,7 +108,7 @@ end
 local function show_ticket_refusal(err)
 	local function show_text()
 		if MPAPI.show_notice then
-			MPAPI.show_notice('k_queue_failed_title', tostring(err))
+			MPAPI.show_notice('k_queue_failed_title', MPAPI.server_refusal_text(err))
 		end
 	end
 	if not MPAPI.refresh_account_standing then

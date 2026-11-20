@@ -1,6 +1,12 @@
--- MPAPI.run_save: takes a Run save at each Blind Select screen of a server-refereed match and
--- sends it to the server in parts (the mpapi_run_save_part action; BalatroMultiplayerServer
--- nakama/src/actions/run_save.ts holds the same part format and limits).
+-- MPAPI.run_save: takes a Run save at the points where vanilla saves a run on a Blind Select or
+-- shop screen of a server-refereed match, and sends it to the server in parts (the
+-- mpapi_run_save_part action; BalatroMultiplayerServer nakama/src/actions/run_save.ts holds the
+-- same part format and limits).
+--
+-- The save points are four of vanilla's save_run calls, each followed by a call to
+-- MPAPI.run_save.at_save_point() (lovely/run_save_points.toml): the Blind Select build, a skip,
+-- a boss reroll, and the shop build. No other save_run takes a Run save. A shop is saved only
+-- for a mod whose rejoin hooks declare run_save_screens = { SHOP = true }.
 --
 -- A Run save is one text: the vanilla save table (RNG state and every card area), the state
 -- each registered mod adds through register_state, the recorder's card id map, all packed,
@@ -20,7 +26,7 @@ local RS = MPAPI.run_save
 -- MAX_RUN_SAVE_PARTS). The server refuses a message with more than 16 KB of params.
 RS.PART_BYTES = 12 * 1024
 RS.MAX_PARTS = 16
-RS.FORMAT_VERSION = 1
+RS.FORMAT_VERSION = 2
 
 -- Why a rejoin or a spectator start does not use a Run save and plays the whole log instead.
 -- HASH_MISMATCH and BEYOND_LOG are the server's own words for a save it held back
@@ -116,8 +122,9 @@ function RS.card_ids(card_areas)
 end
 
 -- The envelope a Run save text holds, or nil and the reason. The text is what take sent
--- (the server gives it back whole). Refused: a text the codec cannot read, a newer format
--- than this client knows, a save without the parts a start needs.
+-- (the server gives it back whole). Refused: a text the codec cannot read, any format but the
+-- one this client writes, a save without the parts a start needs, a save of any screen but
+-- Blind Select or the shop (save.STATE, which vanilla writes).
 function RS.decode(text)
 	local ok, envelope = pcall(function()
 		local value = RS.codec.unpack(RS.codec.decompress(RS.codec.from_text(text)))
@@ -127,10 +134,20 @@ function RS.decode(text)
 		end
 		if type(value.save) ~= 'table' then error('no save table') end
 		if type(value.save.GAME) ~= 'table' then error('the save has no GAME') end
+		if RS.screen_of(value) == nil then error('the save is of screen ' .. tostring(value.save.STATE) .. ', not Blind Select or the shop') end
 		return value
 	end)
 	if not ok then return nil, tostring(envelope) end
 	return envelope
+end
+
+-- 'BLIND_SELECT' or 'SHOP', the screen a decoded Run save was taken at, or nil for any other.
+function RS.screen_of(envelope)
+	local state = envelope and type(envelope.save) == 'table' and envelope.save.STATE
+	if state == nil then return nil end
+	if state == G.STATES.BLIND_SELECT then return 'BLIND_SELECT' end
+	if state == G.STATES.SHOP then return 'SHOP' end
+	return nil
 end
 
 -- Puts a decoded Run save's extras back, after the game has started from its save table:
@@ -153,6 +170,13 @@ function RS.restore(envelope, resolver)
 				resolver.by_id[id] = card
 				resolver.assigned[card] = true
 			end
+		end
+	end
+	-- Vanilla's Card:load restores each card's saved sort_id but never touches the counter that
+	-- Card:init counts up from, so a card made after the load could take a loaded card's id.
+	for _, area in pairs(G.I.CARDAREA) do
+		for _, card in ipairs(area.cards or {}) do
+			if card.sort_id and card.sort_id > G.sort_id then G.sort_id = card.sort_id end
 		end
 	end
 	return true
@@ -222,7 +246,7 @@ end
 
 -- Takes a Run save of the current match and sends it. False when there is nothing to send
 -- (not in a refereed match, the lobby is catching up, the log cannot be hashed, the save is too big or could not be
--- built) or the socket is down; the next Blind Select takes a new one.
+-- built) or the socket is down; the next save point takes a new one.
 function RS.take()
 	local lobby = MPAPI.get_current_lobby()
 	if not (lobby and MPAPI.has_server_referee(lobby) and lobby._game.started) then return false end
@@ -271,25 +295,21 @@ function RS.take()
 	return true
 end
 
--- Vanilla saves the run as the Blind Select screen is built, in an event it queues. The Run
--- save is queued behind it, so it sees the same state. It is blockable like vanilla's: the
--- start of a run queues delayed events (the Ghost Deck's Hex), and a save that ran ahead of them
--- would lack what they add.
-if Game and Game.update_blind_select then
-	local update_blind_select_ref = Game.update_blind_select
-	function Game:update_blind_select(dt)
-		local building = not G.STATE_COMPLETE
-		update_blind_select_ref(self, dt)
-		if building and G.STATE_COMPLETE and G.E_MANAGER then
-			G.E_MANAGER:add_event(Event({
-				trigger = 'immediate',
-				no_delete = true,
-				func = function()
-					local ok, err = pcall(RS.take)
-					if not ok then MPAPI.sendWarnMessage('run_save: ' .. tostring(err)) end
-					return true
-				end,
-			}))
+-- Called right after vanilla's save_run at each save point (lovely/run_save_points.toml), in the
+-- same event or callback, so the Run save sees the state vanilla saved. Takes a save at Blind
+-- Select, and at a built shop when the lobby's mod declares it can load one. Calls from
+-- anywhere else are not save points: nothing else calls this, whatever calls save_run.
+function RS.at_save_point()
+	local ok, err = pcall(function()
+		local lobby = MPAPI.get_current_lobby()
+		if not lobby then return end
+		if G.STATE == G.STATES.BLIND_SELECT then
+			RS.take()
+		elseif G.STATE == G.STATES.SHOP and MPAPI.playback.shop_is_built() then
+			local hooks = MPAPI.playback._rejoin_hooks and MPAPI.playback._rejoin_hooks[lobby.mod_id]
+			local screens = hooks and hooks.run_save_screens
+			if screens and screens.SHOP == true then RS.take() end
 		end
-	end
+	end)
+	if not ok then MPAPI.sendWarnMessage('run_save: ' .. tostring(err)) end
 end

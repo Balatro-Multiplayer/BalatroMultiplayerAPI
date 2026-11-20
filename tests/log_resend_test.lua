@@ -128,6 +128,18 @@ record(lobby, 3) -- 3,4,5 sent on a dead socket
 L.resend_log_events(lobby)
 check(seqs_of(lobby.sent[#lobby.sent]) == '3,4,5', 'the reconnect sends them again, got ' .. seqs_of(lobby.sent[#lobby.sent]))
 
+-- The first batch of a lobby, sent on a dead socket before any ack came: the join snapshot's logSeq shows
+-- the server counts, so the reconnect sends what it lacks (and not what it holds).
+do
+	queued = {}
+	local lobby = new_lobby()
+	record(lobby, 3) -- 1,2,3 sent, no ack ever came (lobby._log_counted is still nil)
+	check(lobby._log_counted == nil, 'the server is not known to count yet')
+	L.adopt_log_seq(lobby, 1) -- the rejoin snapshot: the server holds event 1
+	L.resend_log_events(lobby)
+	check(seqs_of(lobby.sent[#lobby.sent]) == '2,3', 'the first batch is sent again from what the server lacks, got ' .. seqs_of(lobby.sent[#lobby.sent]))
+end
+
 -- A copy the server already holds is covered by the ack: nothing more goes out.
 local count = #lobby.sent
 lobby.sent[#lobby.sent].cb({}, { ack = true, got = 5 })
