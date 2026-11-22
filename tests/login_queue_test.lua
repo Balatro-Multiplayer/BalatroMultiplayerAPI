@@ -3,11 +3,8 @@
 -- are deleted from the stored list as each shows, and are not queued twice.
 -- A warning or unlock that arrives while online is not queued. Run from the
 -- MPAPI repository root: luajit tests/login_queue_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local deleted, listed = {}, {}
 local handlers, loaded = {}, {}
@@ -92,4 +89,4 @@ handlers[107]({ avatarIds = { 'j_joker' } }, { persistent = true, id = 'v3' })
 check(not Queue.has_pending(queue), 'a live warning and unlock are not queued')
 check(#warned.queued() == 1 and #toast.queued() == 1, 'a live warning and unlock keep their own pop ups')
 
-print('login_queue_test: ' .. checks .. ' checks passed')
+T.done('login_queue_test')

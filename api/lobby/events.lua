@@ -30,16 +30,21 @@ function L.drop(lobby)
 	end
 end
 
+-- Fires (player_id, forfeits_at_local): when the server forfeits the seat, on this client's clock.
 local function on_player_disconnected(lobby, data)
+	local timing = type(data.data) == 'table' and data.data or {}
+	local forfeits_at_local = L.forfeit_local(timing.forfeitsAt, timing.serverNow, data.received_local)
 	if data.playerId and lobby._players[data.playerId] then
 		lobby._players[data.playerId].is_away = true
+		lobby._players[data.playerId].forfeits_at_local = forfeits_at_local
 	end
-	lobby:_fire(MPAPI.LobbyEvent.PLAYER_DISCONNECTED, data.playerId)
+	lobby:_fire(MPAPI.LobbyEvent.PLAYER_DISCONNECTED, data.playerId, forfeits_at_local)
 end
 
 local function on_player_reconnected(lobby, data)
 	if data.playerId and lobby._players[data.playerId] then
 		lobby._players[data.playerId].is_away = false
+		lobby._players[data.playerId].forfeits_at_local = nil
 	end
 	lobby:_fire(MPAPI.LobbyEvent.PLAYER_RECONNECTED, data.playerId)
 end
@@ -72,10 +77,10 @@ end
 -- why. Otherwise, just drop the removed player from the roster and reuse the
 -- existing PLAYER_LEFT event so ui/lobby.lua's roster-removal animation fires
 -- without duplicating that logic here.
--- The kick reason of a seat the server forfeited because its catch-up ran past
--- the mod's limit. BalatroMultiplayerServer nakama/src/lobby/catch_up.ts
--- CATCH_UP_LIMIT_REASON: keep both the same.
-local CATCH_UP_LIMIT_REASON = 'catch_up_limit'
+-- The kick reason of a seat the server took back because the same account joined from another
+-- process. BalatroMultiplayerServer nakama/src/lobby/pvp/match_hooks/pvp_shell.ts
+-- CONNECTION_REPLACED_REASON: keep both the same.
+local OPENED_ELSEWHERE_REASON = 'opened_elsewhere'
 
 local function on_player_kicked(lobby, data)
 	local was_self = data.playerId and data.playerId == lobby.player_id
@@ -83,9 +88,9 @@ local function on_player_kicked(lobby, data)
 	if was_self then
 		L.drop(lobby)
 		local kick = type(data.data) == 'table' and data.data or nil
-		if kick and kick.reason == CATCH_UP_LIMIT_REASON then
-			if MPAPI.show_forfeited_notice then
-				MPAPI.show_forfeited_notice()
+		if kick and kick.reason == OPENED_ELSEWHERE_REASON then
+			if MPAPI.show_notice then
+				MPAPI.show_notice('k_kicked_title', localize('k_opened_elsewhere'))
 			end
 			return
 		end

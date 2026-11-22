@@ -2,11 +2,8 @@
 -- no DNS lookup; anything else (an out-of-range address, a short address, a
 -- hostname) goes to DNS. Run from the MPAPI repository root:
 -- luajit tests/ipv4_host_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local lookups, connected_to
 package.loaded['socket'] = {
@@ -47,4 +44,4 @@ for _, host in ipairs({ '256.1.1.1', '1.2.3', 'example.com' }) do
 	check(connected_to == '9.9.9.9', host .. ' connects to the resolved address')
 end
 
-print('ipv4_host_test: ' .. checks .. ' checks passed')
+T.done('ipv4_host_test')

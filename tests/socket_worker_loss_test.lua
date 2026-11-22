@@ -3,11 +3,8 @@
 -- callback hears it; after, on_disconnect gets the reason and every request
 -- still waiting for a reply gets a socket_closed error. Run from the MPAPI
 -- repository root: luajit tests/socket_worker_loss_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 package.path = 'lib/?.lua;' .. package.path
 
@@ -118,4 +115,4 @@ worker.rx:push({ type = 'disconnected', message = 'closed by client' })
 engine.update()
 check(not told, 'a socket closed on purpose does not report a loss')
 
-print('ok ' .. checks .. ' checks')
+T.done('socket_worker_loss_test')

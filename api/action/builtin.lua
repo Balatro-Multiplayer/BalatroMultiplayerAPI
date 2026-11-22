@@ -23,7 +23,6 @@ MPAPI.ActionType({
 		if not (lobby and type(result) == 'table' and type(result.playerId) == 'string') then
 			return
 		end
-		lobby._game.ready[result.playerId] = result.ready == true or nil
 		MPAPI.set_player_ready(lobby, result.playerId, result.ready == true)
 	end,
 })
@@ -279,6 +278,21 @@ MPAPI.ActionType({
 	on_receive = function() end,
 })
 
+-- The roster's `ready` is the only copy of lobby Ready. Sets every player's from the server's list
+-- ({ [player_id] = true }; absent is not ready) and fires PLAYER_READY_CHANGED for each whose
+-- value changed from `before` (a roster; the current one when omitted).
+L.apply_ready_list = function(lobby, ready_ids, before)
+	before = before or lobby._players
+	for id, player in pairs(lobby._players) do
+		local now_ready = ready_ids[id] == true
+		local was_ready = before[id] ~= nil and before[id].ready == true
+		player.ready = now_ready
+		if now_ready ~= was_ready then
+			lobby:_fire(MPAPI.LobbyEvent.PLAYER_READY_CHANGED, id, now_ready)
+		end
+	end
+end
+
 L.apply_game_started = function(lobby, started)
 	lobby._game.started = {
 		run_id = started.runId,
@@ -288,7 +302,7 @@ L.apply_game_started = function(lobby, started)
 		players = started.players,
 		restarted = started.restarted or nil,
 	}
-	lobby._game.ready = {}
+	L.apply_ready_list(lobby, {})
 	lobby._game.reported = {}
 	lobby._game.result_pending = false
 	-- A restart keeps the finished steps' results (the server does too).
@@ -304,7 +318,8 @@ L.apply_game_ended = function(lobby, ended)
 		return
 	end
 	lobby._game.started = nil
-	lobby._game.ready = {}
+	if MPAPI.run_save then MPAPI.run_save.clear_wait() end
+	L.apply_ready_list(lobby, {})
 	lobby._game.reported = {}
 	lobby._game.result_pending = false
 	lobby._game.setup = empty_setup()

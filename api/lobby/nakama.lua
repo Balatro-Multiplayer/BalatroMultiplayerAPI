@@ -21,6 +21,35 @@ local function fail(lobby, message)
 	lobby:_fire(MPAPI.LobbyEvent.ERROR, MPAPI.make_error(MPAPI.ErrorKind.SERVER, tostring(message)))
 end
 
+-- The mod that owns a lobby may keep a game view on the server. The API only carries it: what an
+-- input or a view holds, how inputs are numbered and resent, and where the view is kept are the mod's.
+local view_handlers = {}
+
+-- fn(lobby, view) gets every view the server sends for that mod's lobbies. One per mod.
+function MPAPI.on_match_view(mod_id, fn)
+	view_handlers[mod_id] = fn
+end
+
+-- Sends one input (a table) from the mod that owns the lobby. False when it did not leave (the
+-- socket is down), so the mod can send it again.
+function MPAPI.send_match_input(lobby, input)
+	if lobby._destroyed or type(input) ~= 'table' then
+		return false
+	end
+	return NL().send(NL().ClientOp.INPUT, input)
+end
+
+function L.deliver_match_view(lobby, view)
+	local handler = view_handlers[lobby.mod_id]
+	if not handler or type(view) ~= 'table' then
+		return
+	end
+	local ok, err = pcall(handler, lobby, view)
+	if not ok then
+		MPAPI.sendWarnMessage('[nakama_lobby] view handler of ' .. tostring(lobby.mod_id) .. ' failed: ' .. tostring(err))
+	end
+end
+
 local function tear_down(lobby)
 	if lobby._destroyed then
 		return
@@ -58,7 +87,17 @@ local function refused(lobby, title_key, message)
 	show_refusal(title_key, message)
 end
 
-local function roster_from(players)
+-- Where an away player's forfeit falls on this client's clock (love.timer.getTime), or nil while
+-- they are present or the server named no time. Placed by the server time sent beside it, from
+-- `received_local` (when the message arrived on this clock; now if omitted).
+function L.forfeit_local(forfeits_at, server_now, received_local)
+	if type(forfeits_at) ~= 'number' or type(server_now) ~= 'number' then
+		return nil
+	end
+	return (received_local or love.timer.getTime()) + (forfeits_at - server_now) / 1000
+end
+
+local function roster_from(players, server_now)
 	local roster = {}
 	for _, p in ipairs(players or {}) do
 		if p.id then
@@ -71,6 +110,7 @@ local function roster_from(players)
 				-- taken before standings existed.
 				standing = p.standing,
 				is_away = p.isAway or false,
+				forfeits_at_local = L.forfeit_local(p.forfeitsAt, server_now),
 				catching_up = p.catchingUp == true,
 			}
 		end
@@ -97,7 +137,7 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 	end
 	local before = lobby._players
 	local was_host = lobby.is_host
-	local roster = roster_from(snapshot.players)
+	local roster = roster_from(snapshot.players, snapshot.serverNow)
 
 	NL().set_grace_seconds(snapshot.graceSeconds)
 	lobby.code = snapshot.code or lobby.code
@@ -119,12 +159,10 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 
 	local game = type(snapshot.game) == 'table' and snapshot.game or {}
 	local was_started = lobby._game.started ~= nil
-	lobby._game.ready = {}
-	for id, ready in pairs(type(game.ready) == 'table' and game.ready or {}) do
-		if ready == true and roster[id] then
-			lobby._game.ready[id] = true
-			MPAPI.set_player_ready(lobby, id, true)
-		end
+	local ready_list = type(game.ready) == 'table' and game.ready or {}
+	-- On a rejoin the ready events wait for the roster events below: a listener looks the player up.
+	if not announce then
+		L.apply_ready_list(lobby, ready_list, before)
 	end
 	lobby._game.result_pending = game.resultPending == true
 	lobby._game.reported = {}
@@ -179,6 +217,18 @@ L.apply_snapshot = function(lobby, snapshot, announce)
 			lobby:_fire(MPAPI.LobbyEvent.PLAYER_INFO, id, player)
 		end
 	end
+	-- A player who dropped or came back while we were away.
+	for id, player in pairs(roster) do
+		local old = before[id]
+		if old and old.is_away ~= player.is_away then
+			if player.is_away then
+				lobby:_fire(MPAPI.LobbyEvent.PLAYER_DISCONNECTED, id, player.forfeits_at_local)
+			else
+				lobby:_fire(MPAPI.LobbyEvent.PLAYER_RECONNECTED, id)
+			end
+		end
+	end
+	L.apply_ready_list(lobby, ready_list, before)
 	if lobby.is_host ~= was_host then
 		lobby:_fire(MPAPI.LobbyEvent.HOST_CHANGED, snapshot.hostId)
 	end
@@ -193,7 +243,7 @@ end
 -- other message. The game is not in that lobby yet, so a held action must not
 -- reach its mod, and a held event must not fire before the mod listens. They
 -- play in order when the lobby is attached (L.attach_detached). An event that
--- ends this client's seat (a forfeit at the catch-up limit, a closed lobby) is
+-- ends this client's seat (a forfeit, a closed lobby) is
 -- not held: the lobby is dropped at once, which aborts the catch-up.
 local function hold(lobby, op, data)
 	if not (lobby._holding and lobby._nakama_ready) then
@@ -202,8 +252,39 @@ local function hold(lobby, op, data)
 	if op == NL().ServerOp.EVENT and L.ends_own_seat(lobby, data) then
 		return false
 	end
+	-- A held event's server times are placed from its arrival, not from its replay.
+	if type(data) == 'table' and op == NL().ServerOp.EVENT then
+		data.received_local = love.timer.getTime()
+	end
 	lobby._held_messages[#lobby._held_messages + 1] = { op = op, data = data }
 	return true
+end
+
+-- Whether this client's connection to the lobby's match is up (lobby._connection_state). A drop sets
+-- DROPPED; the seat coming back, by a rejoin or a reattach, ends it.
+local CONNECTION = { UP = 'up', DROPPED = 'dropped' }
+
+-- The seat is gone from the socket or the held match: tells listeners once per drop.
+local function seat_lost(lobby)
+	if lobby._connection_state == CONNECTION.DROPPED then return end
+	lobby._connection_state = CONNECTION.DROPPED
+	lobby:_fire(MPAPI.LobbyEvent.CONNECTION_DROPPED)
+end
+
+-- The seat is back after a rejoin (a socket drop's, or a reattach after a teardown): the replay
+-- events kept while away go out again, and the server, which starts a new session as "not
+-- catching up", hears the flag again. Runs from the rejoin snapshot and from the transport's
+-- rejoined notice, whichever the socket counts first; CONNECTION_RESTORED fires on the first.
+local function seat_back(lobby)
+	lobby._server_restarting = nil
+	if lobby._connection_state == CONNECTION.DROPPED then
+		lobby._connection_state = CONNECTION.UP
+		lobby:_fire(MPAPI.LobbyEvent.CONNECTION_RESTORED)
+	end
+	L.resend_log_events(lobby)
+	if lobby._catching_up then
+		lobby:set_catching_up(true)
+	end
 end
 
 local function on_data(lobby, on_ready, op, data)
@@ -221,8 +302,7 @@ local function on_data(lobby, on_ready, op, data)
 			lobby._nakama_ready = true
 			on_ready(lobby)
 		else
-			-- The seat is back: send the replay events kept while the socket was down.
-			L.resend_log_events(lobby)
+			seat_back(lobby)
 		end
 	elseif op == ServerOp.EVENT then
 		L.apply_event(lobby, data)
@@ -266,6 +346,8 @@ local function on_data(lobby, on_ready, op, data)
 				Group._on_view(lobby, data)
 			end
 		end
+	elseif op == ServerOp.VIEW then
+		L.deliver_match_view(lobby, data)
 	elseif op == ServerOp.REPLAY_TAIL then
 		if type(data.tails) == 'table' then
 			lobby:_fire(MPAPI.LobbyEvent.REPLAY_TAIL, data.tails)
@@ -281,17 +363,30 @@ local function connected(lobby)
 	end
 end
 
+-- The server's answer to a join of a match it no longer has: the error text of Nakama's
+-- match join (Nakama's own English string; the SDK gives no status code for it).
+local function is_match_gone(reason)
+	return type(reason) == 'string' and reason:find('Match not found', 1, true) ~= nil
+end
+
+-- How an attach came about, kept on the lobby (_join_kind) and set on every attach. A refused
+-- reattach follows the seat to a new match once; one that followed to a new match is final.
+local JOIN_KIND = { FIRST = 'first', REATTACH = 'reattach', REATTACH_NEW_MATCH = 'reattach new match' }
+
 -- Joins the lobby's match; on_ready(lobby) runs on the first snapshot.
-local function attach(lobby, match_id, on_ready)
+local function attach(lobby, match_id, on_ready, save_to_load, join_kind)
 	local session = MPAPI.get_nakama_session()
 	lobby.player_id = session and session.user_id or lobby.player_id
 	lobby._match_id = match_id
+	lobby._join_kind = join_kind or JOIN_KIND.FIRST
+	lobby._connection_state = lobby._connection_state or CONNECTION.UP
 	NL().join(match_id, lobby.mod_id, {
 		data = function(op, data)
 			on_data(lobby, on_ready, op, data)
 		end,
 		dropped = function()
 			MPAPI.match_log('debug', '[nakama_lobby] socket dropped, rejoining ' .. tostring(lobby.code))
+			seat_lost(lobby)
 		end,
 		-- A rejoin refused only because the launcher verdict lapsed while the
 		-- socket was down (it lasts 6 minutes and is renewed over the socket):
@@ -312,15 +407,10 @@ local function attach(lobby, match_id, on_ready)
 		end,
 		rejoined = function()
 			lobby._reverified = nil
-			lobby._server_restarting = nil
-			-- Usually a no-op: the rejoin snapshot already flushed. It catches the
+			-- Usually a no-op: the rejoin snapshot already did it. This catches the
 			-- case where that snapshot came before the socket counted as up.
-			L.resend_log_events(lobby)
+			seat_back(lobby)
 			MPAPI.match_log('debug', '[nakama_lobby] rejoined ' .. tostring(lobby.code))
-			-- The new session starts as "not catching up" on the server.
-			if lobby._catching_up then
-				lobby:set_catching_up(true)
-			end
 		end,
 		lost = function(reason, gave_up)
 			MPAPI.sendWarnMessage('[nakama_lobby] lost lobby ' .. tostring(lobby.code) .. ': ' .. tostring(reason))
@@ -336,6 +426,11 @@ local function attach(lobby, match_id, on_ready)
 			end
 			-- Reconnecting ran out of time: the server forfeited the seat.
 			if gave_up and MPAPI.show_connection_lost_notice then
+				MPAPI.show_connection_lost_notice()
+				return
+			end
+			-- The server came back without the match while a run was on screen.
+			if is_match_gone(reason) and G and G.STAGE == G.STAGES.RUN and MPAPI.show_connection_lost_notice then
 				MPAPI.show_connection_lost_notice()
 				return
 			end
@@ -364,9 +459,27 @@ local function attach(lobby, match_id, on_ready)
 			MPAPI.show_rejoin_refused(rejoin_refusal)
 			return
 		end
+		-- A reattach names the match the lobby had; a server restart may have brought
+		-- the lobby back under a new one. Follow the seat once before giving up.
+		if lobby._join_kind == JOIN_KIND.REATTACH then
+			L.nakama_check_current(function(current)
+				if lobby._destroyed then
+					return
+				end
+				if current and current.matchId and current.matchId ~= match_id then
+					attach(lobby, current.matchId, on_ready, save_to_load, JOIN_KIND.REATTACH_NEW_MATCH)
+				else
+					refused(lobby, 'k_lobby_join_failed_title', err)
+				end
+			end)
+			return
+		end
 		refused(lobby, 'k_lobby_join_failed_title', err)
-	end)
+	end, save_to_load)
 end
+
+-- Every Nakama lobby object, so a connection teardown reaches the detached and half-joined ones too.
+local live_lobbies = setmetatable({}, { __mode = 'k' })
 
 local function new_lobby(conn, mod_id, opts)
 	local lobby = L.create_object({
@@ -378,6 +491,7 @@ local function new_lobby(conn, mod_id, opts)
 		type = opts.type,
 		nakama = true,
 	})
+	live_lobbies[lobby] = true
 	-- A detached lobby is not the one the game is in (L.current) until it is
 	-- attached; it holds what the server sends meanwhile.
 	if opts.detached then
@@ -441,6 +555,47 @@ L.nakama_join_lobby = function(mod_id, code)
 	return lobby
 end
 
+-- Takes the seat back in the match `lobby` was attached to, after a connection
+-- teardown let go of the match while the lobby object stayed. The lobby already
+-- had its first snapshot, so the join's snapshot is handled as a rejoin: the
+-- roster catches up, the view is read and unconfirmed log events go out again.
+-- False when the lobby is not one to rejoin.
+L.nakama_reattach = function(lobby)
+	if not (lobby._nakama and lobby._match_id and lobby._nakama_ready) or lobby._destroyed or NL().in_match() then
+		return false
+	end
+	attach(lobby, lobby._match_id, function() end, nil, JOIN_KIND.REATTACH)
+	return true
+end
+
+-- A connection teardown (networking/connection.lua) is letting go of the held match. The current
+-- lobby with its seat is DROPPED until a reattach ends it, as for a socket drop. A lobby with no
+-- seat to come back to (its first join in flight, or detached for a crash rejoin) is lost.
+L.nakama_match_released = function()
+	local lobbies = {}
+	for lobby in pairs(live_lobbies) do
+		lobbies[#lobbies + 1] = lobby
+	end
+	for _, lobby in ipairs(lobbies) do
+		if not lobby._destroyed and lobby._match_id then
+			if lobby == L.current and lobby._nakama_ready then
+				seat_lost(lobby)
+			else
+				tear_down(lobby)
+			end
+		end
+	end
+end
+
+-- The login after a teardown failed, so no reattach is coming: a lobby still DROPPED is lost
+-- (DISCONNECTED), which is how a drop always ends in RESTORED or DISCONNECTED.
+L.nakama_connection_failed = function()
+	local lobby = L.current
+	if lobby and lobby._nakama and lobby._connection_state == CONNECTION.DROPPED and not NL().in_match() then
+		tear_down(lobby)
+	end
+end
+
 -- Joins the lobby the matchmaker made (no code lookup: the ticket's match id is
 -- all there is; the code arrives with the first snapshot).
 L.nakama_join_match = function(mod_id, match_id)
@@ -477,14 +632,14 @@ end
 -- runs on the first snapshot, so a refused seat (a forfeit, a closed lobby)
 -- is known before anything is rebuilt. Messages after that are held until
 -- L.attach_detached.
-L.nakama_rejoin_detached = function(lobby_data, on_ready)
+L.nakama_rejoin_detached = function(lobby_data, on_ready, save_to_load)
 	local conn = MPAPI.get_connection()
 	if not conn then
 		return nil
 	end
 	local lobby = new_lobby(conn, lobby_data.modId, { type = lobby_data.type, detached = true })
 	lobby.code = lobby_data.code
-	attach(lobby, lobby_data.matchId, on_ready)
+	attach(lobby, lobby_data.matchId, on_ready, save_to_load)
 	return lobby
 end
 

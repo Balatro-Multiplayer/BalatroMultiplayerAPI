@@ -1,10 +1,7 @@
 -- Contract test: a replayed play or discard waits until the next hand is dealt.
 -- Run from the MPAPI repository root: luajit tests/hand_ready_replay_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local now = 0
 love = { timer = { getTime = function() return now end } }
@@ -74,4 +71,4 @@ now = now + P.HAND_READY_TIMEOUT_SECONDS + 1
 poll()
 check(log[2] == 'act' and log[3] == 'play', 'the timeout runs the action and resumes')
 
-print('hand_ready_replay_test: ' .. checks .. ' checks ok')
+T.done('hand_ready_replay_test')

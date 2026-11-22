@@ -1,10 +1,7 @@
 -- Contract test: a replayed Cash Out waits for the round evaluation instead of clicking at once.
 -- Run from the MPAPI repository root: luajit tests/cash_out_replay_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local now = 0
 love = { timer = { getTime = function() return now end } }
@@ -99,4 +96,4 @@ poll()
 check(gave_up == 2, 'a round evaluation that never ends is counted')
 check(log[#log] == 'play', 'the driver resumes')
 
-print('cash_out_replay_test: ' .. checks .. ' checks passed')
+T.done('cash_out_replay_test')

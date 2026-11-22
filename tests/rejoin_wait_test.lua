@@ -2,11 +2,8 @@
 -- fresh verdict through MPAPI.rejoin_recheck.run, retries once on a good or
 -- late verdict, and does not retry on a verdict that failed. Run from the MPAPI
 -- repository root: luajit tests/rejoin_wait_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local now = 0
 love = { timer = { getTime = function() return now end } }
@@ -52,6 +49,7 @@ MPAPI = {
 	collect_installed_mods = function() return {} end,
 	json_encode = function() return '{}' end,
 	json_decode = function() return {} end,
+	join_keys = { with_mod_keys = function(_, metadata) return metadata end },
 	sendWarnMessage = function() end,
 }
 dofile('networking/nakama_lobby.lua')
@@ -105,4 +103,4 @@ run_for(5)
 lost = state()
 check(joins == joins_final, 'retry(true) does not join again')
 check(lost == 'verification_pending', 'retry(true) ends the lobby with the refusal')
-print(('ok   %d checks'):format(checks))
+T.done('rejoin_wait_test')

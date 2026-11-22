@@ -1,11 +1,8 @@
 -- Contract test: the Reconnect click joins the lobby the server holds now, not the one it named at login.
 -- A server restart while the prompt is up moves the lobby to a new match.
 -- Run from the MPAPI repository root: luajit tests/reconnect_prompt_seat_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 G = { FUNCS = {}, OVERLAY_MENU = nil }
 create_UIBox_generic_options = function() return {} end
@@ -50,4 +47,4 @@ joined = nil
 MPAPI._internal.reconnect_click(stale)
 check(joined and joined.matchId == 'old-match', 'no answer: the prompt\'s own seat is used')
 
-print('reconnect_prompt_seat_test: ' .. checks .. ' checks passed')
+T.done('reconnect_prompt_seat_test')

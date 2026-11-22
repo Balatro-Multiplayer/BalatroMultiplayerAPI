@@ -1,10 +1,7 @@
 -- Avatar display cards must not change the run's used_jokers.
 -- Run from the repo root: luajit tests/lobby_info_in_play_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 -- Model card.lua's ownership updates outside overlays; duplicate handling
 -- is omitted because these cases use distinct centers.
@@ -145,4 +142,4 @@ lobby:fire('PLAYER_INFO', 'p1', { preferredJoker = 'j_zany' })
 check(shown.config.center.key == 'j_zany', 'the open card is re-skinned')
 check(not G.GAME.used_jokers.j_zany, 'an avatar change while Lobby Info is open marks nothing in play')
 
-print(('ok   %d checks'):format(checks))
+T.done('lobby_info_in_play_test')

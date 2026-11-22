@@ -2,11 +2,8 @@
 -- with or without a tile note. A false in a node list crashes the engine's
 -- UIBox build. Run from the MPAPI repository root:
 -- luajit tests/ban_pick_tooltip_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local file = assert(io.open('api/ban_pick.lua'))
 local source = file:read('*a')
@@ -56,4 +53,4 @@ for _, note in ipairs({ 'none', 'Gold' }) do
 	walk(card.config.h_popup)
 end
 
-print('ok ' .. checks .. ' checks')
+T.done('ban_pick_tooltip_test')

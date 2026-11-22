@@ -1,8 +1,8 @@
 -- Contract test for the startup Ranked-verification gate's state machine.
 -- Run from the MPAPI repository root:
 -- luajit tests/verify_gate_test.lua
-local checks = 0
-local function check(c, m) checks = checks + 1; assert(c, m) end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local Gate = dofile('anticheat/verify_gate.lua')
 local S = Gate.State
@@ -110,4 +110,4 @@ g:start()
 g:keep_waiting()
 check(g.attempts == 1, 'keep_waiting only from the prompt')
 
-print('verify_gate_test: ' .. checks .. ' checks passed')
+T.done('verify_gate_test')

@@ -9,7 +9,7 @@
 local NL = {}
 
 -- Must match nakama/src/lobby/protocol.ts.
-NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6, SPECTATE_VIEW = 7 }
+NL.ClientOp = { LEAVE = 1, KICK = 2, SET_METADATA = 3, SET_STATE = 4, ACTION = 5, CATCHING_UP = 6, SPECTATE_VIEW = 7, INPUT = 8 }
 NL.ServerOp = {
 	SNAPSHOT = 100,
 	EVENT = 101,
@@ -27,6 +27,8 @@ NL.ServerOp = {
 	GROUP_QUEUE = 112,
 	-- A spectator's answer to SPECTATE_VIEW: the watched player's Run save and the events after it.
 	SPECTATE_RUN = 113,
+	-- The lobby's mod sends the view of the game it keeps (api/lobby/nakama.lua hands it to that mod).
+	VIEW = 114,
 }
 -- ACTION's `to` for an authoritative action.
 NL.SERVER_TARGET = 'server'
@@ -45,7 +47,7 @@ local socket_open = false
 local connect_waiters = nil -- callbacks waiting on an in-flight socket connect
 
 -- The lobby match this client is in, or nil.
-local match = nil -- { id, metadata, listener, lost_since, attempt }
+local match = nil -- { id, mod_id, metadata, listener, lost_since, attempt }
 
 -- What the client last knew of its seat's grace period, kept after the match
 -- is gone: { grace_seconds, lost_at }.
@@ -337,13 +339,15 @@ local function join_metadata(mod_id)
 	}
 end
 
-local function send_join(cb)
+local function send_join(cb, save_to_load)
 	with_socket(function(ok, err)
 		if not ok then
 			cb(err or 'Could not open the Nakama socket', true)
 			return
 		end
-		socket.match_join(match.id, nil, match.metadata, function(result)
+		-- Asked again on a rejoin: the mod's keys say where its run stands now.
+		local metadata = MPAPI.join_keys.with_mod_keys(match.mod_id, match.metadata, save_to_load)
+		socket.match_join(match.id, nil, metadata, function(result)
 			if result and result.error then
 				-- A socket lost before the reply is a transport failure, not a refusal.
 				cb(error_message(result, 'Could not join the lobby'), result.socket_closed == true)
@@ -358,12 +362,14 @@ end
 -- lost(reason), refused_wait(err, retry) }; data is required, the rest
 -- optional. refused_wait returns true to hold a refused rejoin until it calls
 -- retry(), or retry(true) to take the refusal as final. cb(err_message).
-function NL.join(match_id, mod_id, listener, cb)
+-- save_to_load (optional): the Run save a crash rejoin will load, given to the mod's join keys for
+-- this first join only.
+function NL.join(match_id, mod_id, listener, cb, save_to_load)
 	if match then
 		cb('Already in a Nakama lobby')
 		return
 	end
-	match = { id = match_id, metadata = join_metadata(mod_id), listener = listener }
+	match = { id = match_id, mod_id = mod_id, metadata = join_metadata(mod_id), listener = listener }
 	local this = match
 	send_join(function(err)
 		if match ~= this then
@@ -373,7 +379,7 @@ function NL.join(match_id, mod_id, listener, cb)
 			match = nil
 		end
 		cb(err)
-	end)
+	end, save_to_load)
 end
 
 -- Seconds after the socket drops at which the client gives up reconnecting,
@@ -893,6 +899,12 @@ function NL._drop_socket()
 	if socket == s then
 		on_socket_disconnect()
 	end
+end
+
+-- Whether this client holds a lobby match (also while its socket is down and
+-- the rejoin is running).
+function NL.in_match()
+	return match ~= nil
 end
 
 function NL._current_match_id()

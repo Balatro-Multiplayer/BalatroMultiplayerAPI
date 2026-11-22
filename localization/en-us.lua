@@ -174,6 +174,7 @@ return {
 			k_kicked_title = 'Removed from Lobby',
 			k_player_kicked_you = 'The host removed you from the lobby.',
 			k_moderator_kicked_you = 'A moderator removed you from the lobby.',
+			k_opened_elsewhere = 'This account opened the game somewhere else.',
 			-- Ban notice (Nakama: api/connection/moderation.lua)
 			k_banned_title = 'Account Banned',
 			k_network_banned_title = 'Network Banned',
@@ -352,6 +353,7 @@ return {
 			k_connection_lost_title = 'Connection Lost',
 			k_connection_lost_body = 'Connection lost. The match is over.',
 			k_connection_lost_menu = 'Main Menu',
+			k_rejoin_load_failed_body = 'Your saved game could not be loaded, so the rejoin ended.',
 			k_ranked_launcher_outdated_body = 'A new version of Balatro Essentials Toolkit is required to continue playing Ranked. Update BET to keep playing.',
 			k_ranked_mods_outdated_body = 'Your Ranked mods are out of date. Relaunch through BET to update them, then queue again.',
 			k_ranked_verification_timeout_body = 'Could not verify your launcher in time. Make sure BET is still running, then queue again.',

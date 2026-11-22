@@ -76,7 +76,7 @@ local function run()
 			command = tx_channel:pop()
 		end
 
-		for _, event in ipairs(conn:poll(POLL_SECONDS)) do
+		for _, event in ipairs(conn:poll(POLL_SECONDS, socket.gettime())) do
 			if event.type == 'message' then
 				rx_channel:push({ type = 'message', data = event.data })
 			elseif event.type == 'closed' then
@@ -85,6 +85,13 @@ local function run()
 				rx_channel:push({ type = 'disconnected', message = reason })
 				return
 			end
+		end
+
+		local dead = conn:keep_alive(socket.gettime())
+		if dead then
+			conn:close()
+			rx_channel:push({ type = 'disconnected', message = dead })
+			return
 		end
 	end
 end

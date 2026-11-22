@@ -120,6 +120,7 @@ end
 -- MPAPI.OfflineReason the menu shows and, when the server refused, its own
 -- message (MPAPI.offline_reason_lines).
 local function fail(self, offline_reason, message, server_message)
+	MPAPI._internal.lobby.nakama_connection_failed()
 	set_state(self, STATES.DISCONNECTED, {
 		error = message,
 		offline_reason = offline_reason,
@@ -361,6 +362,7 @@ function connection:_login_refused(prefix, message, offline_reason, answered)
 	if ban and MPAPI.show_banned_notice then
 		MPAPI.show_banned_notice(ban.title_key, ban.message)
 	end
+	MPAPI._internal.lobby.nakama_connection_failed()
 	set_state(self, STATES.DISCONNECTED, {
 		error = prefix .. tostring(message),
 		banned = ban and ban.message,
@@ -547,6 +549,7 @@ end
 -- Disconnects fully; the prompt will appear again on the next connection attempt.
 function connection:decline_tos()
 	self._pending_tos_token = nil
+	MPAPI._internal.lobby.nakama_connection_failed()
 	set_state(self, STATES.DISCONNECTED)
 end
 
@@ -565,10 +568,15 @@ end
 
 -- A seat in a lobby survives a game restart; lobby_current finds it, and it
 -- goes out as a second CONNECTED with reconnected_lobby. Once per login, and
--- not while already in a lobby.
+-- not while already in a lobby. A lobby object that outlived a connection
+-- teardown (MPAPI.reconnect) is attached to its match again, with no prompt.
 function connection:_check_nakama_lobby_seat()
 	local lobby = MPAPI._internal.lobby
-	if not lobby or lobby.current then
+	if not lobby then
+		return
+	end
+	if lobby.current then
+		lobby.nakama_reattach(lobby.current)
 		return
 	end
 	lobby.nakama_check_current(function(lobby_data)
@@ -648,6 +656,11 @@ function connection:disconnect()
 		self.auth_ticket_handle = nil
 	end
 
+	local NL = MPAPI.networking.nakama_lobby
+	local lobby = MPAPI._internal and MPAPI._internal.lobby
+	if NL and NL.in_match() and lobby and lobby.nakama_match_released then
+		lobby.nakama_match_released()
+	end
 	set_state(self, STATES.DISCONNECTED)
 	if MPAPI.networking.nakama_lobby then
 		MPAPI.networking.nakama_lobby.reset()

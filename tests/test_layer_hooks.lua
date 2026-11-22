@@ -7,11 +7,8 @@
 -- survivors. Same for pool_enabled (pool gating asks each owning layer).
 -- Functions only ever read off the ruleset (force_lobby_options, is_disabled)
 -- must keep flowing layer -> ruleset.
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 MPAPI = {}
 dofile('api/layers/registry.lua')
@@ -90,4 +87,4 @@ check(dispatch('r_middle') == 'idol,culls', 'hook layers in the middle: each onc
 check(dispatch('r_none') == '', 'no hook layers: nothing runs')
 check(dispatch('r_own') == 'culls,r_own', "a ruleset's own calculate still runs after its layers, got " .. dispatch('r_own'))
 
-print('OK: ' .. checks .. ' checks')
+T.done('test_layer_hooks')

@@ -28,6 +28,12 @@ M.OP_PONG = 0xA
 local ACCEPT_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 local CLOSE_WAIT_SECONDS = 1
 
+-- A connection that dies without a close (Wi-Fi change, router drop, sleep) reads as
+-- quiet forever: ping once the line is quiet, call it dead once nothing has arrived for
+-- DEAD_SECONDS. Under Nakama's pong_wait (25 s), so we notice before the server does.
+M.PING_SECONDS = 5
+M.DEAD_SECONDS = 15
+
 ----------------------------------------------------------------------
 -- SHA-1 and base64 (only used for the Sec-WebSocket-Accept check)
 ----------------------------------------------------------------------
@@ -303,13 +309,20 @@ function M.connect(url, timeout)
 		return nil, handshake_err
 	end
 
+	-- Frames can follow the handshake in the same read.
+	return M.wrap(stream, buffer:sub(head_end + 4), socket.gettime())
+end
+
+-- A connection over an open stream; now = when it was opened.
+function M.wrap(stream, buffer, now)
 	return setmetatable({
 		stream = stream,
-		-- Frames can follow the handshake in the same read.
-		buffer = buffer:sub(head_end + 4),
+		buffer = buffer,
 		fragments = nil,
 		fragment_opcode = nil,
 		closed = false,
+		heard_at = now,
+		pinged_at = now,
 	}, Connection)
 end
 
@@ -363,11 +376,15 @@ end
 -- Waits up to timeout seconds for data and returns every event it
 -- completed: { type = 'message', data, binary } or { type = 'closed',
 -- code, reason }. A dropped connection is reported as 'closed' too.
-function Connection:poll(timeout)
+-- now: the time, for keep_alive.
+function Connection:poll(timeout, now)
 	local events = {}
 	local data, err = self.stream:receive(timeout)
 	if data then
 		self.buffer = self.buffer .. data
+		if data ~= '' and now then
+			self.heard_at = now
+		end
 	end
 
 	while true do
@@ -390,6 +407,18 @@ function Connection:poll(timeout)
 		events[#events + 1] = { type = 'closed', reason = tostring(err) }
 	end
 	return events
+end
+
+-- Pings a quiet line; returns the reason once it counts as dead.
+function Connection:keep_alive(now)
+	local quiet = now - self.heard_at
+	if quiet >= M.DEAD_SECONDS then
+		return ('no reply from the server for %d s'):format(math.floor(quiet))
+	end
+	if quiet >= M.PING_SECONDS and now - self.pinged_at >= M.PING_SECONDS then
+		self.pinged_at = now
+		self:send_frame(M.OP_PING, '')
+	end
 end
 
 -- Starts the close handshake and waits briefly for the server's echo.

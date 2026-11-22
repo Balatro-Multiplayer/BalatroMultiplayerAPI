@@ -1,9 +1,6 @@
 -- Contract tests, not a game simulator. Run from the MPAPI repository root.
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local messages = {}
 MPAPI = {
@@ -150,4 +147,4 @@ check(warning_count() == count + 1, 'legacy MPAPI-prefix warning remains availab
 local permissive = { key = 'j_permissive_unlisted', mod = { id = 'permissive_consumer' } }
 check(not MPAPI.should_exclude_from_pool(permissive), 'warning does not change the isolation policy')
 
-print(('Layer content contracts: %d checks passed'):format(checks))
+T.done('test_layer_content')

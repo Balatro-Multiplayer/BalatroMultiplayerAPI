@@ -2,11 +2,8 @@
 -- (member_refused, any reason) shows one named notice to every client that is
 -- not that member, and the host's open-time refusal shows exactly one.
 -- Run from the MPAPI repository root: luajit tests/group_refusal_notice_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 MPAPI = { _internal = {}, matchmaking = {}, networking = {} }
 G = { localization = dofile('localization/en-us.lua') }
@@ -134,4 +131,4 @@ check(handle, 'the open starts')
 check(#notices == 1, 'the host open refusal shows one notice, got ' .. #notices)
 check(notices[1].body == 'Bob runs a different MultiplayerPvP version.', 'host notice names the member')
 
-print(('ok   %d checks'):format(checks))
+T.done('group_refusal_notice_test')

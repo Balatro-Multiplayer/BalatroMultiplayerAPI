@@ -1,33 +1,21 @@
 -- Contract test: lobby:is_result_pending follows the server's pending result flag, from a
 -- snapshot and from the live action result. Run from the MPAPI repository root:
 -- luajit tests/result_pending_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 love = { timer = { getTime = function() return 0 end } }
 local action_types = {}
 local current
-MPAPI = {
-	_internal = {},
-	load_mpapi_file = function() end,
+MPAPI = T.lobby_mpapi({
 	ActionType = setmetatable({ obj_buffer = {} }, {
 		__call = function(_, spec)
 			action_types[spec.key] = spec
 		end,
 	}),
-	ActionTypes = {},
-	get_current_lobby = function()
-		return current
-	end,
-	LobbyEvent = setmetatable({}, { __index = function(_, k) return k end }),
-	networking = { nakama_lobby = { set_grace_seconds = function() end } },
+	get_current_lobby = function() return current end,
 	set_player_ready = function() end,
-	sendWarnMessage = function() end,
-	sendDebugMessage = function() end,
-}
+})
 dofile('api/lobby/state.lua')
 local L = MPAPI._internal.lobby
 dofile('api/action/builtin.lua')
@@ -61,4 +49,4 @@ action_types.mpapi_set_result_pending.on_receive(nil, nil, { playerId = 'a', pen
 L.apply_game_ended(current, { runId = 'r1', status = 'agreed', placements = {} })
 check(current:is_result_pending() == false, 'a finished game clears the flag')
 
-print(('ok   %d checks'):format(checks))
+T.done('result_pending_test')
