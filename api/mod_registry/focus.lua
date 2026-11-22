@@ -223,7 +223,16 @@ MPAPI._internal.rebuild_current_menu = function()
 	end
 	local mod = state.registered_mods[state.focused_mod]
 	local current = MPAPI.pages.current()
-	if not mod or not current then
+	if not mod then
+		return false
+	end
+	-- A mod focused for a run it did not open from its menu (focus_mod_for_run) has no page on
+	-- record; its joined lobby is the page to come back to.
+	if not current and state.engaged_mod == state.focused_mod and mod.lobby_ui then
+		MPAPI.pages.show(mod.lobby_ui, { mod = mod, lobby = MPAPI.get_current_lobby() })
+		return true
+	end
+	if not current then
 		return false
 	end
 	MPAPI.pages.show(current.key, current.params)

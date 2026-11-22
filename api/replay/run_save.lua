@@ -220,18 +220,18 @@ local function log_sizes(raw, compressed, encoded, parts, pos)
 	end
 end
 
--- Takes a Run save of the current match and sends it. False when there is nothing to send
--- (not in a refereed match, the lobby is catching up, the log cannot be hashed, the save is too big or could not be
--- built) or the socket is down; the next Blind Select takes a new one.
-function RS.take()
+-- The Run save of the current match as one text, with the log position and hash it was taken at.
+-- nil when there is nothing to save (not in a refereed match, the lobby is catching up, the log
+-- cannot be hashed, the save could not be built or packed).
+local function build_text()
 	local lobby = MPAPI.get_current_lobby()
-	if not (lobby and MPAPI.has_server_referee(lobby) and lobby._game.started) then return false end
+	if not (lobby and MPAPI.has_server_referee(lobby) and lobby._game.started) then return nil end
 	-- A client that is replaying its log is not at the state its recorder's position names.
-	if lobby._catching_up then return false end
+	if lobby._catching_up then return nil end
 	local pos, hash = MPAPI.replay.log_position()
-	if not pos then return false end
+	if not pos then return nil end
 	local save = vanilla_save_table()
-	if not save then return false end
+	if not save then return nil end
 
 	local envelope = {
 		v = RS.FORMAT_VERSION,
@@ -243,16 +243,28 @@ function RS.take()
 	local ok, packed = pcall(RS.codec.pack, envelope)
 	if not ok then
 		MPAPI.sendWarnMessage('run_save: could not pack the save: ' .. tostring(packed))
-		return false
+		return nil
 	end
 	local compressed = RS.codec.compress(packed)
 	local encoded = RS.codec.to_text(compressed)
+	return { text = encoded, pos = pos, hash = hash, raw = #packed, compressed = #compressed, lobby = lobby }
+end
+
+-- Takes a Run save of the current match, keeps it as the local copy and sends it. False when there
+-- is nothing to send (not in a refereed match, the lobby is catching up, the log cannot be hashed,
+-- the save is too big or could not be built) or the socket is down; the next Blind Select takes a
+-- new one.
+function RS.take()
+	local built = build_text()
+	if not built then return false end
+	RS.write_local(built)
+	local lobby, encoded, pos, hash = built.lobby, built.text, built.pos, built.hash
 	local parts = RS.split(encoded, RS.PART_BYTES)
 	if #parts > RS.MAX_PARTS then
 		MPAPI.sendWarnMessage(string.format('run_save: save of %d characters needs %d parts, over the limit of %d', #encoded, #parts, RS.MAX_PARTS))
 		return false
 	end
-	log_sizes(#packed, #compressed, #encoded, #parts, pos)
+	log_sizes(built.raw, built.compressed, #encoded, #parts, pos)
 
 	seq = seq + 1
 	local id = string.format('%s-%d', lobby._game.started.run_id, seq)
@@ -271,6 +283,128 @@ function RS.take()
 	return true
 end
 
+-- The local copy of the Run save: the same text take() sends, kept in one file per player of the
+-- save folder (windows on one machine share it) and replaced by every local save. It is not
+-- vanilla's Continue file: a lobby run must never be offered as a single-player Continue. A rejoin
+-- reads it next to the server's copy (MPAPI.playback.pick_rejoin_start) and starts from the newer.
+local function local_file(player)
+	return 'mpapi_local_run_save_' .. tostring(player):gsub('[^%w_-]', '_') .. '.txt'
+end
+
+-- { run, player, pos, hash, data } from a file text (first line "run player pos hash"), or nil.
+function RS.parse_local(text)
+	if type(text) ~= 'string' then return nil end
+	local line, data = text:match('^([^\n]*)\n(.*)$')
+	if not line then return nil end
+	local run, player, pos, hash = line:match('^(%S+) (%S+) (%d+) (%S+)$')
+	if not run or data == '' then return nil end
+	return { run = run, player = player, pos = tonumber(pos), hash = hash, data = data }
+end
+
+-- This player's local copy as a parsed table, or nil when there is none, it is unreadable or it
+-- was written for another player.
+function RS.read_local()
+	local player = MPAPI.get_replay_player_id()
+	if not player then return nil end
+	local ok, text = pcall(love.filesystem.read, local_file(player))
+	if not ok then return nil end
+	local parsed = RS.parse_local(text)
+	if parsed and parsed.player ~= tostring(player) then return nil end
+	return parsed
+end
+
+-- Deletes this player's local copy (a rejoin that went live no longer needs it).
+function RS.clear_local()
+	local player = MPAPI.get_replay_player_id()
+	if not player then return end
+	pcall(love.filesystem.remove, local_file(player))
+end
+
+-- Writes a built save as this player's local copy. False when the player is unknown or the write failed.
+function RS.write_local(built)
+	local player = MPAPI.get_replay_player_id()
+	if not player then return false end
+	local run = built.lobby._game.started.run_id
+	local text = string.format('%s %s %d %s' .. '\n' .. '%s', tostring(run), tostring(player), built.pos, built.hash, built.text)
+	local ok, written, reason = pcall(love.filesystem.write, local_file(player), text)
+	if not ok or not written then
+		MPAPI.sendWarnMessage('run_save: the local save was not written: ' .. tostring(ok and reason or written))
+		return false
+	end
+	return true
+end
+
+-- Takes a Run save of the current match into the local file only; nothing is sent. False when
+-- there is nothing to save (same cases as take) or the write failed.
+function RS.take_local()
+	local built = build_text()
+	if not built then return false end
+	return RS.write_local(built)
+end
+
+-- A mod can say "not now" at a save point (register_save_wait: is_waiting() returns true while it
+-- has work the save must not miss). Only the hook of the current lobby's mod is asked. The save is
+-- then taken when that mod calls save_now() and no longer says not now, and only if no newer
+-- save-point screen has started since. Each screen gets the next number as it starts to build; a
+-- number, not G.STATE, because the game can leave a screen and come back to the same state.
+RS._save_waits = RS._save_waits or {}
+local latest_save_point = 0
+local waiting_save_point = nil
+local waiting_state = nil
+
+function RS.register_save_wait(mod_id, is_waiting)
+	RS._save_waits[mod_id] = is_waiting
+end
+
+-- Numbers a save-point screen as it starts to build.
+function RS.start_save_point()
+	latest_save_point = latest_save_point + 1
+	return latest_save_point
+end
+
+-- Forgets a put-off save: the lobby was left or the run ended.
+function RS.clear_wait()
+	waiting_save_point = nil
+end
+
+-- Only the hook of the current lobby's mod is asked: another mod's leftover state holds nothing back.
+local function lobby_mod_waiting()
+	local lobby = MPAPI.get_current_lobby()
+	local is_waiting = lobby and RS._save_waits[lobby.mod_id]
+	if not is_waiting then
+		return false
+	end
+	local ok, waiting = pcall(is_waiting)
+	if not ok then
+		MPAPI.sendWarnMessage('run_save: wait hook of ' .. tostring(lobby.mod_id) .. ' failed: ' .. tostring(waiting))
+		return false
+	end
+	return waiting and true or false
+end
+
+-- Called once the save-point screen numbered `save_point` is built. Takes the save now, or puts it
+-- off when a mod says not now. A screen that a newer one has replaced takes nothing.
+function RS.at_save_point(save_point)
+	waiting_save_point = nil
+	if save_point ~= latest_save_point then return false end
+	if lobby_mod_waiting() then
+		waiting_save_point = save_point
+		waiting_state = G and G.STATE
+		return false
+	end
+	return RS.take()
+end
+
+-- A mod says now: takes the save put off by at_save_point once the lobby's mod no longer waits and the
+-- game is still at that save point (same number, same state, screen built). While it still waits,
+-- the save stays put off.
+function RS.save_now()
+	if waiting_save_point == nil or waiting_save_point ~= latest_save_point or lobby_mod_waiting() then return false end
+	if not (G and G.STATE == waiting_state and G.STATE_COMPLETE) then return false end
+	waiting_save_point = nil
+	return RS.take()
+end
+
 -- Vanilla saves the run as the Blind Select screen is built, in an event it queues. The Run
 -- save is queued behind it, so it sees the same state. It is blockable like vanilla's: the
 -- start of a run queues delayed events (the Ghost Deck's Hex), and a save that ran ahead of them
@@ -281,11 +415,12 @@ if Game and Game.update_blind_select then
 		local building = not G.STATE_COMPLETE
 		update_blind_select_ref(self, dt)
 		if building and G.STATE_COMPLETE and G.E_MANAGER then
+			local save_point = RS.start_save_point()
 			G.E_MANAGER:add_event(Event({
 				trigger = 'immediate',
 				no_delete = true,
 				func = function()
-					local ok, err = pcall(RS.take)
+					local ok, err = pcall(RS.at_save_point, save_point)
 					if not ok then MPAPI.sendWarnMessage('run_save: ' .. tostring(err)) end
 					return true
 				end,

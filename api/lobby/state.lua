@@ -55,14 +55,12 @@ L.create_object = function(opts)
 		-- Every other lobby is hosted as a Nakama match: see api/lobby/nakama.lua.
 		_nakama = opts.nakama or false,
 		-- Server-owned game state (Nakama lobbies):
-		--   ready: { [player_id] = true }
 		--   started: nil | { seed, stake, options }
 		--   reported: { [player_id] = true } (players who reported a result)
 		--   result_pending: true while the server holds the started game's result open
 		--   setup: { open = nil | the open Setup, results = { [step id] = result } }
 		-- See api/action/builtin.lua.
 		_game = {
-			ready = {},
 			started = nil,
 			reported = {},
 			result_pending = false,
@@ -323,6 +321,8 @@ L.cleanup = function(lobby)
 		return
 	end
 	lobby._destroyed = true
+	-- The put-off save belongs to the lobby the game is in, not to a stale one left late.
+	if MPAPI.run_save and L.current == lobby then MPAPI.run_save.clear_wait() end
 
 	-- A leave can be answered after the player is already in another lobby, which
 	-- by then owns the match and the chat: only let go of this lobby's own.

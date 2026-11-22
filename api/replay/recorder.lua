@@ -301,6 +301,16 @@ function RLOG.log_position()
 	return count + (prefix and prefix.count or 0), hash
 end
 
+-- The hash a log of these first `count` downloaded events {t, opcode, args} has: the same
+-- canonical encoding and SHA-256 as log_position, for checking a Run save against a log.
+function RLOG.hash_events(events, count)
+	local parts = {}
+	for i = 1, count do
+		parts[i] = encode_event_tuple(events[i])
+	end
+	return love.data.encode("string", "hex", love.data.hash("sha256", "[" .. table.concat(parts, ",") .. "]"))
+end
+
 -- Cheap Adler-style checksum for the human stream (never server-verified,
 -- purely a local corruption check) -- kept private to this file rather than
 -- exposed as a general-purpose MPAPI hash utility, since it has exactly one

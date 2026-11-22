@@ -1,11 +1,8 @@
 -- Contract test: an Announcement (notify code 113) prints once as a [Server]
 -- chat line, and a blank or malformed one prints nothing. Run from the MPAPI
 -- repository root: luajit tests/announcement_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 localize = function(key)
 	return key == 'k_notification_chat_prefix' and '[Server]' or key
@@ -40,4 +37,4 @@ handlers[113]({})
 handlers[113]('nope')
 check(#chat == 1, 'blank and malformed content prints nothing')
 
-print('announcement_test: ' .. checks .. ' checks passed')
+T.done('announcement_test')

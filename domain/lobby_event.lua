@@ -26,6 +26,10 @@ MPAPI.LobbyEvent = {
 	-- connection drops next and the lobby is rejoined, under the same code,
 	-- once the server is back. Args: { grace_seconds }.
 	SERVER_RESTARTING = 'server_restarting',
+	-- Client-side only: this client's own socket dropped and the lobby is being rejoined
+	-- (Nakama lobbies), then the rejoin is done. No args.
+	CONNECTION_DROPPED = 'connection_dropped',
+	CONNECTION_RESTORED = 'connection_restored',
 	-- Client-side only: this client rejoined a running game it had dropped out
 	-- of, and the server sent what the others logged meanwhile (Nakama
 	-- lobbies). Args: { { playerId, events = { {t, opcode, args}, ... } }, ... }.
@@ -37,6 +41,8 @@ MPAPI.LobbyEvent = {
 	PLAYER_JOINED = 'player_joined',
 	PLAYER_LEFT = 'player_left',
 	PLAYER_KICKED = 'player_kicked',
+	-- player_id, forfeits_at_local (love.timer.getTime seconds when the server forfeits the
+	-- seat; nil when the server named none).
 	PLAYER_DISCONNECTED = 'player_disconnected',
 	PLAYER_RECONNECTED = 'player_reconnected',
 	PLAYER_INFO = 'player_info',

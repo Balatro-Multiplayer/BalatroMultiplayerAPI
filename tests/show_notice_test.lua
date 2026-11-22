@@ -2,11 +2,8 @@
 -- many times the same title and text are raised while it is still up, and
 -- opens a new one once it is gone. Run from the MPAPI repository root:
 -- luajit tests/show_notice_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local opened = 0
 MPAPI = {}
@@ -36,4 +33,4 @@ G.OVERLAY_MENU = {}
 MPAPI.show_notice('k_group_queue_failed_title', 'Another text.')
 check(opened == 4, 'another overlay on top is not this notice')
 
-print(('ok   %d checks'):format(checks))
+T.done('show_notice_test')

@@ -2,11 +2,8 @@
 -- show one at a time as "1 of N" to "N of N", none twice; a live one is a
 -- chat line with the [Server] prefix and is marked read; an unknown kind is left unread. Run from the
 -- MPAPI repository root: luajit tests/notification_inbox_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local clock = 100
 localize = function(key)
@@ -154,4 +151,4 @@ inbox.receive_waiting({ id = 'g', kind = 'test_kind', params = { n = 7 } })
 inbox.on_state_change(MPAPI.ConnectionState.DISCONNECTED, {})
 check(not Queue.has_pending(inbox.queue), 'a disconnect forgets what was not shown')
 
-print(('ok   %d checks'):format(checks))
+T.done('notification_inbox_test')

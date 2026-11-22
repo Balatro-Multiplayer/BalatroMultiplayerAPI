@@ -3,14 +3,12 @@
 -- wins even while the Steam client runs. A provider that is not ready fails the
 -- connect under one generic offline reason that carries the provider's message.
 -- Run from the MPAPI repository root: luajit tests/steam_provider_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local warnings = {}
 MPAPI = {
+	_internal = { lobby = { nakama_connection_failed = function() end } },
 	networking = {},
 	sendWarnMessage = function(msg)
 		warnings[#warnings + 1] = msg
@@ -262,4 +260,4 @@ calls = {}
 steam.provider_changed()
 check(count('connect') == 0, 'startup connect covers a provider that is already ready')
 
-print('steam_provider_test: ' .. checks .. ' checks passed')
+T.done('steam_provider_test')

@@ -1,11 +1,8 @@
 -- Contract test: a log resumed after a crash can still give a log position and hash, taken
 -- over the events the server already held (as the text it hashed) plus the events recorded
 -- since. Run from the MPAPI repository root: luajit tests/recorder_resume_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 -- A stand-in encoder for the shapes used here, and a "hash" that returns its input so the
 -- test can read what would have been hashed.
@@ -34,6 +31,12 @@ MPAPI = {
 dofile('api/replay/recorder.lua')
 local RLOG = MPAPI.replay
 RLOG._force_active = true
+
+-- hash_events: the hash of a downloaded log's first events is the hash the recorder took of them.
+local downloaded = { { t = 1, opcode = 'play', args = { 1 } }, { t = 2, opcode = 'buy' } }
+check(RLOG.hash_events(downloaded, 2) == '[[1,"play",[1]],[2,"buy",null]]', 'a downloaded log hashes like the recorder: ' .. tostring(RLOG.hash_events(downloaded, 2)))
+check(RLOG.hash_events(downloaded, 1) == '[[1,"play",[1]]]', 'only the first count events are hashed')
+check(RLOG.hash_events(downloaded, 0) == '[]', 'no events hash as an empty log')
 
 -- A fresh log: the position is the event count, the input the canonical encoding.
 RLOG.begin_run()
@@ -87,4 +90,4 @@ RLOG.record('sell', { 2 })
 check(RLOG.end_run({ result = 'win' }) == nil, 'no text, no hash')
 check(sent[#sent].opcode == 'end', 'and the log ends with END only')
 
-print(string.format('recorder_resume_test: %d checks passed', checks))
+T.done('recorder_resume_test')

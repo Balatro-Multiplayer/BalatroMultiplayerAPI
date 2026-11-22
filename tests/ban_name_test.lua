@@ -1,10 +1,7 @@
 -- Contract test: the Ban name rule matches the server's. Run from the MPAPI
 -- repository root: luajit tests/ban_name_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 MPAPI = {}
 local ban_name = dofile('lib/ban_name.lua')
@@ -25,4 +22,4 @@ check(ban_name.name_of('A3F1C2D4-5B6E-4F70-8A91-B2C3D4E5F607') == 'Magic Devious
 check(#ban_name.decks == 10, 'ten decks')
 check(#ban_name.jokers == 149, '149 jokers')
 
-print('ban_name_test: ' .. checks .. ' checks passed')
+T.done('ban_name_test')

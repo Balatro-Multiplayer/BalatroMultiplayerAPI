@@ -1,10 +1,7 @@
 -- Contract test: a fast-forward does not end while a handler has paused the driver.
 -- Run from the MPAPI repository root: luajit tests/driver_pause_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 G = { CONTROLLER = { locks = {} }, SETTINGS = { GAMESPEED = 1 }, FUNCS = { go_to_menu = function() end } }
 Game = { update = function() end }
@@ -82,4 +79,4 @@ check(MPAPI.playback.gave_up_waits() == 2, 'each wait that gave up is counted')
 MPAPI.playback.reset_gave_up_waits()
 check(MPAPI.playback.gave_up_waits() == 0, 'a new catch-up starts at zero')
 
-print('driver_pause_test: ' .. checks .. ' checks passed')
+T.done('driver_pause_test')

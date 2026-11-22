@@ -5,11 +5,8 @@
 -- A config may now set tile_order(a, b); the screen then draws a sorted copy of
 -- the pool. Bans and picks still go by the tile's key, so sorting must never
 -- change which key a tile has. Without a comparator the pool is untouched.
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 MPAPI = {}
 G = { FUNCS = {} }
@@ -100,4 +97,4 @@ for banned_key, _ in pairs(snapshot) do
 	check(#BP._selection.prune({ banned_key }, view) == 0, 'a selection of ' .. banned_key .. ' is dropped once it is banned')
 end
 
-print('ban_pick order: ' .. checks .. ' checks passed')
+T.done('test_ban_pick_order')

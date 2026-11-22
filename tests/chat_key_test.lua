@@ -2,11 +2,8 @@
 -- a pending rebind only holds while the Chat Key button is on screen, and only
 -- a single allowed key is saved. Run from the MPAPI repository root:
 -- luajit tests/chat_key_test.lua
-local checks = 0
-local function check(condition, message)
-	checks = checks + 1
-	assert(condition, message)
-end
+local T = dofile('tests/support.lua')
+local check = T.check
 
 local saved, refreshed = nil, 0
 MPAPI = {
@@ -89,4 +86,4 @@ check(chat.opens_on('t') == true, 'a cleared flag opens the chat again')
 G.CONTROLLER.text_input_hook = {}
 check(chat.opens_on('t') == false, 'a game text box still blocks the chat key')
 
-print(('ok   %d checks'):format(checks))
+T.done('chat_key_test')
