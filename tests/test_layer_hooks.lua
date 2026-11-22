@@ -5,7 +5,7 @@
 -- in the active chain and then the ruleset itself, so a copied hook ran twice
 -- per event -- for apply_bans, Small World's 75% cull re-culled its own
 -- survivors. Same for pool_enabled (pool gating asks each owning layer).
--- Functions only ever read off the ruleset (force_lobby_options, is_disabled)
+-- Functions only ever read off the ruleset (e.g. is_disabled)
 -- must keep flowing layer -> ruleset.
 local checks = 0
 local function check(condition, message)
@@ -46,10 +46,15 @@ MPAPI.Layer('base', { multiplayer_content = true, banned_jokers = { 'j_a' } })
 MPAPI.Layer('culls', { calculate = hook('culls'), pool_enabled = pool_enabled })
 MPAPI.Layer('idol', { calculate = hook('idol') })
 MPAPI.Layer('timer', { timer = true })
-local function forced(self)
+local function disabled(self)
 	return true
 end
-MPAPI.Layer('ranked', { forced_lobby_options = true, force_lobby_options = forced })
+MPAPI.Layer('ranked', { is_disabled = disabled, lobby_settings = {
+	the_order = { locked = true }, starting_lives = { default = 6 },
+} })
+MPAPI.Layer('variant', { lobby_settings = {
+	the_order = { default = false }, starting_lives = { locked = 3 },
+} })
 
 local function ruleset(key, layers)
 	local init = MPAPI.resolve_layers({ key = key, layers = layers })
@@ -69,8 +74,12 @@ check(middle.timer == true, 'scalar copied from the last layer')
 check(#last.banned_jokers == 1 and last.banned_jokers[1] == 'j_a', 'array fields concatenated')
 
 -- Functions the ruleset is read for (not dispatched through the chain) still flow.
-check(ranked.force_lobby_options == forced, 'force_lobby_options copied from a layer')
-check(ranked.forced_lobby_options == true, 'its flag copied too')
+check(ranked.is_disabled == disabled, 'is_disabled copied from a layer')
+local policy = MPAPI.resolve_layers({ layers = { 'ranked', 'variant' },
+	lobby_settings = { starting_lives = { default = 8 } } }).lobby_settings
+check(policy.the_order.default == false and policy.the_order.locked == nil, 'later layer replaces the whole entry')
+check(policy.starting_lives.default == 8 and policy.starting_lives.locked == nil, 'ruleset replaces the whole entry')
+check(ranked.lobby_settings.the_order.locked == true, 'composition does not edit shared layers')
 
 -- Chain-dispatched hooks do not.
 check(last.calculate == nil, 'calculate not copied when the hook layer is last')
