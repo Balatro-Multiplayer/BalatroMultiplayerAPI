@@ -312,6 +312,7 @@ return {
 			k_ranked_verify_failed_title = 'Could Not Verify Ranked Status',
 			k_ranked_verify_failed_body_1 = 'This can happen on a slow start or a slow connection.',
 			k_ranked_verify_failed_body_2 = 'Giving up disables Ranked until you restart the game.',
+			k_ranked_verify_hint_steam_not_running = 'Open Steam, then restart the game.',
 			k_ranked_verify_keep_waiting = 'Keep Waiting',
 			k_ranked_verify_give_up = 'Give Up (No Ranked This Run)',
 			-- Account standing refusals (api/connection/standing.lua,

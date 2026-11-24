@@ -61,15 +61,46 @@ local verifying_overlay = MPAPI.ui_element(function()
 	})
 end)
 
+-- Why the connection to the server is down, when it is (Steam not running,
+-- server unreachable, ...). Without this the player only sees the generic
+-- failure below and has no way to tell a closed Steam from a slow start.
+local function reason_rows()
+	local reason = MPAPI.connection_state and MPAPI.connection_state.offline_reason
+	if not reason then
+		return {}
+	end
+	local rows = {}
+	local lines = MPAPI.offline_reason_lines(reason, MPAPI.connection_state.offline_server_message)
+	for _, line in ipairs(lines) do
+		rows[#rows + 1] = {
+			n = G.UIT.R,
+			config = { align = 'cm', padding = 0.06 },
+			nodes = {
+				{ n = G.UIT.T, config = { text = line, scale = 0.42, colour = G.C.RED, shadow = true } },
+			},
+		}
+	end
+	if reason == MPAPI.OfflineReason.STEAM_NOT_RUNNING then
+		rows[#rows + 1] = text_row('k_ranked_verify_hint_steam_not_running', 0.32)
+	end
+	return rows
+end
+
 local prompt_overlay = MPAPI.ui_element(function()
-	return wrap({
-		text_row('k_ranked_verify_failed_title', 0.55, 0.1),
+	local rows = { text_row('k_ranked_verify_failed_title', 0.55, 0.1) }
+	for _, row in ipairs(reason_rows()) do
+		rows[#rows + 1] = row
+	end
+	for _, row in ipairs({
 		text_row('k_ranked_verify_failed_body_1', 0.32),
 		text_row('k_ranked_verify_failed_body_2', 0.32),
 		{ n = G.UIT.R, config = { minh = 0.2 } },
 		button_row('k_ranked_verify_keep_waiting', 'mpapi_ranked_verify_keep_waiting', G.C.BLUE),
 		button_row('k_ranked_verify_give_up', 'mpapi_ranked_verify_give_up', G.C.RED),
-	})
+	}) do
+		rows[#rows + 1] = row
+	end
+	return wrap(rows)
 end)
 
 local function show(which)
