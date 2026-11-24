@@ -23,31 +23,133 @@ end
 
 -- Seconds in the queue at which the ranked ticket is next swapped for a
 -- fresh one: every RANKED_SPREAD_EXPAND_SECS, also once the window is at the
--- cap. A Nakama ticket searches only on its first matchmaker pass (later it is
--- only found by others' searches), so the fresh ticket is what lets a long
--- wait's wide window take in players who queued after it, as the old
--- server's oldest-entry anchor did. Pure.
-MPAPI.matchmaking.next_requeue_at = function(wait_secs)
+-- cap, and at `open_at` (the second an instant range opens up, see
+-- instant_open_at) when that falls before the next step. A Nakama ticket
+-- searches only on its first matchmaker pass (later it is only found by
+-- others' searches), so the fresh ticket is what lets a long wait's wide
+-- window take in players who queued after it, as the old server's
+-- oldest-entry anchor did. Pure.
+MPAPI.matchmaking.next_requeue_at = function(wait_secs, open_at)
 	local M = MPAPI.matchmaking
-	local steps = math.floor(math.max(0, wait_secs or 0) / M.RANKED_SPREAD_EXPAND_SECS)
-	return (steps + 1) * M.RANKED_SPREAD_EXPAND_SECS
+	local wait = math.max(0, wait_secs or 0)
+	local steps = math.floor(wait / M.RANKED_SPREAD_EXPAND_SECS)
+	local step_at = (steps + 1) * M.RANKED_SPREAD_EXPAND_SECS
+	if open_at and open_at > wait and open_at < step_at then
+		return open_at
+	end
+	return step_at
+end
+
+-- Instant queue ranges (set on the website, served by the queue_ranges RPC):
+-- a ranked player rated at or above `floor` (or at or below `ceiling`) queues
+-- among everyone in that range at once, instead of in the growing window
+-- around their own rating. Once they have waited the time the normal window
+-- needs to reach the range's edge, times the range's multiplier, the normal
+-- window applies as well and the range itself grows past its edge at the
+-- window's rate (INSTANT_EXTRA_CAP at most). `ranges` is the RPC's answer
+-- ({floor, ceiling, floorMultiplier, ceilingMultiplier}, an edge that is not a
+-- number is not set).
+MPAPI.matchmaking.INSTANT_EXTRA_CAP = MPAPI.matchmaking.RANKED_SPREAD_CAP - MPAPI.matchmaking.RANKED_SPREAD_INITIAL
+
+-- Seconds the normal window takes to span `gap` rating points; a gap past the
+-- cap takes as long as the cap does. Pure.
+MPAPI.matchmaking.secs_to_span = function(gap)
+	local M = MPAPI.matchmaking
+	local reach = math.min(math.max(gap or 0, 0), M.RANKED_SPREAD_CAP)
+	local steps = math.max(0, math.ceil((reach - M.RANKED_SPREAD_INITIAL) / M.RANKED_SPREAD_EXPAND_RATE))
+	return steps * M.RANKED_SPREAD_EXPAND_SECS
+end
+
+local function number_or(value, default)
+	if type(value) == 'number' then
+		return value
+	end
+	return default
+end
+
+-- Which range a rating is in: 'upper' or 'lower' with the range's edge, the
+-- rating's distance from it and its wait multiplier; nil for neither. Pure.
+MPAPI.matchmaking.instant_side = function(rating, ranges)
+	if type(ranges) ~= 'table' or type(rating) ~= 'number' then
+		return nil
+	end
+	local floor, ceiling = ranges.floor, ranges.ceiling
+	if type(floor) == 'number' and rating >= floor then
+		return 'upper', floor, rating - floor, math.max(0.1, number_or(ranges.floorMultiplier, 1))
+	end
+	if type(ceiling) == 'number' and rating <= ceiling then
+		return 'lower', ceiling, ceiling - rating, math.max(0.1, number_or(ranges.ceilingMultiplier, 1))
+	end
+	return nil
+end
+
+-- The second an instant range opens up for this rating, nil when it is in no
+-- range. Pure.
+MPAPI.matchmaking.instant_open_at = function(rating, ranges)
+	local M = MPAPI.matchmaking
+	local side, _, gap, multiplier = M.instant_side(rating, ranges)
+	if not side then
+		return nil
+	end
+	return M.secs_to_span(gap) * multiplier
+end
+
+-- The rating bounds of a ranked ticket after `wait_secs` in the queue: lo and
+-- hi, either nil for no bound. Pure.
+MPAPI.matchmaking.ranked_window = function(rating, wait_secs, ranges)
+	local M = MPAPI.matchmaking
+	local wait = math.max(0, wait_secs or 0)
+	local spread = M.ranked_spread(wait)
+	local lo, hi = rating - spread, rating + spread
+	local side, edge = M.instant_side(rating, ranges)
+	if not side then
+		return lo, hi
+	end
+	local open_at = M.instant_open_at(rating, ranges)
+	local extra = 0
+	if wait >= open_at then
+		local steps = math.floor((wait - open_at) / M.RANKED_SPREAD_EXPAND_SECS)
+		extra = math.min(steps * M.RANKED_SPREAD_EXPAND_RATE, M.INSTANT_EXTRA_CAP)
+	end
+	if side == 'upper' then
+		-- Before the range opens up it is the only window.
+		if wait < open_at then
+			return edge, nil
+		end
+		return math.min(lo, edge - extra), nil
+	end
+	if wait < open_at then
+		return nil, edge
+	end
+	return nil, math.max(hi, edge + extra)
 end
 
 -- The matchmaker ticket for a queue attempt. Pure. A ticket only matches
 -- others asking for the same mod, mode and kind; a ranked one also only
--- ones rated within `spread` (default RANKED_SPREAD_INITIAL) of `rating`. The
--- mode is the bare board name (a 'ranked:' key prefix dropped), like the
--- rating RPCs.
-MPAPI.matchmaking._nakama_ticket = function(opts, ranked, rating, spread)
+-- ones rated within `spread` (default RANKED_SPREAD_INITIAL) of `rating`, or,
+-- given the queue's instant `ranges` and the `wait_secs` already queued, the
+-- window ranked_window makes. The mode is the bare board name (a 'ranked:' key
+-- prefix dropped), like the rating RPCs.
+MPAPI.matchmaking._nakama_ticket = function(opts, ranked, rating, spread, ranges, wait_secs)
 	local mode = tostring(opts.game_mode):gsub('^ranked:', '')
 	local kind = ranked and 'ranked' or 'casual'
 	local query = string.format('+properties.modId:%s +properties.mode:%s +properties.kind:%s', opts.mod_id, mode, kind)
 	local numbers
 	if ranked then
-		spread = spread or MPAPI.matchmaking.RANKED_SPREAD_INITIAL
 		rating = rating or DEFAULT_RATING
-		query = query
-			.. string.format(' +properties.rating:>=%d +properties.rating:<=%d', rating - spread, rating + spread)
+		local lo, hi
+		if ranges then
+			lo, hi = MPAPI.matchmaking.ranked_window(rating, wait_secs, ranges)
+		else
+			spread = spread or MPAPI.matchmaking.RANKED_SPREAD_INITIAL
+			lo, hi = rating - spread, rating + spread
+		end
+		if lo then
+			query = query .. string.format(' +properties.rating:>=%d', math.floor(lo))
+		end
+		if hi then
+			query = query .. string.format(' +properties.rating:<=%d', math.ceil(hi))
+		end
 		numbers = { rating = rating }
 	end
 	local min_count = opts.min_players or 2
@@ -159,13 +261,18 @@ local function nakama_queue(opts, handle, ranked)
 			end
 		end
 	end
-	local function open(rating)
+	local function open(rating, ranges)
 		if handle._left then
 			return
 		end
 		handle._nakama_rating = rating
+		handle._nakama_ranges = ranges
 		handle._nakama_spread = ranked and MPAPI.matchmaking.ranked_spread(queue_wait(handle)) or nil
-		NL.queue(MPAPI.matchmaking._nakama_ticket(opts, ranked, rating, handle._nakama_spread), on_matched, on_ticket(true))
+		NL.queue(
+			MPAPI.matchmaking._nakama_ticket(opts, ranked, rating, handle._nakama_spread, ranges, queue_wait(handle)),
+			on_matched,
+			on_ticket(true)
+		)
 	end
 	-- Nakama can't change a ticket's query, and a ticket searches only on its
 	-- first pass, so each RANKED_SPREAD_EXPAND_SECS the ticket is swapped for a
@@ -174,7 +281,8 @@ local function nakama_queue(opts, handle, ranked)
 	-- (_requeue_floor: the step last fired, so float rounding in the clock
 	-- can't count it twice.)
 	schedule_requeue = function(ticket)
-		local at = MPAPI.matchmaking.next_requeue_at(math.max(queue_wait(handle), handle._requeue_floor or 0))
+		local open_at = MPAPI.matchmaking.instant_open_at(handle._nakama_rating or DEFAULT_RATING, handle._nakama_ranges)
+		local at = MPAPI.matchmaking.next_requeue_at(math.max(queue_wait(handle), handle._requeue_floor or 0), open_at)
 		NL.after(math.max(0, at - queue_wait(handle)), function()
 			if handle._left or handle.match_id or handle._nakama_ticket ~= ticket then
 				return
@@ -184,7 +292,14 @@ local function nakama_queue(opts, handle, ranked)
 			if spread > (handle._nakama_spread or 0) then
 				MPAPI.match_log('debug', '[matchmaking] widening the ranked window to +-' .. spread)
 			end
-			local fresh = MPAPI.matchmaking._nakama_ticket(opts, ranked, handle._nakama_rating, spread)
+			local fresh = MPAPI.matchmaking._nakama_ticket(
+				opts,
+				ranked,
+				handle._nakama_rating,
+				spread,
+				handle._nakama_ranges,
+				math.max(queue_wait(handle), at)
+			)
 			NL.requeue(ticket, fresh, on_matched, function(err, new_ticket)
 				if err == nil and new_ticket == nil then
 					-- The old ticket was already spent (matched, or lost with
@@ -205,7 +320,12 @@ local function nakama_queue(opts, handle, ranked)
 		end
 		-- Ranked tickets carry the player's rating; an unreadable one queues at the default.
 		MPAPI.matchmaking.get_rating(opts.mod_id, opts.game_mode, nil, nil, function(err, data)
-			open(not err and data and tonumber(data.rating) or nil)
+			local rating = not err and data and tonumber(data.rating) or nil
+			-- The queue's instant ranges; without an answer the normal window applies.
+			local body = { modId = opts.mod_id, mode = (tostring(opts.game_mode):gsub('^ranked:', '')) }
+			NL.rpc('queue_ranges', body, function(range_err, ranges)
+				open(rating, not range_err and type(ranges) == 'table' and ranges or nil)
+			end)
 		end)
 	end
 	-- A refused match spends the ticket (api/connection/moderation.lua), as
