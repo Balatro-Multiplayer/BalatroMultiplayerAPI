@@ -8,6 +8,25 @@
 -- instead of looking narrower.
 local SEED_CONTAINER_W = 1.9 + 1.9
 
+-- The base game's 'seed' row with a wider seed box (server seeds are longer than the base game's 8 letters); a seed that
+-- still doesn't fit shrinks.
+local SEED_W = 2.6
+local function seed_row()
+	local seed_text = DynaText({ string = { G.GAME.pseudorandom.seed }, colours = { G.C.WHITE }, shadow = true, float = true, scale = 0.45, maxw = SEED_W - 0.1 })
+	return { n = G.UIT.R, config = { align = 'cm', padding = 0.05, r = 0.1, colour = darken(G.C.JOKER_GREY, 0.1), emboss = 0.05, id = 'seed' }, nodes = {
+		{ n = G.UIT.C, config = { align = 'cm', padding = 0.02, minw = SEED_CONTAINER_W - SEED_W, maxw = SEED_CONTAINER_W - SEED_W }, nodes = {
+			{ n = G.UIT.T, config = { text = localize('k_seed'), scale = 0.5, colour = G.C.UI.TEXT_LIGHT, shadow = true } },
+		} },
+		{ n = G.UIT.C, config = { align = 'cr' }, nodes = {
+			{ n = G.UIT.C, config = { align = 'cm', minh = 0.5, r = 0.1, minw = SEED_W, colour = G.GAME.seeded and G.C.RED or G.C.BLACK, emboss = 0.05 }, nodes = {
+				{ n = G.UIT.C, config = { align = 'cm', padding = 0.05, r = 0.1, minw = SEED_W }, nodes = {
+					{ n = G.UIT.O, config = { object = seed_text } },
+				} },
+			} },
+		} },
+	} }
+end
+
 -- Builds a stack of uniformly-styled action buttons for an end / result screen,
 -- matching the base game's end-of-run button styling (fixed width, wide controller
 -- nav, the first button focus-snapped). `specs` is a list of:
@@ -450,7 +469,7 @@ MPAPI.end_screen_body = function(config)
 	if config.defeated_by then
 		right_col[#right_col + 1] = create_UIBox_round_scores_row('defeated_by')
 	end
-	right_col[#right_col + 1] = create_UIBox_round_scores_row('seed', G.C.WHITE)
+	right_col[#right_col + 1] = seed_row()
 	right_col[#right_col + 1] = UIBox_button({ id = 'copy_seed_button', button = 'copy_seed', label = { localize('b_copy') }, colour = G.C.BLUE, scale = 0.3, minw = SEED_CONTAINER_W, maxw = SEED_CONTAINER_W, minh = 0.4 })
 	right_col[#right_col + 1] = { n = G.UIT.R, config = { align = 'cm', minh = 0.45, minw = 0.1 }, nodes = {} }
 	for _, b in ipairs(config.buttons or {}) do
