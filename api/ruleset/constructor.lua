@@ -22,10 +22,6 @@ local RulesetBase = SMODS.GameObject:extend({
 		return false
 	end,
 
-	force_lobby_options = function(self)
-		return false
-	end,
-
 	inject = function(self)
 		G.P_CENTER_POOLS.Ruleset = G.P_CENTER_POOLS.Ruleset or {}
 		table.insert(G.P_CENTER_POOLS.Ruleset, self)

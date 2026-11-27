@@ -30,12 +30,13 @@ MPAPI._LAYER_ARRAY_FIELDS = {
 MPAPI._LAYER_TABLE_FIELDS = {
 	'game_modifiers',
 	'starting_params',
+	'lobby_settings',
 }
 
 -- Hooks the layer chain already dispatches per layer (calculate_context runs
 -- every layer and then the ruleset; pool gating asks each owning layer). Never
 -- copied onto the ruleset, or the last layer's hook would run a second time.
--- Other functions (is_disabled, force_lobby_options) are read off the ruleset
+-- Other functions (e.g. is_disabled) are read off the ruleset
 -- only, so they still flow through like scalars.
 MPAPI._LAYER_HOOK_FIELDS = {
 	'calculate',
@@ -60,14 +61,9 @@ local function default_empty_arrays(init)
 	end
 end
 
-local function merge_dict_field(init, key, value, ruleset_owns_key)
-	if init[key] == nil then init[key] = {} end
-	if ruleset_owns_key then
-		for fk, fv in pairs(value) do
-			if init[key][fk] == nil then init[key][fk] = fv end
-		end
-	else
-		for fk, fv in pairs(value) do init[key][fk] = fv end
+local function merge_dict_field(init, key, value, own_entries)
+	for fk, fv in pairs(value) do
+		if not own_entries or own_entries[fk] == nil then init[key][fk] = fv end
 	end
 end
 
@@ -97,8 +93,12 @@ function MPAPI.resolve_layers(init)
 	local is_table_field = table_field_set()
 	local is_hook_field = hook_field_set()
 	local ruleset_owned = {}
-	for k in pairs(init) do
-		ruleset_owned[k] = true
+	for k, v in pairs(init) do
+		ruleset_owned[k] = v
+		if is_table_field[k] then
+			init[k] = {}
+			for fk, fv in pairs(v) do init[k][fk] = fv end
+		end
 	end
 
 	for _, layer_name in ipairs(init.layers) do
@@ -106,12 +106,13 @@ function MPAPI.resolve_layers(init)
 		if not layer then error('MPAPI.resolve_layers: unknown layer: ' .. tostring(layer_name)) end
 		for k, v in pairs(layer) do
 			if type(v) == 'table' and is_table_field[k] then
+				init[k] = init[k] or {}
 				merge_dict_field(init, k, v, ruleset_owned[k])
 			elseif type(v) == 'table' then
 				merge_array_field(init, k, v)
 			elseif is_hook_field[k] then
 				-- stays on the layer, see MPAPI._LAYER_HOOK_FIELDS
-			elseif not ruleset_owned[k] then
+			elseif ruleset_owned[k] == nil then
 				init[k] = v
 			end
 		end

@@ -20,6 +20,23 @@ Registration lives in `api/layers/`. Rulesets resolve their layers at
 construction (`MPAPI.resolve_layers` in `api/layers/fields.lua`); runtime
 modifier layers (`MPAPI.add_modifier`) stack on top of the active ruleset.
 
+### Lobby settings
+
+A ruleset or one of its declared layers can supply `lobby_settings`:
+
+```lua
+lobby_settings = {
+    starting_lives = { default = 6 },
+    the_order = { locked = false },
+}
+```
+
+Each entry has exactly one field. `default` applies unless the host has made
+a choice; `locked` masks that choice without deleting it. Omit a setting to
+inherit it. Later layers replace earlier entries by setting key. The ruleset's
+own entry wins over its layers; `default` and `locked` never merge together.
+The consuming mod defines the setting keys, their values and base defaults.
+
 ## Origin
 
 The layer system was introduced in Balatro Multiplayer by
