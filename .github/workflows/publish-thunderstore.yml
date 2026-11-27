@@ -175,7 +175,7 @@ jobs:
           if ! printf 'Authorization: Bearer %s' "$BMP_SERVER_PIN_TOKEN" |
             curl --fail-with-body -sS --max-time 180 --retry 3 --retry-delay 10 \
               -X POST -H @- -H 'Content-Type: application/zip' --data-binary @"$FILE" \
-              -o "$RUNNER_TEMP/pin.json" "${BMP_API_URL%/}/api/ci/ranked-pin-proxy?mod=MultiplayerAPI&version=$VERSION"; then
+              -o "$RUNNER_TEMP/pin.json" "${BMP_API_URL%/}/api/ci/ranked-pin-proxy?mod=BalatroMultiplayer-MultiplayerAPI&version=$VERSION"; then
             fail "The server refused the pin: $(head -c 300 "$RUNNER_TEMP/pin.json" 2>/dev/null)"
           fi
           cat "$RUNNER_TEMP/pin.json"
