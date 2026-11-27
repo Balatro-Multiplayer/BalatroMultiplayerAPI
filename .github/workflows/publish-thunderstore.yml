@@ -5,10 +5,11 @@ name: Publish to Thunderstore
 # Needs the THUNDERSTORE_TOKEN secret: a service account token of the
 # BalatroMultiplayer team on Thunderstore.
 # Thunderstore approves a new version by hand, so the package is not
-# downloadable for a while. The same zip is also attached to the GitHub release,
-# and the Server pins Ranked to that copy (served through its own proxy). The
-# Server then waits for Thunderstore and moves the pin there by itself. Needs
-# the BMP_SERVER_PIN_TOKEN secret and the BMP_API_URL variable.
+# downloadable for a while. After the upload, the workflow posts the same zip
+# to the Server, which stores it and pins Ranked to its own copy (served
+# through its proxy). The Server then waits for Thunderstore and moves the pin
+# there by itself. Needs the BMP_SERVER_PIN_TOKEN secret and the BMP_API_URL
+# variable.
 on:
   workflow_dispatch:
     inputs:
@@ -26,8 +27,7 @@ on:
         default: true
 
 permissions:
-  # Writes the package as an asset of the release.
-  contents: write
+  contents: read
 
 concurrency:
   group: publish-thunderstore
@@ -103,21 +103,6 @@ jobs:
           name: ${{ env.NAMESPACE }}-${{ steps.manifest.outputs.name }}-${{ steps.manifest.outputs.version }}
           path: ${{ steps.build.outputs.file }}
 
-      - name: Attach the package to the release
-        if: ${{ !inputs.dry_run && inputs.pin }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-          FILE: ${{ steps.build.outputs.file }}
-        run: |
-          # The exact zip that goes to Thunderstore below. The Server serves
-          # this copy until Thunderstore lists the version, so players get the
-          # same bytes and the same hash either way. A draft release has no
-          # public download.
-          [ "$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false ] ||
-            { echo "::error::The release $TAG is a draft, so its assets are not public"; exit 1; }
-          gh release upload "$TAG" "$FILE" -R "$GITHUB_REPOSITORY" --clobber
-
       - name: Upload to Thunderstore
         if: ${{ !inputs.dry_run }}
         env:
@@ -171,7 +156,6 @@ jobs:
         env:
           BMP_SERVER_PIN_TOKEN: ${{ secrets.BMP_SERVER_PIN_TOKEN }}
           BMP_API_URL: ${{ vars.BMP_API_URL }}
-          TAG: ${{ steps.release.outputs.tag }}
           NAME: ${{ steps.manifest.outputs.name }}
           VERSION: ${{ steps.manifest.outputs.version }}
           FILE: ${{ steps.build.outputs.file }}
@@ -183,17 +167,15 @@ jobs:
           }
           [ -n "$BMP_SERVER_PIN_TOKEN" ] || fail "The BMP_SERVER_PIN_TOKEN secret is not set"
           [ -n "$BMP_API_URL" ] || fail "The BMP_API_URL variable is not set"
-          ASSET_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$(basename "$FILE")"
-          BODY=$(jq -n --arg mod "$NAMESPACE-$NAME" --arg version "$VERSION" --arg assetUrl "$ASSET_URL" \
-            '{mod: $mod, version: $version, assetUrl: $assetUrl}')
-          # Does not wait for Thunderstore: the Server pins the release asset at
-          # once, then checks Thunderstore after 10 minutes and every 2 minutes
-          # and moves the pin there when the version is up. The call is safe to
-          # repeat, so curl retries a timeout or a 5xx answer.
+          # Posts the exact zip that went to Thunderstore above. The Server
+          # stores it and pins it at once, then checks Thunderstore after 10
+          # minutes and every 2 minutes and moves the pin there when the
+          # version is up. The call is safe to repeat, so curl retries a
+          # timeout or a 5xx answer.
           if ! printf 'Authorization: Bearer %s' "$BMP_SERVER_PIN_TOKEN" |
             curl --fail-with-body -sS --max-time 180 --retry 3 --retry-delay 10 \
-              -X POST -H @- -H 'Content-Type: application/json' -d "$BODY" \
-              -o "$RUNNER_TEMP/pin.json" "${BMP_API_URL%/}/api/ci/ranked-pin-proxy"; then
+              -X POST -H @- -H 'Content-Type: application/zip' --data-binary @"$FILE" \
+              -o "$RUNNER_TEMP/pin.json" "${BMP_API_URL%/}/api/ci/ranked-pin-proxy?mod=MultiplayerAPI&version=$VERSION"; then
             fail "The server refused the pin: $(head -c 300 "$RUNNER_TEMP/pin.json" 2>/dev/null)"
           fi
           cat "$RUNNER_TEMP/pin.json"
